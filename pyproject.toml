@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "An evaluated financial RAG and tool-using agent grounded in SEC filings."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2,<3",
+]
 
 [project.optional-dependencies]
 dev = [

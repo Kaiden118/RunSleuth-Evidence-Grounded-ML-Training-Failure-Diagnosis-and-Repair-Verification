@@ -1,4 +1,4 @@
-from filinglens import __version__
+from runsleuth import __version__
 
 
 def test_package_version() -> None:

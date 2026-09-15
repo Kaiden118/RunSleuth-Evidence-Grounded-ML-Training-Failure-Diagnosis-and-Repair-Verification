@@ -8,7 +8,10 @@ version = "0.1.0"
 description = "Evidence-grounded diagnosis and verified repair of ML training failures."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
-dependencies = []
+dependencies = [
+    "torch==2.13.0",
+    "torchvision==0.28.0",
+]
 
 [project.optional-dependencies]
 dev = [

@@ -1,6 +1,7 @@
 """Command-line entry point for RunSleuth experiments."""
 
 import argparse
+from pathlib import Path
 
 from runsleuth.config import TrainingConfig
 from runsleuth.experiment import run_experiment
@@ -26,19 +27,29 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("auto", "cpu", "cuda"),
         default=defaults.device,
     )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="Load all experiment settings from a JSON file.",
+    )
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    config = TrainingConfig(
-        run_name=args.run_name,
-        seed=args.seed,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-        device=args.device,
-    )
+
+    if args.config is not None:
+        config = TrainingConfig.load(args.config)
+    else:
+        config = TrainingConfig(
+            run_name=args.run_name,
+            seed=args.seed,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            learning_rate=args.learning_rate,
+            device=args.device,
+        )
+
     run_experiment(config)
 
 

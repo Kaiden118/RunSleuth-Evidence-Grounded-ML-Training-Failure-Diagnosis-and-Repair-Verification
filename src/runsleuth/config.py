@@ -1,8 +1,8 @@
 """Configuration for reproducible training experiments."""
-
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Self
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +17,12 @@ class TrainingConfig:
     data_dir: str = "data/raw"
     output_dir: str = "artifacts/runs"
     device: str = "auto"
+
+    @classmethod
+    def load(cls, path: Path) -> Self:
+        """Load a complete experiment configuration from JSON."""
+        values = json.loads(path.read_text(encoding="utf-8"))
+        return cls(**values)
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

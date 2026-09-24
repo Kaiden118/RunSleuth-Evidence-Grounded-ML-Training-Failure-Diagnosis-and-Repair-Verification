@@ -55,6 +55,8 @@ def train_one_epoch(
     optimizer: Optimizer,
     loss_function: nn.Module,
     device: torch.device,
+    *,
+    optimizer_step_enabled: bool = True,
 ) -> TrainingResult:
     """Train for one epoch and collect optimization evidence."""
     model.train()
@@ -79,7 +81,8 @@ def train_one_epoch(
         gradient_norm = gradient_l2_norm(model)
         parameters_before_step = snapshot_parameters(model)
 
-        optimizer.step()
+        if optimizer_step_enabled:
+            optimizer.step()
 
         update_norm = parameter_update_l2_norm(
             model,

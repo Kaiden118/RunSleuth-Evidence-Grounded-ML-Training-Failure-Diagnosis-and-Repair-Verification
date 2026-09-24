@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import asdict, dataclass, replace
+from math import isfinite
 from pathlib import Path
 
 from runsleuth.config import TrainingConfig
@@ -55,25 +56,51 @@ def run_bounded_repair(
         raise ValueError("diagnosis did not provide a repair candidate")
 
     top_cause = diagnosis.ranked_causes[0]
-
-    if top_cause.root_cause is not RootCause.HIGH_LEARNING_RATE:
-        raise ValueError(f"unsupported root cause: {top_cause.root_cause}")
-
     proposed_patch = top_cause.proposed_patch
-
-    if proposed_patch.field != "learning_rate":
-        raise ValueError(f"unsupported repair field: {proposed_patch.field}")
-
-    repaired_learning_rate = float(proposed_patch.new_value)
-    if repaired_learning_rate <= 0.0:
-        raise ValueError("repaired learning rate must be positive")
-
     failed_config = TrainingConfig.load(failed_config_path)
+
+    if top_cause.root_cause is RootCause.HIGH_LEARNING_RATE:
+        if proposed_patch.field != "learning_rate":
+            raise ValueError("High-learning-rate repair must target learning_rate")
+
+        if proposed_patch.old_value != failed_config.learning_rate:
+            raise ValueError("Learning-rate patch does not match the current config")
+
+        new_value = proposed_patch.new_value
+        if isinstance(new_value, bool) or not isinstance(new_value, (int, float)):
+            raise ValueError("Repaired learning rate must be a number")
+
+        if not isfinite(new_value) or new_value <= 0.0:
+            raise ValueError("Repaired learning rate must be finite and positive")
+
+        repaired_config = replace(
+            failed_config,
+            learning_rate=float(new_value),
+        )
+
+    elif top_cause.root_cause is RootCause.MISSING_OPTIMIZER_STEP:
+        if proposed_patch.field != "optimizer_step_enabled":
+            raise ValueError("Missing-step repair must target optimizer_step_enabled")
+
+        if (
+            failed_config.optimizer_step_enabled is not False
+            or proposed_patch.old_value is not False
+            or proposed_patch.new_value is not True
+        ):
+            raise ValueError("Missing-step repair requires a False -> True change")
+
+        repaired_config = replace(
+            failed_config,
+            optimizer_step_enabled=True,
+        )
+
+    else:
+        raise ValueError(f"Unsupported root cause: {top_cause.root_cause}")
+
     repaired_config = replace(
-        failed_config,
+        repaired_config,
         run_name=f"{failed_config.run_name}-repair",
         epochs=min(failed_config.epochs, max_epochs),
-        learning_rate=repaired_learning_rate,
     )
 
     repaired_run = run_experiment(repaired_config)

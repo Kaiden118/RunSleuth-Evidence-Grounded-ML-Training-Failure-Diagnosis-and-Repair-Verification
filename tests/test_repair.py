@@ -197,3 +197,101 @@ def test_bounded_repair_caps_epochs_and_accepts_recovery(
 
     assert report.verification.decision is RepairDecision.ACCEPTED
     assert all(check.passed for check in report.verification.checks)
+
+
+@pytest.mark.parametrize(
+    ("recovers", "expected_decision"),
+    [
+        (True, RepairDecision.ACCEPTED),
+        (False, RepairDecision.REJECTED),
+    ],
+)
+def test_missing_step_repair_requires_verified_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    recovers: bool,
+    expected_decision: RepairDecision,
+) -> None:
+    reference_run = tmp_path / "reference-run"
+    failed_run = tmp_path / "failed-run"
+    repaired_run = tmp_path / "repaired-run"
+    reference_config_path = tmp_path / "configs" / "clean.json"
+    failed_config_path = tmp_path / "configs" / "missing-step.json"
+
+    reference_config = TrainingConfig(
+        run_name="clean",
+        learning_rate=0.001,
+        optimizer_step_enabled=True,
+        device="cpu",
+    )
+    failed_config = TrainingConfig(
+        run_name="missing-step",
+        learning_rate=0.001,
+        optimizer_step_enabled=False,
+        device="cpu",
+    )
+
+    healthy_metrics = _healthy_metrics()
+    healthy_metrics.append({**healthy_metrics[-1], "epoch": 3})
+
+    failed_metrics = [
+        {
+            "epoch": epoch,
+            "train_loss": 2.3,
+            "train_accuracy": 0.1,
+            "validation_loss": 2.3,
+            "validation_accuracy": 0.1,
+            "mean_gradient_norm": 0.6,
+            "mean_parameter_update_norm": 0.0,
+        }
+        for epoch in range(1, 4)
+    ]
+
+    _write_configured_run(
+        reference_run,
+        reference_config_path,
+        reference_config,
+        healthy_metrics,
+    )
+    _write_configured_run(
+        failed_run,
+        failed_config_path,
+        failed_config,
+        failed_metrics,
+    )
+
+    original_config_bytes = failed_config_path.read_bytes()
+    captured_configs: list[TrainingConfig] = []
+
+    def fake_run_experiment(config: TrainingConfig) -> Path:
+        captured_configs.append(config)
+        repaired_run.mkdir(parents=True)
+        config.save(repaired_run / "config.json")
+
+        records = _recovered_metrics() if recovers else failed_metrics[: config.epochs]
+        _write_metrics(repaired_run, records)
+        return repaired_run
+
+    monkeypatch.setattr(
+        repair_module,
+        "run_experiment",
+        fake_run_experiment,
+    )
+
+    report = repair_module.run_bounded_repair(
+        reference_run=reference_run,
+        failed_run=failed_run,
+        reference_config_path=reference_config_path,
+        failed_config_path=failed_config_path,
+        max_epochs=2,
+    )
+
+    assert len(captured_configs) == 1
+
+    repaired_config = captured_configs[0]
+    assert repaired_config.optimizer_step_enabled is True
+    assert repaired_config.learning_rate == failed_config.learning_rate
+    assert repaired_config.epochs == 2
+
+    assert failed_config_path.read_bytes() == original_config_bytes
+    assert report.verification.decision is expected_decision

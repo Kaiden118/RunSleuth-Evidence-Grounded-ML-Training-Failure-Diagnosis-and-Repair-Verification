@@ -3,6 +3,7 @@
 import argparse
 import json
 from difflib import unified_diff
+from math import isfinite
 from pathlib import Path
 
 from runsleuth.compare import compare_runs, ratio
@@ -34,16 +35,24 @@ def verify_run_config(
         )
 
 
-def build_learning_rate_patch(
+def build_config_patch(
     candidate_config_path: Path,
-    old_value: float,
-    new_value: float,
+    field: str,
+    old_value: float | bool,
+    new_value: float | bool,
 ) -> MinimalPatch:
-    """Build, but do not apply, a minimal learning-rate repair."""
+    """Propose a change to one explicitly supported configuration field."""
+    if field not in {"learning_rate", "optimizer_step_enabled"}:
+        raise ValueError(f"Unsupported repair field: {field}")
+
     original_text = candidate_config_path.read_text(encoding="utf-8")
     values = json.loads(original_text)
-    values["learning_rate"] = new_value
-    repaired_text = f"{json.dumps(values, indent=2)}"
+
+    if values.get(field) != old_value:
+        raise ValueError(f"Current value of {field} does not match the proposed patch")
+
+    values[field] = new_value
+    repaired_text = json.dumps(values, indent=2)
     if original_text.endswith("\n"):
         repaired_text += "\n"
 
@@ -58,10 +67,24 @@ def build_learning_rate_patch(
 
     return MinimalPatch(
         target_file=str(candidate_config_path),
-        field="learning_rate",
+        field=field,
         old_value=old_value,
         new_value=new_value,
         unified_diff=diff,
+    )
+
+
+def build_learning_rate_patch(
+    candidate_config_path: Path,
+    old_value: float,
+    new_value: float,
+) -> MinimalPatch:
+    """Keep the existing learning-rate patch interface."""
+    return build_config_patch(
+        candidate_config_path,
+        field="learning_rate",
+        old_value=old_value,
+        new_value=new_value,
     )
 
 
@@ -79,6 +102,80 @@ def diagnose_training_failure(
     verify_run_config(candidate_run, candidate_config)
 
     comparison = compare_runs(reference_run, candidate_run)
+    metrics_text = (candidate_run / "metrics.jsonl").read_text(encoding="utf-8")
+    records = [json.loads(line) for line in metrics_text.splitlines() if line.strip()]
+    if not records:
+        raise ValueError("Candidate metrics must contain at least one epoch")
+
+    gradient_norms = [record["mean_gradient_norm"] for record in records]
+    update_norms = [record["mean_parameter_update_norm"] for record in records]
+
+    if any(not isfinite(value) or value < 0.0 for value in gradient_norms + update_norms):
+        raise ValueError("Gradient and update norms must be finite and nonnegative")
+
+    missing_step_detected = (
+        reference_config.optimizer_step_enabled is True
+        and candidate_config.optimizer_step_enabled is False
+        and candidate_config.learning_rate == reference_config.learning_rate
+        and candidate_config.learning_rate > 0.0
+        and min(gradient_norms) > 0.0
+        and max(update_norms) == 0.0
+        and comparison.validation_accuracy_drop >= MIN_ACCURACY_DROP
+    )
+
+    if missing_step_detected:
+        evidence = (
+            Evidence(
+                metric="optimizer_step_enabled",
+                observed_value=False,
+                reference_value=True,
+                interpretation="Parameter updates are disabled in the candidate config.",
+            ),
+            Evidence(
+                metric="final_epoch_gradient_norm",
+                observed_value=comparison.candidate.final_epoch_gradient_norm,
+                reference_value=comparison.clean.final_epoch_gradient_norm,
+                interpretation=(f"Gradients are positive in all {len(records)} recorded epochs."),
+            ),
+            Evidence(
+                metric="final_epoch_parameter_update_norm",
+                observed_value=comparison.candidate.final_epoch_parameter_update_norm,
+                reference_value=comparison.clean.final_epoch_parameter_update_norm,
+                interpretation=(
+                    f"Parameter updates are zero in all {len(records)} recorded epochs."
+                ),
+            ),
+            Evidence(
+                metric="final_validation_accuracy",
+                observed_value=comparison.candidate.final_validation_accuracy,
+                reference_value=comparison.clean.final_validation_accuracy,
+                interpretation=(
+                    "Candidate accuracy is "
+                    f"{comparison.validation_accuracy_drop * 100:.2f} "
+                    "percentage points below the reference."
+                ),
+            ),
+        )
+
+        candidate = RootCauseCandidate(
+            rank=1,
+            root_cause=RootCause.MISSING_OPTIMIZER_STEP,
+            confidence=0.95,
+            evidence=evidence,
+            proposed_patch=build_config_patch(
+                candidate_config_path,
+                field="optimizer_step_enabled",
+                old_value=False,
+                new_value=True,
+            ),
+        )
+
+        return DiagnosisReport(
+            status=DiagnosisStatus.FAILURE_DETECTED,
+            reference_run=str(reference_run),
+            candidate_run=str(candidate_run),
+            ranked_causes=(candidate,),
+        )
     learning_rate_ratio = ratio(
         candidate_config.learning_rate,
         reference_config.learning_rate,

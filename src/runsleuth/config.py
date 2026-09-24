@@ -1,4 +1,5 @@
 """Configuration for reproducible training experiments."""
+
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -12,7 +13,8 @@ class TrainingConfig:
     epochs: int = 3
     batch_size: int = 128
     learning_rate: float = 0.001
-    validation_size: int = 5_000
+    optimizer_step_enabled: bool = True
+    validation_size: int = 5000
     num_workers: int = 0
     data_dir: str = "data/raw"
     output_dir: str = "artifacts/runs"

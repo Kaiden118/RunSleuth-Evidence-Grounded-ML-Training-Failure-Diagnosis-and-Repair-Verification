@@ -12,13 +12,14 @@ class DiagnosisStatus(StrEnum):
 
 class RootCause(StrEnum):
     HIGH_LEARNING_RATE = "high_learning_rate"
+    MISSING_OPTIMIZER_STEP = "missing_optimizer_step"
 
 
 @dataclass(frozen=True, slots=True)
 class Evidence:
     metric: str
-    observed_value: float
-    reference_value: float
+    observed_value: float | bool
+    reference_value: float | bool
     interpretation: str
 
 
@@ -26,8 +27,8 @@ class Evidence:
 class MinimalPatch:
     target_file: str
     field: str
-    old_value: float
-    new_value: float
+    old_value: float | bool
+    new_value: float | bool
     unified_diff: str
 
 

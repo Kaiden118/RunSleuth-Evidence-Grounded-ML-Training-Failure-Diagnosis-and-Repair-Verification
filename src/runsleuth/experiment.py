@@ -48,6 +48,7 @@ def run_experiment(config: TrainingConfig) -> Path:
             optimizer,
             loss_function,
             device,
+            optimizer_step_enabled=config.optimizer_step_enabled,
         )
         validation_result = evaluate(
             model,
@@ -63,9 +64,7 @@ def run_experiment(config: TrainingConfig) -> Path:
             validation_loss=validation_result.loss,
             validation_accuracy=validation_result.accuracy,
             mean_gradient_norm=training_result.mean_gradient_norm,
-            mean_parameter_update_norm=(
-                training_result.mean_parameter_update_norm
-            ),
+            mean_parameter_update_norm=(training_result.mean_parameter_update_norm),
         )
         append_epoch_metrics(metrics_path, metrics)
         print(json.dumps(asdict(metrics), sort_keys=True))

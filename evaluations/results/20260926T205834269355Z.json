@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "evaluation_type": "development_regression",
+  "source_report": "artifacts/model_evaluations/20260926T205834269355Z/model_evaluation_summary.json",
+  "model": "gemini-3.5-flash-lite",
+  "original_batch_summary": "artifacts/batches/20260926T081344631710Z/batch_summary.json",
+  "training_settings": {
+    "seeds": [
+      7,
+      123,
+      2026
+    ],
+    "epochs": 3,
+    "max_repair_epochs": 2,
+    "max_model_calls": 6,
+    "max_tool_calls": 5,
+    "max_output_tokens": 2000,
+    "device": "cuda",
+    "source_path": "src/runsleuth/train.py",
+    "output_dir": "artifacts/batches"
+  },
+  "agent_settings": {
+    "original_batch_summary": "artifacts/batches/20260926T081344631710Z/batch_summary.json",
+    "model": "gemini-3.5-flash-lite",
+    "max_attempts": 1,
+    "retry_delay": 10.0,
+    "case_delay": 30.0,
+    "max_model_calls": 6,
+    "max_tool_calls": 5,
+    "max_output_tokens": 2000,
+    "max_repair_epochs": 2,
+    "budget": {
+      "total_cases": 9,
+      "agent_attempt_upper_bound": 9,
+      "model_call_upper_bound": 54,
+      "agent_tool_call_upper_bound": 45,
+      "initial_training_runs": 0,
+      "repair_training_epoch_upper_bound": 18
+    }
+  },
+  "manifest": {
+    "suite": "saved_runs_model_evaluation",
+    "max_repair_epochs": 2,
+    "notes": [
+      "Every original case is diagnosed again; no original Agent or repair reports are reused.",
+      "Training data splits and telemetry are reused from the recorded runs.",
+      "The inspected source is the current source, not a historical source snapshot.",
+      "Healthy cases are self-comparisons, not independent healthy training runs.",
+      "Up to 1 Agent attempts per case; only transient API failures are retried.",
+      "A completed diagnosis or rejected repair is never retried to improve its outcome."
+    ],
+    "cases": [
+      {
+        "id": "case-001",
+        "kind": "clean_self_comparison",
+        "reference_run": "artifacts/batches/20260926T081344631710Z/runs/seed-7-reference-20260926T081344708484Z",
+        "candidate_run": "artifacts/batches/20260926T081344631710Z/runs/seed-7-reference-20260926T081344708484Z",
+        "expected_diagnosis_status": "no_supported_failure",
+        "expected_root_cause": null,
+        "agent_report": "artifacts/model_evaluations/20260926T205834269355Z/agent_reports/case-001-attempt-1.json",
+        "repair_report": null
+      },
+      {
+        "id": "case-002",
+        "kind": "injected_fault",
+        "reference_run": "artifacts/batches/20260926T081344631710Z/runs/seed-7-reference-20260926T081344708484Z",
+        "candidate_run": "artifacts/batches/20260926T081344631710Z/runs/case-002-20260926T081420451578Z",
+        "expected_diagnosis_status": "failure_detected",
+        "expected_root_cause": "high_learning_rate",
+        "agent_report": "artifacts/model_evaluations/20260926T205834269355Z/agent_reports/case-002-attempt-1.json",
+        "repair_report": "artifacts/batches/20260926T081344631710Z/runs/case-002-agent-repair-20260926T205922221660Z/agent_repair_report.json"
+      },
+      {
+        "id": "case-003",
+        "kind": "injected_fault",
+        "reference_run": "artifacts/batches/20260926T081344631710Z/runs/seed-7-reference-20260926T081344708484Z",
+        "candidate_run": "artifacts/batches/20260926T081344631710Z/runs/case-003-20260926T081445322993Z",
+        "expected_diagnosis_status": "failure_detected",
+        "expected_root_cause": "missing_optimizer_step",
+        "agent_report": "artifacts/model_evaluations/20260926T205834269355Z/agent_reports/case-003-attempt-1.json",
+        "repair_report": "artifacts/batches/20260926T081344631710Z/runs/case-003-agent-repair-20260926T210011825805Z/agent_repair_report.json"
+      },
+      {
+        "id": "case-004",
+        "kind": "clean_self_comparison",
+        "reference_run": "artifacts/batches/20260926T081344631710Z/runs/seed-123-reference-20260926T081530151708Z",
+        "candidate_run": "artifacts/batches/20260926T081344631710Z/runs/seed-123-reference-20260926T081530151708Z",
+        "expected_diagnosis_status": "no_supported_failure",
+        "expected_root_cause": null,
+        "agent_report": "artifacts/model_evaluations/20260926T205834269355Z/agent_reports/case-004-attempt-1.json",
+        "repair_report": null
+      },
+      {
+        "id": "case-005",
+        "kind": "injected_fault",
+        "reference_run": "artifacts/batches/20260926T081344631710Z/runs/seed-123-reference-20260926T081530151708Z",
+        "candidate_run": "artifacts/batches/20260926T081344631710Z/runs/case-005-20260926T081601231100Z",
+        "expected_diagnosis_status": "failure_detected",
+        "expected_root_cause": "high_learning_rate",
+        "agent_report": "artifacts/model_evaluations/20260926T205834269355Z/agent_reports/case-005-attempt-1.json",
+        "repair_report": "artifacts/batches/20260926T081344631710Z/runs/case-005-agent-repair-20260926T210156127287Z/agent_repair_report.json"
+      },
+      {
+        "id": "case-006",
+        "kind": "injected_fault",
+        "reference_run": "artifacts/batches/20260926T081344631710Z/runs/seed-123-reference-20260926T081530151708Z",
+        "candidate_run": "artifacts/batches/20260926T081344631710Z/runs/case-006-20260926T081631394542Z",
+        "expected_diagnosis_status": "failure_detected",
+        "expected_root_cause": "missing_optimizer_step",
+        "agent_report": "artifacts/model_evaluations/20260926T205834269355Z/agent_reports/case-006-attempt-1.json",
+        "repair_report": "artifacts/batches/20260926T081344631710Z/runs/case-006-agent-repair-20260926T210335626102Z/agent_repair_report.json"
+      },
+      {
+        "id": "case-007",
+        "kind": "clean_self_comparison",
+        "reference_run": "artifacts/batches/20260926T081344631710Z/runs/seed-2026-reference-20260926T081726633851Z",
+        "candidate_run": "artifacts/batches/20260926T081344631710Z/runs/seed-2026-reference-20260926T081726633851Z",
+        "expected_diagnosis_status": "no_supported_failure",
+        "expected_root_cause": null,
+        "agent_report": "artifacts/model_evaluations/20260926T205834269355Z/agent_reports/case-007-attempt-1.json",
+        "repair_report": null
+      },
+      {
+        "id": "case-008",
+        "kind": "injected_fault",
+        "reference_run": "artifacts/batches/20260926T081344631710Z/runs/seed-2026-reference-20260926T081726633851Z",
+        "candidate_run": "artifacts/batches/20260926T081344631710Z/runs/case-008-20260926T081753747594Z",
+        "expected_diagnosis_status": "failure_detected",
+        "expected_root_cause": "high_learning_rate",
+        "agent_report": "artifacts/model_evaluations/20260926T205834269355Z/agent_reports/case-008-attempt-1.json",
+        "repair_report": "artifacts/batches/20260926T081344631710Z/runs/case-008-agent-repair-20260926T210510949847Z/agent_repair_report.json"
+      },
+      {
+        "id": "case-009",
+        "kind": "injected_fault",
+        "reference_run": "artifacts/batches/20260926T081344631710Z/runs/seed-2026-reference-20260926T081726633851Z",
+        "candidate_run": "artifacts/batches/20260926T081344631710Z/runs/case-009-20260926T081825692816Z",
+        "expected_diagnosis_status": "failure_detected",
+        "expected_root_cause": "missing_optimizer_step",
+        "agent_report": "artifacts/model_evaluations/20260926T205834269355Z/agent_reports/case-009-attempt-1.json",
+        "repair_report": "artifacts/batches/20260926T081344631710Z/runs/case-009-agent-repair-20260926T210601636130Z/agent_repair_report.json"
+      }
+    ],
+    "source_path": "src/runsleuth/train.py"
+  },
+  "first_attempt_summary": {
+    "total_cases": 9,
+    "passed_cases": 9,
+    "failed_cases": 0,
+    "error_cases": 0,
+    "diagnosis_correct": {
+      "numerator": 9,
+      "denominator": 9,
+      "rate": 1.0
+    },
+    "fault_top1_correct": {
+      "numerator": 6,
+      "denominator": 6,
+      "rate": 1.0
+    },
+    "verified_fault_repairs": {
+      "numerator": 6,
+      "denominator": 6,
+      "rate": 1.0
+    },
+    "healthy_no_action": {
+      "numerator": 3,
+      "denominator": 3,
+      "rate": 1.0
+    },
+    "reports_with_valid_citation_values": {
+      "numerator": 6,
+      "denominator": 6,
+      "rate": 1.0
+    }
+  },
+  "final_summary": {
+    "total_cases": 9,
+    "passed_cases": 9,
+    "failed_cases": 0,
+    "error_cases": 0,
+    "diagnosis_correct": {
+      "numerator": 9,
+      "denominator": 9,
+      "rate": 1.0
+    },
+    "fault_top1_correct": {
+      "numerator": 6,
+      "denominator": 6,
+      "rate": 1.0
+    },
+    "verified_fault_repairs": {
+      "numerator": 6,
+      "denominator": 6,
+      "rate": 1.0
+    },
+    "healthy_no_action": {
+      "numerator": 3,
+      "denominator": 3,
+      "rate": 1.0
+    },
+    "reports_with_valid_citation_values": {
+      "numerator": 6,
+      "denominator": 6,
+      "rate": 1.0
+    }
+  },
+  "case_outcomes": [
+    {
+      "id": "case-001",
+      "outcome": "passed"
+    },
+    {
+      "id": "case-002",
+      "outcome": "passed"
+    },
+    {
+      "id": "case-003",
+      "outcome": "passed"
+    },
+    {
+      "id": "case-004",
+      "outcome": "passed"
+    },
+    {
+      "id": "case-005",
+      "outcome": "passed"
+    },
+    {
+      "id": "case-006",
+      "outcome": "passed"
+    },
+    {
+      "id": "case-007",
+      "outcome": "passed"
+    },
+    {
+      "id": "case-008",
+      "outcome": "passed"
+    },
+    {
+      "id": "case-009",
+      "outcome": "passed"
+    }
+  ],
+  "all_attempt_usage": {
+    "model_calls": 21,
+    "tool_calls": 33,
+    "input_tokens": 40195,
+    "output_tokens": 5214,
+    "usage_complete": true,
+    "attempt_report_count": 9,
+    "unrecorded_attempt_exists": false,
+    "scope": "Every new Agent attempt in this model evaluation; original batch excluded"
+  }
+}

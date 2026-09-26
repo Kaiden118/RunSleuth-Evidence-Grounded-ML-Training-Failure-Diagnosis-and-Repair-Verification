@@ -1,0 +1,41 @@
+{
+  "suite": "initial_smoke",
+  "max_repair_epochs": 2,
+  "notes": [
+    "Single-seed smoke checks using seed 42: two injected faults and one clean self-comparison.",
+    "Only selected completed diagnosis attempts are listed; earlier API failures and retry usage are excluded.",
+    "These cases are integration checks, not a generalization benchmark."
+  ],
+  "cases": [
+    {
+      "id": "case-001",
+      "kind": "injected_fault",
+      "reference_run": "artifacts/runs/clean-20260916T220720562207Z",
+      "candidate_run": "artifacts/runs/missing-optimizer-step-20260924T051854167077Z",
+      "expected_diagnosis_status": "failure_detected",
+      "expected_root_cause": "missing_optimizer_step",
+      "agent_report": "artifacts/agent_runs/20260926T060522686792Z/agent_report.json",
+      "repair_report": "artifacts/runs/missing-optimizer-step-agent-repair-20260926T064512567223Z/agent_repair_report.json"
+    },
+    {
+      "id": "case-002",
+      "kind": "injected_fault",
+      "reference_run": "artifacts/runs/clean-20260916T220720562207Z",
+      "candidate_run": "artifacts/runs/high-lr-20260916T222649632418Z",
+      "expected_diagnosis_status": "failure_detected",
+      "expected_root_cause": "high_learning_rate",
+      "agent_report": "artifacts/agent_runs/20260926T065220058343Z/agent_report.json",
+      "repair_report": "artifacts/runs/high-lr-agent-repair-20260926T065520266672Z/agent_repair_report.json"
+    },
+    {
+      "id": "case-003",
+      "kind": "clean_self_comparison",
+      "reference_run": "artifacts/runs/clean-20260916T220720562207Z",
+      "candidate_run": "artifacts/runs/clean-20260916T220720562207Z",
+      "expected_diagnosis_status": "no_supported_failure",
+      "expected_root_cause": null,
+      "agent_report": "artifacts/agent_runs/20260926T065805797952Z/agent_report.json",
+      "repair_report": null
+    }
+  ]
+}

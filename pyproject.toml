@@ -19,6 +19,9 @@ dev = [
     "pytest>=8",
     "ruff>=0.9",
 ]
+llm = [
+    "openai",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

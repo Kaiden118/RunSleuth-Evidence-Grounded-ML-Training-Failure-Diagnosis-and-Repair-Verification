@@ -1,0 +1,229 @@
+{
+  "suite": "healthy-lr-controls-seed-42",
+  "evaluation_type": "selected_run_smoke",
+  "max_repair_epochs": 2,
+  "notes": [
+    "Development controls evaluated separately from the earlier nine-case multi-seed suite.",
+    "Two distinct training runs share seed 42, the data split, and initialization settings with the reference; learning rates are 0.0008 and 0.0012 instead of 0.001.",
+    "Health criteria were declared before training and diagnosis: accuracy shortfall at most 0.03 and validation-loss ratio at most 1.25. Accuracy gain over a failed run is not applicable.",
+    "The selected reports are the first Agent invocations for these cases, using gemini-3.5-flash-lite with budgets of 6 model calls, 5 tool calls, and 2000 output tokens per model request.",
+    "Correct abstention requires no_supported_failure, no ranked causes, no proposed patch, and no repair report.",
+    "The reports speculate about stochastic variation without establishing the cause. Narrative causal faithfulness is not scored by these metrics; original reports are retained unchanged.",
+    "These paired controls are not independent statistical trials or a held-out benchmark. No population false-positive rate is inferred from two cases."
+  ],
+  "summary": {
+    "total_cases": 2,
+    "passed_cases": 2,
+    "failed_cases": 0,
+    "error_cases": 0,
+    "diagnosis_correct": {
+      "numerator": 2,
+      "denominator": 2,
+      "rate": 1.0
+    },
+    "fault_top1_correct": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null
+    },
+    "verified_fault_repairs": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null
+    },
+    "healthy_no_action": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null
+    },
+    "reports_with_valid_citation_values": {
+      "numerator": 0,
+      "denominator": 0,
+      "rate": null
+    },
+    "healthy_control_eligible": {
+      "numerator": 2,
+      "denominator": 2,
+      "rate": 1.0
+    },
+    "healthy_control_no_action": {
+      "numerator": 2,
+      "denominator": 2,
+      "rate": 1.0
+    }
+  },
+  "selected_report_usage": {
+    "model_calls": 4,
+    "tool_calls": 8,
+    "input_tokens": 7048,
+    "output_tokens": 635,
+    "usage_complete": true,
+    "scope": "Only the reports selected in this manifest"
+  },
+  "cases": [
+    {
+      "id": "case-010",
+      "kind": "healthy_control",
+      "expected_status": "no_supported_failure",
+      "expected_root_cause": null,
+      "agent_report": "artifacts/agent_runs/20260926T213735009616Z/agent_report.json",
+      "repair_report": null,
+      "model": "gemini-3.5-flash-lite",
+      "outcome": "passed",
+      "diagnosis": {
+        "agent_status": "completed",
+        "predicted_status": "no_supported_failure",
+        "predicted_root_cause": null,
+        "correct": true,
+        "citation_count": 0,
+        "citation_values_valid": null,
+        "error": null
+      },
+      "repair": {
+        "required": false,
+        "passed": true,
+        "accepted": null,
+        "within_budget": null,
+        "error": null,
+        "skip_reason": null
+      },
+      "usage": {
+        "model_calls": 2,
+        "tool_calls": 4,
+        "input_tokens": 3606,
+        "output_tokens": 348,
+        "usage_complete": true,
+        "error": null
+      },
+      "healthy_control": {
+        "required": true,
+        "passed": true,
+        "error": null,
+        "policy": {
+          "max_validation_accuracy_shortfall": 0.03,
+          "max_validation_loss_ratio": 1.25
+        },
+        "reference": {
+          "final_validation_accuracy": 0.8896,
+          "final_validation_loss": 0.31193862762451174,
+          "first_epoch_gradient_norm": 2.5047613772783373,
+          "first_epoch_parameter_update_norm": 0.05382835977467244,
+          "final_epoch_gradient_norm": 1.682210572850162,
+          "final_epoch_parameter_update_norm": 0.043156198442905434
+        },
+        "candidate": {
+          "final_validation_accuracy": 0.885,
+          "final_validation_loss": 0.3246511895895004,
+          "first_epoch_gradient_norm": 2.5164558666393932,
+          "first_epoch_parameter_update_norm": 0.047434308379904595,
+          "final_epoch_gradient_norm": 1.7957694949202758,
+          "final_epoch_parameter_update_norm": 0.03712620024499804
+        },
+        "config_changes": {
+          "learning_rate": {
+            "reference": 0.001,
+            "candidate": 0.0008
+          }
+        },
+        "checks": [
+          {
+            "metric": "validation_accuracy_shortfall",
+            "observed_value": 0.0046,
+            "operator": "<=",
+            "threshold": 0.03,
+            "passed": true
+          },
+          {
+            "metric": "validation_loss_ratio",
+            "observed_value": 1.0407534073666922,
+            "operator": "<=",
+            "threshold": 1.25,
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-011",
+      "kind": "healthy_control",
+      "expected_status": "no_supported_failure",
+      "expected_root_cause": null,
+      "agent_report": "artifacts/agent_runs/20260926T213747771053Z/agent_report.json",
+      "repair_report": null,
+      "model": "gemini-3.5-flash-lite",
+      "outcome": "passed",
+      "diagnosis": {
+        "agent_status": "completed",
+        "predicted_status": "no_supported_failure",
+        "predicted_root_cause": null,
+        "correct": true,
+        "citation_count": 0,
+        "citation_values_valid": null,
+        "error": null
+      },
+      "repair": {
+        "required": false,
+        "passed": true,
+        "accepted": null,
+        "within_budget": null,
+        "error": null,
+        "skip_reason": null
+      },
+      "usage": {
+        "model_calls": 2,
+        "tool_calls": 4,
+        "input_tokens": 3442,
+        "output_tokens": 287,
+        "usage_complete": true,
+        "error": null
+      },
+      "healthy_control": {
+        "required": true,
+        "passed": true,
+        "error": null,
+        "policy": {
+          "max_validation_accuracy_shortfall": 0.03,
+          "max_validation_loss_ratio": 1.25
+        },
+        "reference": {
+          "final_validation_accuracy": 0.8896,
+          "final_validation_loss": 0.31193862762451174,
+          "first_epoch_gradient_norm": 2.5047613772783373,
+          "first_epoch_parameter_update_norm": 0.05382835977467244,
+          "final_epoch_gradient_norm": 1.682210572850162,
+          "final_epoch_parameter_update_norm": 0.043156198442905434
+        },
+        "candidate": {
+          "final_validation_accuracy": 0.8912,
+          "final_validation_loss": 0.2992003537893295,
+          "first_epoch_gradient_norm": 2.4260178791669866,
+          "first_epoch_parameter_update_norm": 0.06093922033550867,
+          "final_epoch_gradient_norm": 1.535807919070592,
+          "final_epoch_parameter_update_norm": 0.051487420857037954
+        },
+        "config_changes": {
+          "learning_rate": {
+            "reference": 0.001,
+            "candidate": 0.0012
+          }
+        },
+        "checks": [
+          {
+            "metric": "validation_accuracy_shortfall",
+            "observed_value": -0.0016,
+            "operator": "<=",
+            "threshold": 0.03,
+            "passed": true
+          },
+          {
+            "metric": "validation_loss_ratio",
+            "observed_value": 0.9591641665792169,
+            "operator": "<=",
+            "threshold": 1.25,
+            "passed": true
+          }
+        ]
+      }
+    }
+  ]
+}

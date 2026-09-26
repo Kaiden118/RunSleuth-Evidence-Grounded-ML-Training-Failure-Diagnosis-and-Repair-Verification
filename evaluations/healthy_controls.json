@@ -1,0 +1,36 @@
+{
+  "suite": "healthy-lr-controls-seed-42",
+  "max_repair_epochs": 2,
+  "source_path": "src/runsleuth/train.py",
+  "notes": [
+    "Development controls evaluated separately from the earlier nine-case multi-seed suite.",
+    "Two distinct training runs share seed 42, the data split, and initialization settings with the reference; learning rates are 0.0008 and 0.0012 instead of 0.001.",
+    "Health criteria were declared before training and diagnosis: accuracy shortfall at most 0.03 and validation-loss ratio at most 1.25. Accuracy gain over a failed run is not applicable.",
+    "The selected reports are the first Agent invocations for these cases, using gemini-3.5-flash-lite with budgets of 6 model calls, 5 tool calls, and 2000 output tokens per model request.",
+    "Correct abstention requires no_supported_failure, no ranked causes, no proposed patch, and no repair report.",
+    "The reports speculate about stochastic variation without establishing the cause. Narrative causal faithfulness is not scored by these metrics; original reports are retained unchanged.",
+    "These paired controls are not independent statistical trials or a held-out benchmark. No population false-positive rate is inferred from two cases."
+  ],
+  "cases": [
+    {
+      "id": "case-010",
+      "kind": "healthy_control",
+      "reference_run": "artifacts/runs/clean-20260916T220720562207Z",
+      "candidate_run": "artifacts/runs/case-010-20260926T213456657628Z",
+      "expected_diagnosis_status": "no_supported_failure",
+      "expected_root_cause": null,
+      "agent_report": "artifacts/agent_runs/20260926T213735009616Z/agent_report.json",
+      "repair_report": null
+    },
+    {
+      "id": "case-011",
+      "kind": "healthy_control",
+      "reference_run": "artifacts/runs/clean-20260916T220720562207Z",
+      "candidate_run": "artifacts/runs/case-011-20260926T213527200140Z",
+      "expected_diagnosis_status": "no_supported_failure",
+      "expected_root_cause": null,
+      "agent_report": "artifacts/agent_runs/20260926T213747771053Z/agent_report.json",
+      "repair_report": null
+    }
+  ]
+}

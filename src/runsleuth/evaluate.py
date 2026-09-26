@@ -11,6 +11,7 @@ from runsleuth.config import TrainingConfig
 from runsleuth.diagnosis import RootCause
 from runsleuth.evaluation import SmokeCase, SmokeSuite, load_smoke_suite
 from runsleuth.evidence_validation import validate_diagnosis_evidence
+from runsleuth.healthy_control import inspect_healthy_control
 from runsleuth.repair import apply_config_patch
 from runsleuth.verification import RepairDecision, VerificationPolicy, verify_repair
 
@@ -98,6 +99,80 @@ def _empty_diagnosis_score() -> dict[str, object]:
     }
 
 
+def score_healthy_control(case: SmokeCase, *, workspace_root: Path) -> dict[str, object]:
+    """Independently check the declared healthy label against saved artifacts."""
+    score = {
+        "required": case.kind == "healthy_control",
+        "passed": None,
+        "error": None,
+    }
+    if not score["required"]:
+        return score
+    score["passed"] = False
+    try:
+        configs = []
+        paths = []
+        for name in (case.reference_run, case.candidate_run):
+            paths.append(_workspace_path(name, workspace_root))
+            _workspace_path(f"{name}/metrics.jsonl", workspace_root)
+            configs.append(
+                asdict(TrainingConfig(**read_report(f"{name}/config.json", workspace_root)))
+            )
+        score.update(inspect_healthy_control(paths[0], paths[1], configs[0], configs[1]))
+        if not score["passed"]:
+            score["error"] = "Candidate does not meet the declared healthy-control thresholds"
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        score["error"] = str(error)
+    return score
+
+
+def _check_control_evidence(
+    case: SmokeCase,
+    report: dict[str, object],
+    health: dict[str, object],
+    workspace_root: Path,
+) -> None:
+    """Bind healthy-control config and metric evidence to current artifacts."""
+    configs = {
+        name: asdict(TrainingConfig(**read_report(f"{name}/config.json", workspace_root)))
+        for name in (case.reference_run, case.candidate_run)
+    }
+    reference, candidate = health["reference"], health["candidate"]
+    expected = {
+        "clean": {"run_directory": case.reference_run, **reference},
+        "candidate": {"run_directory": case.candidate_run, **candidate},
+        "validation_accuracy_drop": (
+            reference["final_validation_accuracy"] - candidate["final_validation_accuracy"]
+        ),
+        "validation_loss_ratio": (
+            candidate["final_validation_loss"] / reference["final_validation_loss"]
+        ),
+        "first_epoch_update_norm_ratio": (
+            candidate["first_epoch_parameter_update_norm"]
+            / reference["first_epoch_parameter_update_norm"]
+        ),
+        "final_epoch_gradient_norm_ratio": (
+            candidate["final_epoch_gradient_norm"] / reference["final_epoch_gradient_norm"]
+        ),
+    }
+    for entry in report["tool_trace"]:
+        result = entry["result"]
+        if not result["ok"]:
+            continue
+        if entry["tool_name"] == "load_run_config":
+            arguments = json.loads(entry["raw_arguments"])
+            name = arguments["run_directory"]
+            data = result["data"]
+            if not _same_json(data.get("config"), configs[name]):
+                raise ValueError("Healthy-control config evidence differs from current artifacts")
+        elif entry["tool_name"] == "compare_runs":
+            data = result["data"]
+            if not _same_json(data, expected):
+                raise ValueError(
+                    "Healthy-control comparison evidence differs from current artifacts"
+                )
+
+
 def score_diagnosis(
     case: SmokeCase, report: dict[str, object], *, source_path: str
 ) -> dict[str, object]:
@@ -135,6 +210,12 @@ def score_diagnosis(
             diagnosis.status == case.expected_diagnosis_status
             and top_cause == case.expected_root_cause
         )
+        if case.kind == "healthy_control":
+            score["correct"] = (
+                score["correct"]
+                and not diagnosis.ranked_causes
+                and diagnosis.proposed_patch is None
+            )
     except ValueError as error:
         score["error"] = str(error)
     return score
@@ -180,7 +261,8 @@ def score_repair(
     try:
         if not score["required"]:
             if case.repair_report is not None:
-                raise ValueError("Healthy self-comparison must not have a repair report")
+                label = "control" if case.kind == "healthy_control" else "self-comparison"
+                raise ValueError(f"Healthy {label} must not have a repair report")
             score["passed"] = True
             return score
         score.update(accepted=False, within_budget=False)
@@ -324,6 +406,7 @@ def evaluate_suite(suite: SmokeSuite, workspace_root: Path) -> dict[str, object]
     for case in suite.cases:
         diagnosis = _empty_diagnosis_score()
         repair = _empty_repair_score(case)
+        health = score_healthy_control(case, workspace_root=workspace_root)
         usage = _usage_metadata({})
         model = None
         try:
@@ -335,7 +418,13 @@ def evaluate_suite(suite: SmokeSuite, workspace_root: Path) -> dict[str, object]
             model = agent_report.get("model")
             usage = _usage_metadata(agent_report)
             diagnosis = score_diagnosis(case, agent_report, source_path=suite.source_path)
-            if diagnosis["error"] is None:
+            if health["required"] and health["passed"] and diagnosis["error"] is None:
+                try:
+                    _check_control_evidence(case, agent_report, health, workspace_root)
+                except (OSError, ValueError, TypeError, KeyError) as error:
+                    diagnosis["correct"] = False
+                    diagnosis["error"] = str(error)
+            if diagnosis["error"] is None and health["error"] is None:
                 repair = score_repair(
                     case,
                     agent_report,
@@ -344,7 +433,10 @@ def evaluate_suite(suite: SmokeSuite, workspace_root: Path) -> dict[str, object]
                 )
             else:
                 repair["skip_reason"] = "Diagnosis integrity or completion check failed"
-        errors = [item["error"] for item in (diagnosis, repair, usage) if item["error"]]
+        if health["error"] is not None:
+            diagnosis["correct"] = False
+            repair["skip_reason"] = "Healthy-control eligibility check failed"
+        errors = [item["error"] for item in (diagnosis, repair, usage, health) if item["error"]]
         if errors:
             outcome = "error"
         else:
@@ -362,6 +454,7 @@ def evaluate_suite(suite: SmokeSuite, workspace_root: Path) -> dict[str, object]
                 "diagnosis": diagnosis,
                 "repair": repair,
                 "usage": usage,
+                **({"healthy_control": health} if health["required"] else {}),
             }
         )
     faults = [case for case in cases if case["kind"] == "injected_fault"]
@@ -373,7 +466,7 @@ def evaluate_suite(suite: SmokeSuite, workspace_root: Path) -> dict[str, object]
     }
     token_totals["usage_complete"] = all(case["usage"]["usage_complete"] for case in cases)
     token_totals["scope"] = "Only the reports selected in this manifest"
-    return {
+    report = {
         "suite": suite.suite,
         "evaluation_type": "selected_run_smoke",
         "max_repair_epochs": suite.max_repair_epochs,
@@ -403,6 +496,18 @@ def evaluate_suite(suite: SmokeSuite, workspace_root: Path) -> dict[str, object]
         "selected_report_usage": token_totals,
         "cases": cases,
     }
+    controls = [case for case in cases if case["kind"] == "healthy_control"]
+    if controls:
+        report["summary"].update(
+            healthy_control_eligible=_fraction(
+                sum(case["healthy_control"]["passed"] is True for case in controls),
+                len(controls),
+            ),
+            healthy_control_no_action=_fraction(
+                sum(case["outcome"] == "passed" for case in controls), len(controls)
+            ),
+        )
+    return report
 
 
 def build_parser() -> argparse.ArgumentParser:

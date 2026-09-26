@@ -29,6 +29,63 @@ class RepairAttemptReport:
         return json.dumps(asdict(self), indent=2)
 
 
+def apply_config_patch(
+    failed_config: TrainingConfig,
+    *,
+    root_cause: RootCause,
+    field: str,
+    old_value: object,
+    new_value: object,
+) -> TrainingConfig:
+    """Validate an allowlisted patch and return a new training config."""
+    if root_cause is RootCause.HIGH_LEARNING_RATE:
+        if field != "learning_rate":
+            raise ValueError("High-learning-rate repair must target learning_rate")
+
+        if isinstance(old_value, bool) or not isinstance(old_value, (int, float)):
+            raise ValueError("Original learning rate must be a number")
+
+        if (
+            not isfinite(old_value)
+            or old_value <= 0.0
+            or isinstance(failed_config.learning_rate, bool)
+            or old_value != failed_config.learning_rate
+        ):
+            raise ValueError("Learning-rate patch does not match the current config")
+
+        if isinstance(new_value, bool) or not isinstance(new_value, (int, float)):
+            raise ValueError("Repaired learning rate must be a number")
+
+        if not isfinite(new_value) or new_value <= 0.0:
+            raise ValueError("Repaired learning rate must be finite and positive")
+
+        if new_value >= old_value:
+            raise ValueError("High-learning-rate repair must reduce learning_rate")
+
+        return replace(
+            failed_config,
+            learning_rate=float(new_value),
+        )
+
+    if root_cause is RootCause.MISSING_OPTIMIZER_STEP:
+        if field != "optimizer_step_enabled":
+            raise ValueError("Missing-step repair must target optimizer_step_enabled")
+
+        if (
+            failed_config.optimizer_step_enabled is not False
+            or old_value is not False
+            or new_value is not True
+        ):
+            raise ValueError("Missing-step repair requires a False -> True change")
+
+        return replace(
+            failed_config,
+            optimizer_step_enabled=True,
+        )
+
+    raise ValueError(f"Unsupported root cause: {root_cause}")
+
+
 def run_bounded_repair(
     reference_run: Path,
     failed_run: Path,
@@ -39,8 +96,8 @@ def run_bounded_repair(
 ) -> RepairAttemptReport:
     """Run an allowlisted repair under a fixed training budget."""
 
-    if max_epochs < 1:
-        raise ValueError("max_epochs must be at least 1")
+    if type(max_epochs) is not int or max_epochs < 1:
+        raise ValueError("max_epochs must be a positive integer")
 
     diagnosis = diagnose_training_failure(
         reference_run=reference_run,
@@ -59,43 +116,13 @@ def run_bounded_repair(
     proposed_patch = top_cause.proposed_patch
     failed_config = TrainingConfig.load(failed_config_path)
 
-    if top_cause.root_cause is RootCause.HIGH_LEARNING_RATE:
-        if proposed_patch.field != "learning_rate":
-            raise ValueError("High-learning-rate repair must target learning_rate")
-
-        if proposed_patch.old_value != failed_config.learning_rate:
-            raise ValueError("Learning-rate patch does not match the current config")
-
-        new_value = proposed_patch.new_value
-        if isinstance(new_value, bool) or not isinstance(new_value, (int, float)):
-            raise ValueError("Repaired learning rate must be a number")
-
-        if not isfinite(new_value) or new_value <= 0.0:
-            raise ValueError("Repaired learning rate must be finite and positive")
-
-        repaired_config = replace(
-            failed_config,
-            learning_rate=float(new_value),
-        )
-
-    elif top_cause.root_cause is RootCause.MISSING_OPTIMIZER_STEP:
-        if proposed_patch.field != "optimizer_step_enabled":
-            raise ValueError("Missing-step repair must target optimizer_step_enabled")
-
-        if (
-            failed_config.optimizer_step_enabled is not False
-            or proposed_patch.old_value is not False
-            or proposed_patch.new_value is not True
-        ):
-            raise ValueError("Missing-step repair requires a False -> True change")
-
-        repaired_config = replace(
-            failed_config,
-            optimizer_step_enabled=True,
-        )
-
-    else:
-        raise ValueError(f"Unsupported root cause: {top_cause.root_cause}")
+    repaired_config = apply_config_patch(
+        failed_config,
+        root_cause=top_cause.root_cause,
+        field=proposed_patch.field,
+        old_value=proposed_patch.old_value,
+        new_value=proposed_patch.new_value,
+    )
 
     repaired_config = replace(
         repaired_config,

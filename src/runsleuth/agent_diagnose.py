@@ -21,6 +21,12 @@ def build_parser() -> argparse.ArgumentParser:
         description="Diagnose training failures using bounded LLM tool calls.",
     )
     parser.add_argument(
+        "--profile",
+        choices=("training", "optimizer_binding"),
+        default="training",
+        help="Select ordinary training diagnosis or recorded optimizer binding diagnosis.",
+    )
+    parser.add_argument(
         "--source",
         type=Path,
         default=Path("src/runsleuth/train.py"),
@@ -47,16 +53,23 @@ def main() -> None:
         run_directory = Path("artifacts/agent_runs") / timestamp
         run_directory.mkdir(parents=True)
 
+        tools = (
+            DiagnosticTools(Path.cwd(), enable_optimizer_audit=True)
+            if args.profile == "optimizer_binding"
+            else DiagnosticTools(Path.cwd())
+        )
+        profile_options = {"profile": args.profile} if args.profile != "training" else {}
         report = run_diagnostic_agent(
             client,
             model,
-            DiagnosticTools(Path.cwd()),
+            tools,
             source_path=args.source.as_posix(),
             reference_run=args.reference_run.as_posix(),
             candidate_run=args.candidate_run.as_posix(),
             max_model_calls=args.max_model_calls,
             max_tool_calls=args.max_tool_calls,
             max_output_tokens=args.max_output_tokens,
+            **profile_options,
         )
 
         report_path = run_directory / "agent_report.json"
@@ -64,6 +77,11 @@ def main() -> None:
 
     print(f"agent_report={report_path}")
     print(f"status={report.status}")
+    if args.profile == "optimizer_binding":
+        print(
+            f"first_pass_valid={report.first_pass_valid}, "
+            f"validation_retries={report.validation_retries}/{report.max_validation_retries}"
+        )
     print(f"model_calls={report.model_calls}, tool_calls={report.tool_calls}")
     print(
         f"recorded_input_tokens={report.input_tokens}, "

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from runsleuth.compare import compare_runs
 from runsleuth.config import TrainingConfig
+from runsleuth.optimizer_evidence import inspect_optimizer_run
 from runsleuth.source_inspection import inspect_training_source
 from runsleuth.tool_contracts import (
     CompareRunsArgs,
@@ -33,6 +34,10 @@ TOOL_SPECS: dict[str, tuple[type[ToolArguments], str]] = {
         "Compare candidate training telemetry against a healthy reference.",
     ),
 }
+
+
+class InspectOptimizerRunArgs(LoadRunConfigArgs):
+    """Read saved optimizer evidence for one explicitly selected run."""
 
 
 @dataclass(frozen=True)
@@ -65,10 +70,17 @@ def failure(tool_name: str, code: str, message: str) -> ToolResult:
 class DiagnosticTools:
     """Execute registered tools within an application-selected project root."""
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(self, project_root: Path, *, enable_optimizer_audit: bool = False) -> None:
         self.project_root = project_root.resolve(strict=True)
         if not self.project_root.is_dir():
             raise ValueError("Project root must be a directory")
+        self.tool_specs = dict(TOOL_SPECS) if enable_optimizer_audit else TOOL_SPECS
+        if enable_optimizer_audit:
+            self.tool_specs["inspect_optimizer_run"] = (
+                InspectOptimizerRunArgs,
+                "Read recorded optimizer membership, per-group updates, and ID/OOD metrics. "
+                "This validates saved artifacts; it does not inspect a live optimizer.",
+            )
 
     def definitions(self) -> list[dict[str, object]]:
         """Describe available tools using their validated argument schemas."""
@@ -78,7 +90,7 @@ class DiagnosticTools:
                 "description": description,
                 "parameters": argument_model.model_json_schema(),
             }
-            for name, (argument_model, description) in TOOL_SPECS.items()
+            for name, (argument_model, description) in self.tool_specs.items()
         ]
 
     def execute(
@@ -86,7 +98,7 @@ class DiagnosticTools:
         tool_name: str,
         arguments: dict[str, object],
     ) -> ToolResult:
-        spec = TOOL_SPECS.get(tool_name)
+        spec = self.tool_specs.get(tool_name)
         if spec is None:
             return failure(tool_name, "unknown_tool", "Tool is not registered")
 
@@ -173,6 +185,12 @@ class DiagnosticTools:
 
             data = asdict(inspect_training_source(source))
             data["source_path"] = self._relative_name(source)
+            return data
+
+        if isinstance(arguments, InspectOptimizerRunArgs):
+            directory = self._run_directory(arguments.run_directory)
+            data = inspect_optimizer_run(directory, require_file=self._require_file)
+            data["run_directory"] = arguments.run_directory
             return data
 
         if isinstance(arguments, LoadRunConfigArgs):

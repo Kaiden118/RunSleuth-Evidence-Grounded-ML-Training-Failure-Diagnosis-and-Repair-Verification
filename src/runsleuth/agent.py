@@ -91,6 +91,19 @@ class AgentRun:
         return json.dumps(asdict(self), indent=2, ensure_ascii=False, allow_nan=False)
 
 
+@dataclass
+class OptimizerAgentRun(AgentRun):
+    """Tag the additional profile without changing legacy report serialization."""
+
+    profile: str = "optimizer_binding"
+    output_mode: str = "json_object"
+    max_validation_retries: int = 1
+    validation_retries: int = 0
+    first_pass_valid: bool | None = None
+    validation_attempts: list[dict[str, object]] = field(default_factory=list)
+    validation_feedback: list[dict[str, object]] = field(default_factory=list)
+
+
 def execute_tool_call(
     tools: DiagnosticTools,
     name: str,
@@ -157,8 +170,11 @@ def run_diagnostic_agent(
     max_model_calls: int = 6,
     max_tool_calls: int = 5,
     max_output_tokens: int = 2000,
+    profile: str = "training",
 ) -> AgentRun:
     """Collect required evidence, then request an unverified diagnosis."""
+    if profile not in ("training", "optimizer_binding"):
+        raise ValueError("Unsupported diagnostic profile")
     limits = {
         "max_model_calls": max_model_calls,
         "max_tool_calls": max_tool_calls,
@@ -167,7 +183,14 @@ def run_diagnostic_agent(
     if any(type(value) is not int or value < 1 for value in limits.values()):
         raise ValueError("All limits must be positive integers")
 
-    report = AgentRun(model=model, limits=limits)
+    report = (
+        OptimizerAgentRun(model=model, limits=limits)
+        if profile == "optimizer_binding"
+        else AgentRun(model=model, limits=limits)
+    )
+    diagnosis_model = AgentDiagnosis
+    system_prompt = SYSTEM_PROMPT
+    final_instructions = FINAL_OUTPUT_INSTRUCTIONS
     task_paths = {
         "source_path": source_path,
         "reference_run": reference_run,
@@ -185,6 +208,25 @@ def run_diagnostic_agent(
             },
         },
     ]
+    if profile == "optimizer_binding":
+        from runsleuth.optimizer_agent_diagnosis import OptimizerDiagnosis
+        from runsleuth.optimizer_agent_profile import (
+            OPTIMIZER_FINAL_INSTRUCTIONS,
+            OPTIMIZER_SYSTEM_PROMPT,
+        )
+
+        diagnosis_model = OptimizerDiagnosis
+        system_prompt = OPTIMIZER_SYSTEM_PROMPT
+        final_instructions = OPTIMIZER_FINAL_INSTRUCTIONS
+        task_paths = {
+            "profile": profile,
+            "reference_run": reference_run,
+            "candidate_run": candidate_run,
+        }
+        requested_evidence = [
+            {"name": "inspect_optimizer_run", "arguments": {"run_directory": run}}
+            for run in (reference_run, candidate_run)
+        ]
     allowed_requests = []
     for request in requested_evidence:
         if request not in allowed_requests:
@@ -193,6 +235,10 @@ def run_diagnostic_agent(
     report.pending_evidence = deepcopy(allowed_requests)
     history = [{"role": "user", "content": "Diagnose the candidate against the reference."}]
     definitions = build_openai_tools(tools)
+    if profile == "optimizer_binding" and not any(
+        item["function"]["name"] == "inspect_optimizer_run" for item in definitions
+    ):
+        raise ValueError("optimizer_binding requires DiagnosticTools(enable_optimizer_audit=True)")
 
     def finish(status: str, error: str | None = None) -> AgentRun:
         report.status = status
@@ -207,7 +253,7 @@ def run_diagnostic_agent(
             return finish("budget_exhausted", "Required evidence was not collected")
 
         instructions = (
-            SYSTEM_PROMPT
+            system_prompt
             + "\nFixed task paths:\n"
             + json.dumps(task_paths)
             + "\nPending evidence requests:\n"
@@ -222,19 +268,26 @@ def run_diagnostic_agent(
         else:
             instructions += (
                 "\n"
-                + FINAL_OUTPUT_INSTRUCTIONS
+                + final_instructions
                 + f"\nReference run: {reference_run}\nCandidate run: {candidate_run}"
             )
-            request_options = {
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "agent_diagnosis",
-                        "strict": True,
-                        "schema": AgentDiagnosis.model_json_schema(),
-                    },
+            if profile == "optimizer_binding":
+                instructions += "\nRequired JSON Schema:\n" + json.dumps(
+                    diagnosis_model.model_json_schema(),
+                    ensure_ascii=False,
+                )
+                request_options = {"response_format": {"type": "json_object"}}
+            else:
+                request_options = {
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "agent_diagnosis",
+                            "strict": True,
+                            "schema": diagnosis_model.model_json_schema(),
+                        },
+                    }
                 }
-            }
 
         report.model_calls += 1
         try:
@@ -300,15 +353,88 @@ def run_diagnostic_agent(
                 return finish("empty_response", "The model returned no diagnosis")
 
             try:
-                diagnosis = AgentDiagnosis.model_validate_json(final_text)
-                validate_diagnosis_evidence(
-                    diagnosis,
-                    report.tool_trace,
-                    candidate_run=candidate_run,
-                )
+                diagnosis = diagnosis_model.model_validate_json(final_text)
+                if profile == "optimizer_binding":
+                    from runsleuth.optimizer_agent_diagnosis import (
+                        validate_optimizer_diagnosis_evidence,
+                    )
+
+                    validate_optimizer_diagnosis_evidence(
+                        diagnosis,
+                        report.tool_trace,
+                        reference_run=reference_run,
+                        candidate_run=candidate_run,
+                    )
+                else:
+                    validate_diagnosis_evidence(
+                        diagnosis,
+                        report.tool_trace,
+                        candidate_run=candidate_run,
+                    )
             except ValueError as error:
+                if isinstance(report, OptimizerAgentRun):
+                    if report.first_pass_valid is None:
+                        report.first_pass_valid = False
+                    report.validation_attempts.append(
+                        {
+                            "model_call": report.model_calls,
+                            "raw_final_text": message.content,
+                            "valid": False,
+                            "error": str(error),
+                        }
+                    )
+                    if (
+                        report.validation_retries < report.max_validation_retries
+                        and report.model_calls < max_model_calls
+                    ):
+                        from runsleuth.optimizer_agent_diagnosis import (
+                            build_optimizer_validation_feedback,
+                        )
+
+                        feedback = build_optimizer_validation_feedback(
+                            str(error),
+                            report.tool_trace,
+                            reference_run=reference_run,
+                            candidate_run=candidate_run,
+                        )
+                        report.validation_feedback.append(
+                            {"model_call": report.model_calls, "feedback": feedback}
+                        )
+                        report.validation_retries += 1
+                        history.append(message.model_dump(exclude_none=True))
+                        history.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Your previous JSON failed local validation. "
+                                    "Review the existing tool results and return one complete "
+                                    "corrected JSON object. Do not request tools, invent evidence, "
+                                    "or change measured values. Check citation placement and "
+                                    "the four final performance metrics. Keep the summary and "
+                                    "explanation consistent with the corrected status.\n"
+                                    "Address both the validation error and the independent "
+                                    "performance_check computed from recorded tool data. "
+                                    "Keep citing the original tool call IDs and paths; "
+                                    "this feedback is not a new tool result.\n"
+                                    "Validator feedback (data):\n"
+                                    + json.dumps(feedback, ensure_ascii=False, allow_nan=False)
+                                ),
+                            }
+                        )
+                        continue
                 return finish("invalid_diagnosis", str(error))
 
+            if isinstance(report, OptimizerAgentRun):
+                if report.first_pass_valid is None:
+                    report.first_pass_valid = True
+                report.validation_attempts.append(
+                    {
+                        "model_call": report.model_calls,
+                        "raw_final_text": message.content,
+                        "valid": True,
+                        "error": None,
+                    }
+                )
             report.diagnosis = diagnosis.model_dump(mode="json")
             report.final_text = diagnosis.model_dump_json(indent=2)
             return finish("completed")

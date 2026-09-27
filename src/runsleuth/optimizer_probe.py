@@ -1,0 +1,179 @@
+"""A controlled, single-step experiment for stale optimizer parameter references.
+
+Both variants replace ``model.fc`` with an identical deep copy.  The only
+difference is whether the optimizer is built before or after that replacement.
+The caller owns model construction, initialization, device placement and RNG
+seeding; this module neither downloads nor saves anything.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import asdict
+
+import torch
+from torch import nn
+
+from runsleuth.optimizer_audit import audit_optimizer_parameters
+
+_VARIANTS = ("clean", "stale_head")
+
+
+def state_dict_sha256(state_dict: Mapping[str, torch.Tensor]) -> str:
+    """Hash names, dtypes, shapes and exact tensor bytes, including buffers.
+
+    Length-prefixed fields prevent ambiguous concatenation.  Viewing a flat
+    contiguous tensor as bytes also handles dtypes such as bfloat16 without
+    asking NumPy to represent the original dtype.
+    """
+    digest = hashlib.sha256()
+    for name in sorted(state_dict):
+        tensor = state_dict[name]
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError(f"State entry {name!r} must be a tensor")
+        if tensor.layout != torch.strided or tensor.is_quantized:
+            raise TypeError(f"State entry {name!r} must be a dense, unquantized tensor")
+        data = tensor.detach().cpu().contiguous().reshape(-1).view(torch.uint8)
+        fields = (
+            name.encode("utf-8"),
+            str(tensor.dtype).encode("ascii"),
+            json.dumps(list(tensor.shape), separators=(",", ":")).encode("ascii"),
+            data.numpy().tobytes(),
+        )
+        for field in fields:
+            digest.update(len(field).to_bytes(8, byteorder="big"))
+            digest.update(field)
+    return digest.hexdigest()
+
+
+def _parameter_groups(model: nn.Module) -> tuple[dict[str, nn.Parameter], dict[str, nn.Parameter]]:
+    if not isinstance(getattr(model, "fc", None), nn.Module):
+        raise ValueError("The probe requires a model.fc module")
+    parameters = dict(model.named_parameters())
+    head = {name: parameter for name, parameter in parameters.items() if name.startswith("fc.")}
+    backbone = {
+        name: parameter for name, parameter in parameters.items() if not name.startswith("fc.")
+    }
+    if not head:
+        raise ValueError("The probe requires at least one model.fc parameter")
+    if not backbone:
+        raise ValueError("The probe requires at least one backbone parameter outside model.fc")
+    return head, backbone
+
+
+def make_probe_optimizer(
+    model: nn.Module,
+    *,
+    variant: str,
+    learning_rate: float,
+    weight_decay: float,
+) -> torch.optim.AdamW:
+    """Replace the head with equal weights and deliberately vary operation order.
+
+    In ``stale_head``, AdamW retains references to the discarded head.  The
+    replacement head participates in autograd but is absent from the optimizer.
+    """
+    if variant not in _VARIANTS:
+        raise ValueError(f"Unknown variant {variant!r}; expected one of {_VARIANTS}")
+    _parameter_groups(model)
+    if not math.isfinite(learning_rate) or learning_rate <= 0:
+        raise ValueError("learning_rate must be finite and greater than zero")
+    if not math.isfinite(weight_decay) or weight_decay < 0:
+        raise ValueError("weight_decay must be finite and nonnegative")
+
+    new_head = deepcopy(model.fc)
+    if variant == "clean":
+        model.fc = new_head
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        )
+    else:
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        )
+        model.fc = new_head
+    return optimizer
+
+
+def _l2_norm(tensors) -> float:
+    squared = 0.0
+    for tensor in tensors:
+        values = tensor.detach().to(device="cpu", dtype=torch.float64)
+        squared += values.square().sum().item()
+    return math.sqrt(squared)
+
+
+def run_probe_step(
+    model: nn.Module,
+    inputs: torch.Tensor,
+    targets: torch.Tensor,
+    *,
+    variant: str,
+    learning_rate: float,
+    weight_decay: float,
+) -> dict:
+    """Run one training step and return JSON-serializable causal evidence.
+
+    Inputs and targets must already be on the model's device.  Accuracy is a
+    fraction in [0, 1].  Norms cover all named head/backbone parameter tensors;
+    parameters without gradients contribute zero to their gradient norm.
+    """
+    optimizer = make_probe_optimizer(
+        model,
+        variant=variant,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+    )
+    head, backbone = _parameter_groups(model)
+    groups = {"head": head, "backbone": backbone}
+    initial_state_sha256 = state_dict_sha256(model.state_dict())
+    before = {
+        name: parameter.detach().clone()
+        for parameters in groups.values()
+        for name, parameter in parameters.items()
+    }
+    audit = audit_optimizer_parameters(model, optimizer)
+
+    model.train()
+    # The model clear includes the new head, which stale_head's optimizer cannot
+    # clear.  The optimizer clear also includes its discarded head references.
+    model.zero_grad(set_to_none=True)
+    optimizer.zero_grad(set_to_none=True)
+    logits = model(inputs)
+    loss = nn.functional.cross_entropy(logits, targets)
+    pre_update_loss = float(loss.detach().item())
+    pre_update_accuracy = float((logits.detach().argmax(dim=1) == targets).float().mean().item())
+    if not math.isfinite(pre_update_loss) or not math.isfinite(pre_update_accuracy):
+        raise ValueError("Probe produced non-finite pre-update loss or accuracy")
+    loss.backward()
+
+    measurements = {
+        group: {
+            "gradient_l2_norm": _l2_norm(
+                parameter.grad for parameter in parameters.values() if parameter.grad is not None
+            )
+        }
+        for group, parameters in groups.items()
+    }
+    if any(not math.isfinite(item["gradient_l2_norm"]) for item in measurements.values()):
+        raise ValueError("Probe produced non-finite gradients")
+    optimizer.step()
+    for group, parameters in groups.items():
+        measurements[group]["parameter_update_l2_norm"] = _l2_norm(
+            parameter.detach() - before[name] for name, parameter in parameters.items()
+        )
+        if not math.isfinite(measurements[group]["parameter_update_l2_norm"]):
+            raise ValueError("Probe produced non-finite parameter updates")
+
+    return {
+        "variant": variant,
+        "initial_state_sha256": initial_state_sha256,
+        "pre_update_loss": pre_update_loss,
+        "pre_update_accuracy": pre_update_accuracy,
+        "optimizer_audit": asdict(audit),
+        **measurements,
+    }

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 FILES = (
+    "src/runsleuth/optimizer_probe.py",
     "src/runsleuth/parameter_group_monitor.py",
     "src/runsleuth/camelyon_optimizer_training.py",
     "tests/test_parameter_group_monitor.py",
@@ -17,6 +18,8 @@ FILES = (
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference-run", required=True)
+    parser.add_argument("--epochs", type=int, choices=(1, 2, 3), default=3)
+    parser.add_argument("--verify-rebind", action="store_true")
     args = parser.parse_args()
     commands = [
         [sys.executable, "-m", "ruff", "check", *FILES, "--fix"],
@@ -31,9 +34,11 @@ def main() -> int:
             "--reference-run",
             args.reference_run,
             "--epochs",
-            "3",
+            str(args.epochs),
         ],
     ]
+    if args.verify_rebind:
+        commands[-1].append("--verify-rebind")
     try:
         for command in commands:
             print("Running: " + subprocess.list2cmdline(command), flush=True)

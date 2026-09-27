@@ -6,7 +6,7 @@ import platform
 import shutil
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
-from math import isclose
+from math import isclose, isfinite
 from pathlib import Path
 from time import perf_counter
 
@@ -16,6 +16,32 @@ from runsleuth.camelyon_optimizer_probe import (
     load_reference,
     read_json,
 )
+
+REPAIR_POLICY = {"max_accuracy_drop": 0.01, "max_loss_ratio": 1.10}
+
+
+def _finite_number(value) -> bool:
+    return type(value) in (int, float) and isfinite(value)
+
+
+def _valid_domain_metrics(metrics: dict) -> bool:
+    return all(
+        _finite_number(metrics.get(f"{domain}_validation_{metric}"))
+        and 0 <= metrics[f"{domain}_validation_{metric}"]
+        and (metric != "accuracy" or metrics[f"{domain}_validation_{metric}"] <= 1)
+        for domain in ("id", "ood")
+        for metric in ("accuracy", "loss")
+    )
+
+
+def _complete_coverage(audit: dict) -> bool:
+    missing = audit.get("missing_trainable_names")
+    return (
+        isinstance(missing, (list, tuple))
+        and not missing
+        and audit.get("foreign_parameter_tensors") == 0
+        and audit.get("duplicate_parameter_occurrences") == 0
+    )
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -121,6 +147,129 @@ def compare_performance(variants: dict) -> dict:
     }
 
 
+def assess_rebind_training(variants: dict, expected_hash: str, epochs: int) -> dict:
+    """Apply development tolerances; acceptance is not a statistical recovery claim."""
+    clean, stale, repaired = (
+        variants[name] for name in ("clean", "stale_head", "stale_head_repaired")
+    )
+    repair = repaired.get("repair", {})
+    rows = repaired["parameter_group_epochs"]
+    all_rows = [
+        row for variant in (clean, stale, repaired) for row in variant["parameter_group_epochs"]
+    ]
+    structural = assess_training(variants, expected_hash, epochs)
+    structural.update(
+        {
+            "all_variants_completed_fixed_budget": all(
+                variant["status"] == "completed"
+                and variant["completed_epochs"] == epochs
+                and variant["final_metrics"].get("epoch") == epochs
+                and [row["epoch"] for row in variant["parameter_group_epochs"]]
+                == list(range(1, epochs + 1))
+                for variant in (clean, stale, repaired)
+            ),
+            "repaired_uses_reference_initial_state": (
+                repaired["initial_state_sha256"] == expected_hash
+            ),
+            "same_initial_validation_metrics_after_rebuild": all(
+                _valid_domain_metrics(variant["initialization_metrics"])
+                and all(
+                    isclose(
+                        value, variant["initialization_metrics"][key], rel_tol=1e-6, abs_tol=1e-6
+                    )
+                    for key, value in clean["initialization_metrics"].items()
+                )
+                for variant in (clean, stale, repaired)
+            ),
+            "same_optimizer_step_counts_after_rebuild": (
+                len(rows) == len(clean["parameter_group_epochs"]) == epochs
+                and all(
+                    type(row["optimizer_steps"]) is int
+                    and row["optimizer_steps"] == original["optimizer_steps"] > 0
+                    for row, original in zip(rows, clean["parameter_group_epochs"], strict=True)
+                )
+            ),
+            "reproduced_stale_binding_before_repair": (
+                repair.get("optimizer_audit_before") == stale["optimizer_audit"]
+            ),
+            "fresh_optimizer_before_first_step": (
+                repair.get("action") == "rebuild_optimizer"
+                and repair.get("timing") == "before_first_optimizer_step"
+                and type(repair.get("optimizer_state_entries_before")) is int
+                and repair["optimizer_state_entries_before"] == 0
+            ),
+            "rebuild_preserves_model_state": (
+                repair.get("model_state_sha256_before")
+                == repair.get("model_state_sha256_after")
+                == expected_hash
+            ),
+            "repaired_optimizer_covers_current_parameters_initially_and_finally": (
+                _complete_coverage(repaired["optimizer_audit"])
+                and _complete_coverage(repaired.get("final_optimizer_audit", {}))
+            ),
+            "all_recorded_group_norms_finite_nonnegative": bool(all_rows)
+            and all(
+                _finite_number(row[group][metric]) and row[group][metric] >= 0
+                for row in all_rows
+                for group in ("head", "backbone")
+                for metric in ("mean_gradient_l2_norm", "mean_parameter_update_l2_norm")
+            ),
+            "repaired_head_and_backbone_update_every_epoch": len(rows) == epochs
+            and all(
+                _finite_number(row[group][metric]) and row[group][metric] > 0
+                for row in rows
+                for group in ("head", "backbone")
+                for metric in ("mean_gradient_l2_norm", "mean_parameter_update_l2_norm")
+            ),
+        }
+    )
+    performance = []
+    repaired_metrics = repaired["final_metrics"]
+    for comparator in ("clean", "stale_head"):
+        reference_metrics = variants[comparator]["final_metrics"]
+        valid = _valid_domain_metrics(repaired_metrics) and _valid_domain_metrics(reference_metrics)
+        for domain in ("id", "ood"):
+            for metric in ("accuracy", "loss"):
+                actual = repaired_metrics[f"{domain}_validation_{metric}"]
+                reference = reference_metrics[f"{domain}_validation_{metric}"]
+                accuracy = metric == "accuracy"
+                threshold = REPAIR_POLICY["max_accuracy_drop" if accuracy else "max_loss_ratio"]
+                observed = None
+                if valid:
+                    observed = (
+                        reference - actual
+                        if accuracy
+                        else (actual / reference if reference > 0 else None)
+                    )
+                passed = valid and (
+                    actual >= reference - threshold if accuracy else actual <= reference * threshold
+                )
+                performance.append(
+                    {
+                        "comparator": comparator,
+                        "domain": domain,
+                        "metric": "accuracy_drop" if accuracy else "loss_ratio",
+                        "repaired_value": actual if _finite_number(actual) else None,
+                        "reference_value": reference if _finite_number(reference) else None,
+                        "observed_value": observed if _finite_number(observed) else None,
+                        "operator": "<=",
+                        "threshold": threshold,
+                        "passed": passed,
+                    }
+                )
+    structure_verified = all(structural.values())
+    performance_nonregression = all(check["passed"] for check in performance)
+    return {
+        "decision": "accepted" if structure_verified and performance_nonregression else "rejected",
+        "structural_checks": structural,
+        "structure_verified": structure_verified,
+        "policy": dict(REPAIR_POLICY),
+        "performance_checks": performance,
+        "performance_nonregression": performance_nonregression,
+        "scope": "development policy; no statistical or performance-recovery claim",
+    }
+
+
 def _run_variant(variant, config, reference_manifest, state, expected_hash, directory, device):
     import torch
     from torch import nn
@@ -132,7 +281,11 @@ def _run_variant(variant, config, reference_manifest, state, expected_hash, dire
     )
     from runsleuth.camelyon_data import build_camelyon_data
     from runsleuth.optimizer_audit import audit_optimizer_parameters
-    from runsleuth.optimizer_probe import make_probe_optimizer, state_dict_sha256
+    from runsleuth.optimizer_probe import (
+        make_probe_optimizer,
+        make_repaired_probe_optimizer,
+        state_dict_sha256,
+    )
     from runsleuth.parameter_group_monitor import ParameterGroupMonitor
     from runsleuth.telemetry import EpochMetrics, append_epoch_metrics
     from runsleuth.train import seed_everything, train_one_epoch
@@ -160,12 +313,17 @@ def _run_variant(variant, config, reference_manifest, state, expected_hash, dire
         model = build_camelyon_model(pretrained=False)
         model.load_state_dict(state, strict=True)
         model.to(device)
-        optimizer = make_probe_optimizer(
-            model,
-            variant=variant,
-            learning_rate=config.learning_rate,
-            weight_decay=config.weight_decay,
-        )
+        if variant == "stale_head_repaired":
+            optimizer, report["repair"] = make_repaired_probe_optimizer(
+                model, learning_rate=config.learning_rate, weight_decay=config.weight_decay
+            )
+        else:
+            optimizer = make_probe_optimizer(
+                model,
+                variant=variant,
+                learning_rate=config.learning_rate,
+                weight_decay=config.weight_decay,
+            )
         report["initial_state_sha256"] = state_dict_sha256(model.state_dict())
         if report["initial_state_sha256"] != expected_hash:
             raise ValueError("Variant does not match the reference initialization")
@@ -222,6 +380,7 @@ def _run_variant(variant, config, reference_manifest, state, expected_hash, dire
                 ),
                 flush=True,
             )
+        report["final_optimizer_audit"] = asdict(audit_optimizer_parameters(model, optimizer))
         checkpoint = directory / "model_state_dict.pt"
         torch.save(model.state_dict(), checkpoint)
         report["model_checkpoint"] = str(checkpoint)
@@ -242,8 +401,10 @@ def run_optimizer_training(
     output_dir: Path,
     epochs: int = 3,
     requested_device: str | None = None,
+    *,
+    verify_rebind: bool = False,
 ) -> Path:
-    """Train two variants from the saved initialization; never load final reference weights."""
+    """Train controlled variants from the saved initialization under a fixed budget."""
     if isinstance(epochs, bool) or not isinstance(epochs, int) or not 1 <= epochs <= 3:
         raise ValueError("epochs must be an integer between 1 and 3")
     import torch
@@ -260,11 +421,16 @@ def run_optimizer_training(
     directory = output_dir / f"pair-{timestamp}"
     directory.mkdir(parents=True)
     report_path = directory / "optimizer_training_report.json"
+    variants = ("clean", "stale_head") + (("stale_head_repaired",) if verify_rebind else ())
     report = {
         "schema_version": 1,
         "status": "running",
         "error": None,
-        "task": "camelyon17_paired_optimizer_binding_experiment",
+        "task": (
+            "camelyon17_optimizer_rebind_verification"
+            if verify_rebind
+            else "camelyon17_paired_optimizer_binding_experiment"
+        ),
         "reference_run": str(reference_run),
         "epochs_per_variant": epochs,
         "training_mode": "from_reference_initial_state",
@@ -272,6 +438,8 @@ def run_optimizer_training(
         "checkpoint_selection": "fixed_final_epoch",
         "test_evaluated": False,
         "repair_acceptance_evaluated": False,
+        "repair_acceptance_requested": verify_rebind,
+        "training_epoch_upper_bound": len(variants) * epochs,
         "variants": {},
         "controls": {
             "same_initial_parameters_and_buffers": True,
@@ -284,9 +452,41 @@ def run_optimizer_training(
             "ood_used_for_selection": False,
         },
     }
+    if verify_rebind:
+        report["controls"].pop("ood_used_for_selection")
+        report["controls"].update(
+            {
+                "gradient_clear": "model.zero_grad before every training forward in all variants",
+                "variant_difference": (
+                    "clean, stale head, and stale head with optimizer rebuilt before training"
+                ),
+                "performance_threshold": dict(REPAIR_POLICY),
+                "ood_used_for_repair_acceptance": True,
+                "ood_used_for_checkpoint_selection": False,
+            }
+        )
     print(f"experiment_directory={directory}", flush=True)
     started = perf_counter()
     try:
+        if verify_rebind:
+            policy_path = directory / "repair_verification_policy.json"
+            write_json(
+                policy_path,
+                {
+                    "policy": dict(REPAIR_POLICY),
+                    "scope": "development experiment; not a held-out benchmark",
+                    "epochs_per_variant": epochs,
+                    "comparators": ["clean", "stale_head"],
+                    "domains": ["id", "ood"],
+                    "checkpoint_selection": "fixed_final_epoch",
+                    "ood_used_for_repair_acceptance": True,
+                    "ood_used_for_checkpoint_selection": False,
+                },
+            )
+            report["repair_verification_policy"] = {
+                "path": str(policy_path),
+                "sha256": file_sha256(policy_path),
+            }
         write_json(
             directory / "environment.json",
             {
@@ -307,7 +507,7 @@ def run_optimizer_training(
         state = torch.load(checkpoint, map_location="cpu", weights_only=True)
         expected_hash = state_dict_sha256(state)
         report["reference_initial_state_sha256"] = expected_hash
-        for variant in ("clean", "stale_head"):
+        for variant in variants:
             variant_config = replace(
                 config,
                 epochs=epochs,
@@ -328,11 +528,17 @@ def run_optimizer_training(
         report["mechanism_reproduced"] = all(report["checks"].values())
         report["performance_comparison"] = compare_performance(report["variants"])
         report["status"] = "completed" if report["mechanism_reproduced"] else "inconclusive"
+        if verify_rebind:
+            report["repair_verification"] = assess_rebind_training(
+                report["variants"], expected_hash, epochs
+            )
+            report["repair_acceptance_evaluated"] = True
+            report["status"] = "completed"
     except (Exception, KeyboardInterrupt) as error:
         report["status"] = "failed"
         report["error"] = {"type": type(error).__name__, "message": str(error)}
         # Each entered variant retains its own partial report, including failed epochs.
-        for variant in ("clean", "stale_head"):
+        for variant in variants:
             partial = directory / variant / "run_report.json"
             if variant not in report["variants"] and partial.is_file():
                 report["variants"][variant] = read_json(partial)
@@ -344,6 +550,8 @@ def run_optimizer_training(
     print(f"status={report['status']}", flush=True)
     print("checks=" + json.dumps(report["checks"]), flush=True)
     print("performance_comparison=" + json.dumps(report["performance_comparison"]), flush=True)
+    if verify_rebind:
+        print("repair_verification=" + json.dumps(report["repair_verification"]), flush=True)
     return report_path
 
 
@@ -353,11 +561,20 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/optimizer_experiments"))
     parser.add_argument("--epochs", type=int, choices=(1, 2, 3), default=3)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"))
+    parser.add_argument("--verify-rebind", action="store_true")
     args = parser.parse_args()
     report_path = run_optimizer_training(
-        args.reference_run, args.output_dir, args.epochs, args.device
+        args.reference_run,
+        args.output_dir,
+        args.epochs,
+        args.device,
+        verify_rebind=args.verify_rebind,
     )
-    if read_json(report_path)["status"] != "completed":
+    report = read_json(report_path)
+    if (
+        report["status"] != "completed"
+        or report.get("repair_verification", {}).get("decision") == "rejected"
+    ):
         raise SystemExit(1)
 
 

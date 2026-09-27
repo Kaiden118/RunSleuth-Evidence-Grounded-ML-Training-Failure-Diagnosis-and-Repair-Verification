@@ -4,6 +4,9 @@ import copy
 import hashlib
 import importlib.util
 import json
+import runpy
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +14,7 @@ from unittest.mock import patch
 
 from runsleuth import camelyon_optimizer_training as experiment
 from runsleuth.camelyon_config import CamelyonConfig
+from runsleuth.optimizer_audit import OptimizerAudit
 
 TORCH_AVAILABLE = bool(
     importlib.util.find_spec("torch") and importlib.util.find_spec("torchvision")
@@ -29,7 +33,251 @@ def file_hash(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def rebind_training_fixture():
+    audit = OptimizerAudit(
+        model_parameter_tensors=4,
+        trainable_parameter_tensors=4,
+        optimizer_unique_parameter_tensors=4,
+        missing_trainable_names=(),
+        foreign_parameter_tensors=0,
+        duplicate_parameter_occurrences=0,
+    ).to_dict()
+    metrics = {
+        "id_validation_accuracy": 0.95,
+        "id_validation_loss": 0.2,
+        "ood_validation_accuracy": 0.9,
+        "ood_validation_loss": 0.4,
+    }
+    clean = {
+        "status": "completed",
+        "initial_state_sha256": "initial",
+        "completed_epochs": 2,
+        "initialization_metrics": {key: 0.5 for key in metrics},
+        "optimizer_audit": audit,
+        "final_optimizer_audit": copy.deepcopy(audit),
+        "parameter_group_epochs": [
+            {
+                "epoch": epoch,
+                "optimizer_steps": 3,
+                "head": {"mean_gradient_l2_norm": 1.0, "mean_parameter_update_l2_norm": 0.01},
+                "backbone": {"mean_gradient_l2_norm": 2.0, "mean_parameter_update_l2_norm": 0.02},
+            }
+            for epoch in (1, 2)
+        ],
+        "final_metrics": {"epoch": 2, **metrics},
+    }
+    stale = copy.deepcopy(clean)
+    for key in ("optimizer_audit", "final_optimizer_audit"):
+        stale[key].update(
+            missing_trainable_names=["fc.bias", "fc.weight"], foreign_parameter_tensors=2
+        )
+    for row in stale["parameter_group_epochs"]:
+        row["head"]["mean_parameter_update_l2_norm"] = 0.0
+    repaired = copy.deepcopy(clean)
+    repaired["repair"] = {
+        "action": "rebuild_optimizer",
+        "timing": "before_first_optimizer_step",
+        "optimizer_state_entries_before": 0,
+        "model_state_sha256_before": "initial",
+        "model_state_sha256_after": "initial",
+        "optimizer_audit_before": copy.deepcopy(stale["optimizer_audit"]),
+    }
+    return {"clean": clean, "stale_head": stale, "stale_head_repaired": repaired}
+
+
+class RebindDecisionTests(unittest.TestCase):
+    def test_acceptance_requires_structure_and_both_domain_comparators(self):
+        variants = rebind_training_fixture()
+        original = copy.deepcopy(variants)
+        result = experiment.assess_rebind_training(variants, "initial", 2)
+        self.assertEqual(result["decision"], "accepted")
+        self.assertTrue(result["structure_verified"])
+        self.assertTrue(all(result["structural_checks"].values()))
+        self.assertTrue(result["performance_nonregression"])
+        self.assertEqual(result["policy"], {"max_accuracy_drop": 0.01, "max_loss_ratio": 1.10})
+        self.assertEqual(
+            {
+                (row["comparator"], row["domain"], row["metric"])
+                for row in result["performance_checks"]
+            },
+            {
+                (comparator, domain, metric)
+                for comparator in ("clean", "stale_head")
+                for domain in ("id", "ood")
+                for metric in ("accuracy_drop", "loss_ratio")
+            },
+        )
+        self.assertEqual(len(result["performance_checks"]), 8)
+        self.assertTrue(all(row["passed"] for row in result["performance_checks"]))
+        self.assertEqual(variants, original, "Verification must not change recorded evidence")
+        self.assertEqual(
+            experiment.assess_rebind_training(json.loads(json.dumps(variants)), "initial", 2),
+            result,
+            "In-memory audits and saved JSON must produce the same verification decision",
+        )
+
+    def test_metric_regression_rejects_despite_structural_repair(self):
+        for domain in ("id", "ood"):
+            for metric, value in (("accuracy", 0.5), ("loss", 1.0)):
+                with self.subTest(domain=domain, metric=metric):
+                    variants = rebind_training_fixture()
+                    metrics = variants["stale_head_repaired"]["final_metrics"]
+                    metrics[f"{domain}_validation_{metric}"] = value
+                    result = experiment.assess_rebind_training(variants, "initial", 2)
+                    self.assertTrue(result["structure_verified"])
+                    self.assertFalse(result["performance_nonregression"])
+                    self.assertEqual(result["decision"], "rejected")
+
+    def test_accuracy_and_loss_thresholds_are_inclusive_without_accepting_regression(self):
+        cases = ((0.89, 0.44, True), (0.889, 0.44, False), (0.89, 0.441, False))
+        for accuracy, loss, accepted in cases:
+            with self.subTest(accuracy=accuracy, loss=loss):
+                variants = rebind_training_fixture()
+                metrics = variants["stale_head_repaired"]["final_metrics"]
+                metrics.update(ood_validation_accuracy=accuracy, ood_validation_loss=loss)
+                result = experiment.assess_rebind_training(variants, "initial", 2)
+                self.assertEqual(result["performance_nonregression"], accepted)
+                self.assertEqual(result["decision"], "accepted" if accepted else "rejected")
+
+    def test_stale_comparator_can_reject_even_when_clean_comparison_passes(self):
+        variants = rebind_training_fixture()
+        variants["stale_head"]["final_metrics"]["ood_validation_accuracy"] = 0.94
+        result = experiment.assess_rebind_training(variants, "initial", 2)
+        self.assertTrue(result["structure_verified"])
+        self.assertTrue(
+            all(
+                row["passed"]
+                for row in result["performance_checks"]
+                if row["comparator"] == "clean"
+            )
+        )
+        self.assertFalse(result["performance_nonregression"])
+        self.assertEqual(result["decision"], "rejected")
+
+    def test_structural_failures_reject_even_with_equal_final_performance(self):
+        cases = (
+            (("repair", "model_state_sha256_after"), "changed"),
+            (("repair", "optimizer_state_entries_before"), 1),
+            (("repair", "optimizer_audit_before", "missing_trainable_names"), []),
+            (("optimizer_audit", "foreign_parameter_tensors"), 2),
+            (("final_optimizer_audit", "missing_trainable_names"), ["fc.weight"]),
+            (("parameter_group_epochs", 0, "head", "mean_parameter_update_l2_norm"), 0.0),
+            (("parameter_group_epochs", 1, "head", "mean_gradient_l2_norm"), float("inf")),
+            (("parameter_group_epochs", 1, "optimizer_steps"), 2),
+            (("completed_epochs",), 1),
+            (("final_metrics", "epoch"), 1),
+            (("status",), "failed"),
+        )
+        for path, value in cases:
+            with self.subTest(path=path):
+                variants = rebind_training_fixture()
+                target = variants["stale_head_repaired"]
+                for component in path[:-1]:
+                    target = target[component]
+                target[path[-1]] = value
+                result = experiment.assess_rebind_training(variants, "initial", 2)
+                self.assertFalse(result["structure_verified"])
+                self.assertTrue(result["performance_nonregression"])
+                self.assertEqual(result["decision"], "rejected")
+
+    def test_invalid_performance_values_fail_closed(self):
+        for variant in ("clean", "stale_head", "stale_head_repaired"):
+            for metric, value in (
+                ("id_validation_accuracy", float("nan")),
+                ("ood_validation_loss", float("inf")),
+                ("id_validation_accuracy", 1.1),
+                ("ood_validation_loss", -0.1),
+            ):
+                with self.subTest(variant=variant, metric=metric, value=value):
+                    variants = rebind_training_fixture()
+                    variants[variant]["final_metrics"][metric] = value
+                    result = experiment.assess_rebind_training(variants, "initial", 2)
+                    self.assertFalse(result["performance_nonregression"])
+                    self.assertEqual(result["decision"], "rejected")
+                    json.dumps(result, allow_nan=False)
+
+    def test_zero_reference_loss_does_not_divide_by_zero(self):
+        for repaired_loss in (0.0, 0.01):
+            with self.subTest(repaired_loss=repaired_loss):
+                variants = rebind_training_fixture()
+                variants["clean"]["final_metrics"]["id_validation_loss"] = 0.0
+                repaired = variants["stale_head_repaired"]["final_metrics"]
+                repaired["id_validation_loss"] = repaired_loss
+                result = experiment.assess_rebind_training(variants, "initial", 2)
+                row = next(
+                    row
+                    for row in result["performance_checks"]
+                    if (row["comparator"], row["domain"], row["metric"])
+                    == ("clean", "id", "loss_ratio")
+                )
+                self.assertIsNone(row["observed_value"])
+                self.assertEqual(row["passed"], repaired_loss == 0.0)
+                expected = "accepted" if repaired_loss == 0.0 else "rejected"
+                self.assertEqual(result["decision"], expected)
+                json.dumps(result, allow_nan=False)
+
+
 class ArgumentTests(unittest.TestCase):
+    def test_cli_forwards_rebind_and_returns_failure_for_rejected_repair(self):
+        for enabled, decision in ((False, None), (True, "accepted"), (True, "rejected")):
+            with self.subTest(enabled=enabled, decision=decision):
+                args = ["optimizer_training", "--reference-run", "reference", "--epochs", "2"]
+                if enabled:
+                    args.append("--verify-rebind")
+                report = {"status": "completed", "repair_verification": {"decision": decision}}
+                with (
+                    patch.object(sys, "argv", args),
+                    patch.object(
+                        experiment, "run_optimizer_training", return_value=Path("report")
+                    ) as run,
+                    patch.object(experiment, "read_json", return_value=report),
+                ):
+                    if decision == "rejected":
+                        with self.assertRaises(SystemExit) as error:
+                            experiment.main()
+                        self.assertEqual(error.exception.code, 1)
+                    else:
+                        experiment.main()
+                self.assertEqual(run.call_args.args[2], 2)
+                self.assertEqual(run.call_args.kwargs, {"verify_rebind": enabled})
+
+    def test_check_script_forwards_budget_and_stops_before_training_on_failed_gate(self):
+        root = Path(__file__).resolve().parents[1]
+        script = root / "scripts" / "check_optimizer_training.py"
+        main = runpy.run_path(str(script))["main"]
+        for failed_gate in (None, 2):
+            with self.subTest(failed_gate=failed_gate):
+                outcomes = (
+                    None
+                    if failed_gate is None
+                    else [None] * failed_gate + [subprocess.CalledProcessError(7, ["pytest"])]
+                )
+                with (
+                    patch.object(
+                        sys,
+                        "argv",
+                        [
+                            str(script),
+                            "--reference-run",
+                            "reference",
+                            "--epochs",
+                            "2",
+                            "--verify-rebind",
+                        ],
+                    ),
+                    patch("subprocess.run", side_effect=outcomes) as run,
+                    patch("builtins.print"),
+                ):
+                    code = main()
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertEqual(code, 0 if failed_gate is None else 7)
+                if failed_gate is None:
+                    self.assertEqual(commands[-1][-3:], ["--epochs", "2", "--verify-rebind"])
+                else:
+                    self.assertFalse(
+                        any("runsleuth.camelyon_optimizer_training" in row for row in commands)
+                    )
+
     def test_invalid_epoch_budget_does_no_work(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "uncreated"
@@ -145,7 +393,7 @@ class OptimizerTrainingTests(unittest.TestCase):
             manifest=copy.deepcopy(self.manifest),
         )
 
-    def run_pair(self):
+    def run_pair(self, *, verify_rebind=False):
         with (
             patch("runsleuth.camelyon.build_camelyon_model", side_effect=self.build_model) as model,
             patch(
@@ -158,9 +406,10 @@ class OptimizerTrainingTests(unittest.TestCase):
                 self.output,
                 epochs=2,
                 requested_device="cpu",
+                verify_rebind=verify_rebind,
             )
-        self.assertEqual(model.call_count, 2)
-        self.assertEqual(data.call_count, 2)
+        self.assertEqual(model.call_count, 3 if verify_rebind else 2)
+        self.assertEqual(data.call_count, 3 if verify_rebind else 2)
         return report_path
 
     def test_pair_starts_identically_and_isolates_head_updates_through_both_epochs(self):
@@ -244,6 +493,51 @@ class OptimizerTrainingTests(unittest.TestCase):
         self.assertEqual(clean["foreign_parameter_tensors"], 0)
         self.assertEqual(set(stale["missing_trainable_names"]), {"fc.weight", "fc.bias"})
         self.assertEqual(stale["foreign_parameter_tensors"], 2)
+
+    def test_rebuild_restores_updates_without_changing_training_control_or_downloads(self):
+        from runsleuth.optimizer_probe import state_dict_sha256
+
+        original_run_variant = experiment._run_variant
+        observed_policies = []
+
+        def guarded_run_variant(*args, **kwargs):
+            directory = args[5]
+            policy = directory.parent / "repair_verification_policy.json"
+            self.assertTrue(policy.is_file(), "Freeze policy before any variant starts")
+            observed_policies.append(policy.read_bytes())
+            return original_run_variant(*args, **kwargs)
+
+        with patch.object(experiment, "_run_variant", side_effect=guarded_run_variant):
+            report_path = self.run_pair(verify_rebind=True)
+        report = read_json(report_path)
+        self.assertEqual(len(observed_policies), 3)
+        self.assertTrue(all(value == observed_policies[0] for value in observed_policies))
+        self.assertEqual(set(report["variants"]), {"clean", "stale_head", "stale_head_repaired"})
+        clean = report["variants"]["clean"]
+        stale = report["variants"]["stale_head"]
+        repaired = report["variants"]["stale_head_repaired"]
+        repair = repaired["repair"]
+        initial_hash = state_dict_sha256(self.initial)
+        self.assertEqual(repair["model_state_sha256_before"], initial_hash)
+        self.assertEqual(repair["model_state_sha256_after"], initial_hash)
+        self.assertEqual(repair["optimizer_state_entries_before"], 0)
+        self.assertEqual(repair["optimizer_audit_before"], stale["optimizer_audit"])
+        self.assertEqual(repaired["optimizer_audit"], clean["optimizer_audit"])
+        self.assertEqual(repaired["final_optimizer_audit"], clean["final_optimizer_audit"])
+        self.assertEqual(self.models[0].training_order, self.models[2].training_order)
+        self.assertEqual(self.models[1].training_order, self.models[2].training_order)
+        self.assertEqual(repaired["parameter_group_epochs"], clean["parameter_group_epochs"])
+        for row in repaired["parameter_group_epochs"]:
+            self.assertGreater(row["head"]["mean_parameter_update_l2_norm"], 0)
+        for key, value in self.models[0].state_dict().items():
+            self.assertTrue(self.torch.equal(value, self.models[2].state_dict()[key]), key)
+        verification = report["repair_verification"]
+        self.assertTrue(verification["structure_verified"])
+        self.assertEqual(
+            verification["decision"],
+            "accepted" if verification["performance_nonregression"] else "rejected",
+        )
+        self.assertFalse(report["test_evaluated"])
 
     def test_changed_sample_identity_records_failure_before_any_training(self):
         self.manifest["splits"]["train"]["selected_sample_ids"][0] = 999

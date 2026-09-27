@@ -82,3 +82,30 @@ performance-recovery claim is made.
 
 Local report:
 `artifacts/optimizer_experiments/pair-20260927T012822181931Z/optimizer_training_report.json`
+
+## Bounded Rebinding Verification
+
+Three variants were trained for three epochs each from the same saved
+initialization and selected data: clean, stale head, and repaired stale head.
+The repair rebuilt AdamW before the first optimizer step.
+
+All 19 structural checks passed. The repaired head updated in every epoch,
+and its recorded training and validation metrics matched the clean control.
+
+Performance verification passed 6 of 8 checks. Against the stale-head control:
+
+- OOD accuracy decreased from 91.56% to 90.16%, exceeding the allowed
+  1-percentage-point decrease.
+- OOD loss increased from 0.320098 to 0.378694, a ratio of 1.1831,
+  exceeding the allowed ratio of 1.10.
+
+Result: `status=completed`, `structure_verified=true`,
+`performance_nonregression=false`, `decision=rejected`.
+
+This is a single-seed development experiment demonstrating a structural
+repair that did not meet the performance acceptance policy. It does not
+establish that the defect improves generalization. No test-set evaluation
+or LLM call was performed in this experiment.
+
+Report:
+`artifacts/optimizer_experiments/pair-20260927T061231717726Z/optimizer_training_report.json`

@@ -108,6 +108,40 @@ def _l2_norm(tensors) -> float:
     return math.sqrt(squared)
 
 
+def make_repaired_probe_optimizer(
+    model: nn.Module,
+    *,
+    learning_rate: float,
+    weight_decay: float,
+) -> tuple[torch.optim.AdamW, dict]:
+    """Reproduce a stale binding and rebuild it before any optimizer step.
+
+    Both the single-step probe and the bounded training experiment use this
+    same intervention. This is not a checkpoint-resume repair: a nonempty
+    optimizer state is rejected rather than discarded.
+    """
+    optimizer = make_probe_optimizer(
+        model,
+        variant="stale_head",
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+    )
+    audit_before = audit_optimizer_parameters(model, optimizer)
+    hash_before = state_dict_sha256(model.state_dict())
+    state_entries_before = len(optimizer.state)
+    if state_entries_before != 0:
+        raise ValueError("Cannot rebuild an optimizer with nonempty state")
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    return optimizer, {
+        "action": "rebuild_optimizer",
+        "timing": "before_first_optimizer_step",
+        "optimizer_state_entries_before": state_entries_before,
+        "model_state_sha256_before": hash_before,
+        "model_state_sha256_after": state_dict_sha256(model.state_dict()),
+        "optimizer_audit_before": asdict(audit_before),
+    }
+
+
 def run_probe_step(
     model: nn.Module,
     inputs: torch.Tensor,
@@ -125,30 +159,18 @@ def run_probe_step(
     ``stale_head_repaired`` records a genuine stale binding, then rebuilds the
     optimizer before training.  A nonempty optimizer state is never discarded.
     """
-    optimizer = make_probe_optimizer(
-        model,
-        variant="stale_head" if variant == "stale_head_repaired" else variant,
-        learning_rate=learning_rate,
-        weight_decay=weight_decay,
-    )
     repair = None
     if variant == "stale_head_repaired":
-        audit_before = audit_optimizer_parameters(model, optimizer)
-        hash_before = state_dict_sha256(model.state_dict())
-        state_entries_before = len(optimizer.state)
-        if state_entries_before != 0:
-            raise ValueError("Cannot rebuild an optimizer with nonempty state")
-        optimizer = torch.optim.AdamW(
-            model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        optimizer, repair = make_repaired_probe_optimizer(
+            model, learning_rate=learning_rate, weight_decay=weight_decay
         )
-        repair = {
-            "action": "rebuild_optimizer",
-            "timing": "before_first_optimizer_step",
-            "optimizer_state_entries_before": state_entries_before,
-            "model_state_sha256_before": hash_before,
-            "model_state_sha256_after": state_dict_sha256(model.state_dict()),
-            "optimizer_audit_before": asdict(audit_before),
-        }
+    else:
+        optimizer = make_probe_optimizer(
+            model,
+            variant=variant,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+        )
     head, backbone = _parameter_groups(model)
     groups = {"head": head, "backbone": backbone}
     initial_state_sha256 = state_dict_sha256(model.state_dict())

@@ -3,6 +3,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white)
 ![LLM](https://img.shields.io/badge/LLM-Gemini-8E75B2)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 RunSleuth uses an LLM agent to inspect training code, configuration, and metrics,
 propose a small configuration fix, and verify it through bounded retraining.
@@ -89,3 +90,10 @@ python -m pytest
 ruff check .
 git diff --check
 ```
+
+## License
+
+RunSleuth's original source code is licensed under the [MIT License](LICENSE).
+
+Third-party dependencies, datasets, and pretrained weights remain subject
+to their respective licenses and terms.

@@ -1,10 +1,8 @@
-# RunSleuth
+# RunSleuth: Evidence-grounded ML Training Failure Diagnosis and Repair Verification
 
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white)
 ![LLM](https://img.shields.io/badge/LLM-Gemini-8E75B2)
-
-**Evidence-grounded ML training diagnosis and verified repair.**
 
 RunSleuth uses an LLM agent to inspect training code, configuration, and metrics,
 propose a small configuration fix, and verify it through bounded retraining.

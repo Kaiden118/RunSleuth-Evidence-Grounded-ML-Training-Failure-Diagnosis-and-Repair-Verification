@@ -2,14 +2,20 @@
 
 import copy
 import json
+import runpy
+import subprocess
+import sys
 import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
+import runsleuth.camelyon_optimizer_probe as probe
 from runsleuth.camelyon_config import CamelyonConfig
 from runsleuth.camelyon_optimizer_probe import (
     assess_probe,
+    assess_rebind,
     check_matching_data,
     file_sha256,
     load_reference,
@@ -55,6 +61,21 @@ def variants_fixture():
     )
     stale["head"]["parameter_update_l2_norm"] = 0.0
     return {"clean": clean, "stale_head": stale}
+
+
+def repaired_variants_fixture():
+    variants = variants_fixture()
+    repaired = copy.deepcopy(variants["clean"])
+    repaired["repair"] = {
+        "action": "rebuild_optimizer",
+        "timing": "before_first_optimizer_step",
+        "optimizer_state_entries_before": 0,
+        "model_state_sha256_before": "initial",
+        "model_state_sha256_after": "initial",
+        "optimizer_audit_before": copy.deepcopy(variants["stale_head"]["optimizer_audit"]),
+    }
+    variants["stale_head_repaired"] = repaired
+    return variants
 
 
 class ReferenceTests(unittest.TestCase):
@@ -147,6 +168,200 @@ class ProbeDecisionTests(unittest.TestCase):
         variants = variants_fixture()
         variants["stale_head"]["backbone"]["parameter_update_l2_norm"] = 0.0
         self.assertFalse(assess_probe(variants, "initial")["both_backbones_update"])
+
+    def test_fresh_optimizer_rebuild_satisfies_all_repair_checks(self):
+        variants = repaired_variants_fixture()
+        original = copy.deepcopy(variants)
+
+        checks = assess_rebind(variants, "initial")
+
+        self.assertEqual(
+            checks,
+            {
+                "reproduced_stale_binding_before_repair": True,
+                "fresh_optimizer_before_first_step": True,
+                "rebuild_preserves_model_state": True,
+                "repaired_uses_reference_initial_state": True,
+                "same_pre_update_loss_after_rebuild": True,
+                "repaired_optimizer_covers_current_parameters": True,
+                "repaired_head_has_gradients_and_updates": True,
+                "repaired_backbone_has_gradients_and_updates": True,
+                "repaired_step_matches_clean": True,
+            },
+        )
+        self.assertEqual(variants, original)
+        self.assertEqual(
+            assess_probe(variants, "initial"), assess_probe(variants_fixture(), "initial")
+        )
+
+    def test_repair_checks_reject_unsupported_or_incomplete_recovery(self):
+        cases = (
+            (
+                "healthy_before_repair",
+                ("repair", "optimizer_audit_before"),
+                variants_fixture()["clean"]["optimizer_audit"],
+                "reproduced_stale_binding_before_repair",
+            ),
+            (
+                "nonempty_optimizer_state",
+                ("repair", "optimizer_state_entries_before"),
+                1,
+                "fresh_optimizer_before_first_step",
+            ),
+            (
+                "wrong_repair_timing",
+                ("repair", "timing"),
+                "after_first_optimizer_step",
+                "fresh_optimizer_before_first_step",
+            ),
+            (
+                "changed_weights",
+                ("repair", "model_state_sha256_after"),
+                "changed",
+                "rebuild_preserves_model_state",
+            ),
+            (
+                "different_initial_state",
+                ("initial_state_sha256",),
+                "different",
+                "repaired_uses_reference_initial_state",
+            ),
+            (
+                "different_pre_update_loss",
+                ("pre_update_loss",),
+                0.8,
+                "same_pre_update_loss_after_rebuild",
+            ),
+            (
+                "unbound_repaired_head",
+                ("optimizer_audit", "missing_trainable_names"),
+                ["fc.bias", "fc.weight"],
+                "repaired_optimizer_covers_current_parameters",
+            ),
+            (
+                "head_still_has_no_update",
+                ("head", "parameter_update_l2_norm"),
+                0.0,
+                "repaired_head_has_gradients_and_updates",
+            ),
+            (
+                "backbone_has_no_gradient",
+                ("backbone", "gradient_l2_norm"),
+                0.0,
+                "repaired_backbone_has_gradients_and_updates",
+            ),
+            (
+                "backbone_has_no_update",
+                ("backbone", "parameter_update_l2_norm"),
+                0.0,
+                "repaired_backbone_has_gradients_and_updates",
+            ),
+            (
+                "head_update_differs_from_clean",
+                ("head", "parameter_update_l2_norm"),
+                0.03,
+                "repaired_step_matches_clean",
+            ),
+            (
+                "nonfinite_head_gradient",
+                ("head", "gradient_l2_norm"),
+                float("inf"),
+                "repaired_head_has_gradients_and_updates",
+            ),
+            (
+                "nonfinite_backbone_update",
+                ("backbone", "parameter_update_l2_norm"),
+                float("nan"),
+                "repaired_backbone_has_gradients_and_updates",
+            ),
+            (
+                "nonfinite_pre_update_loss",
+                ("pre_update_loss",),
+                float("nan"),
+                "same_pre_update_loss_after_rebuild",
+            ),
+        )
+        for name, path, value, failed_check in cases:
+            with self.subTest(case=name):
+                variants = repaired_variants_fixture()
+                target = variants["stale_head_repaired"]
+                for component in path[:-1]:
+                    target = target[component]
+                target[path[-1]] = value
+
+                checks = assess_rebind(variants, "initial")
+
+                self.assertIs(checks[failed_check], False)
+                self.assertFalse(all(checks.values()))
+
+    def test_probe_cli_forwards_optional_rebuild_verification(self):
+        for verify_rebind in (False, True):
+            with self.subTest(verify_rebind=verify_rebind):
+                arguments = [
+                    "camelyon_optimizer_probe",
+                    "--reference-run",
+                    "artifacts/reference",
+                    "--output-dir",
+                    "artifacts/probes",
+                    "--device",
+                    "cpu",
+                ]
+                if verify_rebind:
+                    arguments.append("--verify-rebind")
+                with (
+                    patch.object(sys, "argv", arguments),
+                    patch.object(probe, "run_probe", return_value=Path("report.json")) as run,
+                    patch.object(probe, "read_json", return_value={"status": "completed"}),
+                ):
+                    probe.main()
+
+                run.assert_called_once_with(
+                    Path("artifacts/reference"),
+                    Path("artifacts/probes"),
+                    "cpu",
+                    verify_rebind=verify_rebind,
+                )
+
+    def test_probe_check_script_forwards_flag_only_after_all_checks_pass(self):
+        root = Path(__file__).resolve().parents[1]
+        script = root / "scripts" / "check_optimizer_probe.py"
+        main = runpy.run_path(str(script))["main"]
+        cases = [(False, None), (True, None), *((True, index) for index in range(5))]
+        for verify_rebind, failure_index in cases:
+            with self.subTest(verify_rebind=verify_rebind, failure_index=failure_index):
+                arguments = [str(script), "--reference-run", "artifacts/reference"]
+                if verify_rebind:
+                    arguments.append("--verify-rebind")
+                outcomes = None
+                if failure_index is not None:
+                    outcomes = [None] * failure_index + [
+                        subprocess.CalledProcessError(9, ["failed-check"])
+                    ]
+                with (
+                    patch.object(sys, "argv", arguments),
+                    patch("subprocess.run", side_effect=outcomes) as run,
+                    patch("builtins.print"),
+                ):
+                    result = main()
+
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertTrue(
+                    all(call.kwargs == {"cwd": root, "check": True} for call in run.call_args_list)
+                )
+                if failure_index is not None:
+                    self.assertEqual(result, 9)
+                    self.assertEqual(len(commands), failure_index + 1)
+                    self.assertFalse(
+                        any("runsleuth.camelyon_optimizer_probe" in command for command in commands)
+                    )
+                else:
+                    self.assertEqual(result, 0)
+                    self.assertEqual(len(commands), 6)
+                    self.assertIn("runsleuth.camelyon_optimizer_probe", commands[-1])
+                    self.assertEqual("--verify-rebind" in commands[-1], verify_rebind)
+                    self.assertTrue(
+                        all("--verify-rebind" not in command for command in commands[:-1])
+                    )
 
 
 if __name__ == "__main__":

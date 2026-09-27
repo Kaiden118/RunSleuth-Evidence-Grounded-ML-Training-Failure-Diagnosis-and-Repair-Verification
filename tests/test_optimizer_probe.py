@@ -4,6 +4,7 @@ import json
 import math
 import unittest
 from copy import deepcopy
+from unittest.mock import patch
 
 try:
     import torch
@@ -88,6 +89,71 @@ class OptimizerProbeTests(unittest.TestCase):
         self.assertGreater(clean["head"]["parameter_update_l2_norm"], 0)
         self.assertEqual(stale["head"]["parameter_update_l2_norm"], 0.0)
 
+    def test_rebuilt_optimizer_matches_clean_step_and_final_model_state(self):
+        clean_model = deepcopy(self.model)
+        repaired_model = deepcopy(self.model)
+        clean = self.run_variant("clean", clean_model)
+        repaired = self.run_variant("stale_head_repaired", repaired_model)
+        self.assertNotIn("repair", clean)
+        self.assertNotIn("repair", self.run_variant("stale_head"))
+        for key in (
+            "initial_state_sha256",
+            "pre_update_loss",
+            "pre_update_accuracy",
+            "optimizer_audit",
+            "head",
+            "backbone",
+        ):
+            with self.subTest(key=key):
+                self.assertEqual(clean[key], repaired[key])
+        self.assertGreater(repaired["head"]["parameter_update_l2_norm"], 0)
+        self.assertGreater(repaired["backbone"]["parameter_update_l2_norm"], 0)
+        self.assertEqual(
+            state_dict_sha256(clean_model.state_dict()),
+            state_dict_sha256(repaired_model.state_dict()),
+        )
+        json.dumps(repaired, allow_nan=False)
+
+    def test_repair_records_stale_binding_without_changing_model_state(self):
+        initial_hash = state_dict_sha256(self.model.state_dict())
+        result = self.run_variant("stale_head_repaired")
+        repair = result["repair"]
+        self.assertEqual(repair["action"], "rebuild_optimizer")
+        self.assertEqual(repair["timing"], "before_first_optimizer_step")
+        self.assertEqual(repair["optimizer_state_entries_before"], 0)
+        self.assertEqual(repair["model_state_sha256_before"], initial_hash)
+        self.assertEqual(repair["model_state_sha256_after"], initial_hash)
+        self.assertEqual(result["initial_state_sha256"], initial_hash)
+        self.assertEqual(
+            repair["optimizer_audit_before"]["missing_trainable_names"],
+            ("fc.bias", "fc.weight"),
+        )
+        self.assertEqual(repair["optimizer_audit_before"]["foreign_parameter_tensors"], 2)
+        self.assertEqual(repair["optimizer_audit_before"]["duplicate_parameter_occurrences"], 0)
+        self.assertEqual(result["optimizer_audit"]["missing_trainable_names"], ())
+        self.assertEqual(result["optimizer_audit"]["foreign_parameter_tensors"], 0)
+
+    def test_repair_rejects_existing_optimizer_state_before_rebuild_or_training(self):
+        model = deepcopy(self.model)
+        optimizer = make_probe_optimizer(model, variant="stale_head", **self.options)
+        parameter = optimizer.param_groups[0]["params"][0]
+        previous_state = {"step": torch.tensor(1.0), "exp_avg": torch.ones_like(parameter)}
+        optimizer.state[parameter] = previous_state
+        initial_hash = state_dict_sha256(model.state_dict())
+        with (
+            patch("runsleuth.optimizer_probe.make_probe_optimizer", return_value=optimizer),
+            patch("runsleuth.optimizer_probe.torch.optim.AdamW") as rebuild,
+            patch.object(model, "forward", wraps=model.forward) as forward,
+            patch.object(optimizer, "step", wraps=optimizer.step) as step,
+        ):
+            with self.assertRaisesRegex(ValueError, "nonempty state"):
+                self.run_variant("stale_head_repaired", model)
+            rebuild.assert_not_called()
+            forward.assert_not_called()
+            step.assert_not_called()
+        self.assertIs(optimizer.state[parameter], previous_state)
+        self.assertEqual(initial_hash, state_dict_sha256(model.state_dict()))
+
     def test_both_variants_clone_weights_but_change_parameter_identity(self):
         for variant in ("clean", "stale_head"):
             with self.subTest(variant=variant):
@@ -128,7 +194,7 @@ class OptimizerProbeTests(unittest.TestCase):
             self.assertTrue(torch.equal(parameter, old_value))
 
     def test_preexisting_gradients_are_cleared(self):
-        for variant in ("clean", "stale_head"):
+        for variant in ("clean", "stale_head", "stale_head_repaired"):
             with self.subTest(variant=variant):
                 dirty = deepcopy(self.model)
                 for parameter in dirty.parameters():

@@ -19,6 +19,7 @@ FILES = (
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference-run", required=True)
+    parser.add_argument("--verify-rebind", action="store_true")
     args = parser.parse_args()
     commands = [
         [sys.executable, "-m", "ruff", "check", *FILES, "--fix"],
@@ -34,6 +35,8 @@ def main() -> int:
             args.reference_run,
         ],
     ]
+    if args.verify_rebind:
+        commands[-1].append("--verify-rebind")
     try:
         for command in commands:
             print("Running: " + subprocess.list2cmdline(command), flush=True)

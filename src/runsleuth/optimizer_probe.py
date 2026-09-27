@@ -1,7 +1,8 @@
 """A controlled, single-step experiment for stale optimizer parameter references.
 
-Both variants replace ``model.fc`` with an identical deep copy.  The only
-difference is whether the optimizer is built before or after that replacement.
+The clean and stale variants replace ``model.fc`` with an identical deep copy.
+They differ in whether the optimizer is built before or after replacement.
+The repaired variant rebuilds the stale optimizer before its first step.
 The caller owns model construction, initialization, device placement and RNG
 seeding; this module neither downloads nor saves anything.
 """
@@ -121,13 +122,33 @@ def run_probe_step(
     Inputs and targets must already be on the model's device.  Accuracy is a
     fraction in [0, 1].  Norms cover all named head/backbone parameter tensors;
     parameters without gradients contribute zero to their gradient norm.
+    ``stale_head_repaired`` records a genuine stale binding, then rebuilds the
+    optimizer before training.  A nonempty optimizer state is never discarded.
     """
     optimizer = make_probe_optimizer(
         model,
-        variant=variant,
+        variant="stale_head" if variant == "stale_head_repaired" else variant,
         learning_rate=learning_rate,
         weight_decay=weight_decay,
     )
+    repair = None
+    if variant == "stale_head_repaired":
+        audit_before = audit_optimizer_parameters(model, optimizer)
+        hash_before = state_dict_sha256(model.state_dict())
+        state_entries_before = len(optimizer.state)
+        if state_entries_before != 0:
+            raise ValueError("Cannot rebuild an optimizer with nonempty state")
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        )
+        repair = {
+            "action": "rebuild_optimizer",
+            "timing": "before_first_optimizer_step",
+            "optimizer_state_entries_before": state_entries_before,
+            "model_state_sha256_before": hash_before,
+            "model_state_sha256_after": state_dict_sha256(model.state_dict()),
+            "optimizer_audit_before": asdict(audit_before),
+        }
     head, backbone = _parameter_groups(model)
     groups = {"head": head, "backbone": backbone}
     initial_state_sha256 = state_dict_sha256(model.state_dict())
@@ -169,7 +190,7 @@ def run_probe_step(
         if not math.isfinite(measurements[group]["parameter_update_l2_norm"]):
             raise ValueError("Probe produced non-finite parameter updates")
 
-    return {
+    result = {
         "variant": variant,
         "initial_state_sha256": initial_state_sha256,
         "pre_update_loss": pre_update_loss,
@@ -177,3 +198,6 @@ def run_probe_step(
         "optimizer_audit": asdict(audit),
         **measurements,
     }
+    if repair is not None:
+        result["repair"] = repair
+    return result

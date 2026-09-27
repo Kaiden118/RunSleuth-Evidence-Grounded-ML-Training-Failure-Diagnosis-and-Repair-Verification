@@ -1,4 +1,4 @@
-"""Compare correct and stale optimizer bindings on one identical Camelyon batch."""
+"""Probe optimizer bindings and optionally verify a fresh-optimizer rebuild."""
 
 import argparse
 import hashlib
@@ -6,7 +6,7 @@ import json
 import shutil
 from dataclasses import asdict
 from datetime import UTC, datetime
-from math import isclose
+from math import isclose, isfinite
 from pathlib import Path
 
 from runsleuth.camelyon_config import CamelyonConfig
@@ -97,7 +97,70 @@ def assess_probe(variants: dict, expected_state_hash: str) -> dict[str, bool]:
     }
 
 
-def run_probe(reference_run: Path, output_dir: Path, requested_device: str | None = None) -> Path:
+def assess_rebind(variants: dict, expected_state_hash: str) -> dict[str, bool]:
+    """Check one-step binding repair; this is not performance-recovery acceptance."""
+    clean, stale = variants["clean"], variants["stale_head"]
+    repaired = variants["stale_head_repaired"]
+    repair = repaired["repair"]
+    audit = repaired["optimizer_audit"]
+    before = repair["optimizer_audit_before"]
+    return {
+        "reproduced_stale_binding_before_repair": (
+            before == stale["optimizer_audit"]
+            and set(before["missing_trainable_names"]) == {"fc.weight", "fc.bias"}
+            and before["foreign_parameter_tensors"] == 2
+            and before["duplicate_parameter_occurrences"] == 0
+        ),
+        "fresh_optimizer_before_first_step": (
+            repair["action"] == "rebuild_optimizer"
+            and repair["timing"] == "before_first_optimizer_step"
+            and type(repair["optimizer_state_entries_before"]) is int
+            and repair["optimizer_state_entries_before"] == 0
+        ),
+        "rebuild_preserves_model_state": (
+            repair["model_state_sha256_before"]
+            == repair["model_state_sha256_after"]
+            == expected_state_hash
+        ),
+        "repaired_uses_reference_initial_state": (
+            repaired["initial_state_sha256"] == clean["initial_state_sha256"] == expected_state_hash
+        ),
+        "same_pre_update_loss_after_rebuild": (
+            isfinite(repaired["pre_update_loss"])
+            and isclose(
+                clean["pre_update_loss"], repaired["pre_update_loss"], rel_tol=1e-6, abs_tol=1e-6
+            )
+        ),
+        "repaired_optimizer_covers_current_parameters": (
+            not audit["missing_trainable_names"]
+            and audit["foreign_parameter_tensors"] == 0
+            and audit["duplicate_parameter_occurrences"] == 0
+        ),
+        "repaired_head_has_gradients_and_updates": all(
+            isfinite(repaired["head"][key]) and repaired["head"][key] > 0
+            for key in ("gradient_l2_norm", "parameter_update_l2_norm")
+        ),
+        "repaired_backbone_has_gradients_and_updates": all(
+            isfinite(repaired["backbone"][key]) and repaired["backbone"][key] > 0
+            for key in ("gradient_l2_norm", "parameter_update_l2_norm")
+        ),
+        "repaired_step_matches_clean": all(
+            isfinite(repaired[group][key])
+            and isfinite(clean[group][key])
+            and isclose(clean[group][key], repaired[group][key], rel_tol=1e-5, abs_tol=1e-9)
+            for group in ("head", "backbone")
+            for key in ("gradient_l2_norm", "parameter_update_l2_norm")
+        ),
+    }
+
+
+def run_probe(
+    reference_run: Path,
+    output_dir: Path,
+    requested_device: str | None = None,
+    *,
+    verify_rebind: bool = False,
+) -> Path:
     """Use cached data and the reference initial checkpoint; run one step per variant."""
     import torch
     from torch.utils.data import default_collate
@@ -118,6 +181,8 @@ def run_probe(reference_run: Path, output_dir: Path, requested_device: str | Non
         "task": "camelyon17_optimizer_binding_probe",
         "reference_run": str(reference_run),
         "optimizer_steps_per_variant": 1,
+        "repair_mechanism_requested": verify_rebind,
+        "repair_mechanism_evaluated": False,
         "performance_recovery_evaluated": False,
         "test_evaluated": False,
         "error": None,
@@ -168,7 +233,10 @@ def run_probe(reference_run: Path, output_dir: Path, requested_device: str | Non
         inputs, targets = inputs.to(device), targets.to(device)
         variants = {}
         report["variants"] = variants
-        for variant in ("clean", "stale_head"):
+        variant_names = ["clean", "stale_head"]
+        if verify_rebind:
+            variant_names.append("stale_head_repaired")
+        for variant in variant_names:
             print(f"phase=single_step variant={variant}", flush=True)
             seed_everything(config.seed)
             model = build_camelyon_model(pretrained=False)
@@ -187,7 +255,14 @@ def run_probe(reference_run: Path, output_dir: Path, requested_device: str | Non
         checks = assess_probe(variants, expected_state_hash)
         report["checks"] = checks
         report["mechanism_reproduced"] = all(checks.values())
-        report["status"] = "completed" if report["mechanism_reproduced"] else "inconclusive"
+        completed = report["mechanism_reproduced"]
+        if verify_rebind:
+            repair_checks = assess_rebind(variants, expected_state_hash)
+            report["repair_checks"] = repair_checks
+            report["repair_mechanism_evaluated"] = True
+            report["repair_mechanism_verified"] = completed and all(repair_checks.values())
+            completed = report["repair_mechanism_verified"]
+        report["status"] = "completed" if completed else "inconclusive"
     except Exception as error:
         report["status"] = "failed"
         report["error"] = {"type": type(error).__name__, "message": str(error)}
@@ -200,6 +275,9 @@ def run_probe(reference_run: Path, output_dir: Path, requested_device: str | Non
     print(f"optimizer_probe_report={report_path}", flush=True)
     print(f"status={report['status']}", flush=True)
     print("checks=" + json.dumps(report["checks"]), flush=True)
+    if verify_rebind:
+        print(f"repair_mechanism_verified={report['repair_mechanism_verified']}", flush=True)
+        print("repair_checks=" + json.dumps(report["repair_checks"]), flush=True)
     return report_path
 
 
@@ -208,8 +286,15 @@ def main() -> None:
     parser.add_argument("--reference-run", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/optimizer_probes"))
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"))
+    parser.add_argument(
+        "--verify-rebind",
+        action="store_true",
+        help="Add a fresh-optimizer rebuild variant and verify its single-step mechanism.",
+    )
     args = parser.parse_args()
-    path = run_probe(args.reference_run, args.output_dir, args.device)
+    path = run_probe(
+        args.reference_run, args.output_dir, args.device, verify_rebind=args.verify_rebind
+    )
     if read_json(path)["status"] != "completed":
         raise SystemExit(1)
 

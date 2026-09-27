@@ -98,3 +98,28 @@ Local preparation checks: 19 dependency-free tests passed; 10 Torch CPU tests
 were skipped because Torch was unavailable. A mocked CLI check verified report
 writing and rejection of changed sample IDs. Actual Torch execution and the
 full repository suite must pass in the target environment.
+
+## Optimizer Rebinding Verification
+
+A three-way single-step experiment compared `clean`, `stale_head`, and
+`stale_head_repaired` using the same initial model state and input batch.
+
+The faulty optimizer omitted the two current classification-head parameter
+tensors and retained two obsolete tensors. Rebuilding AdamW from the current
+model parameters removed both binding errors without changing model weights.
+
+| Measurement | Clean | Stale head | Repaired |
+|---|---:|---:|---:|
+| Missing current parameter tensors | 0 | 2 | 0 |
+| Foreign parameter tensors | 0 | 2 | 0 |
+| Head gradient norm | 3.901329 | 3.901329 | 3.901329 |
+| Head update norm | 0.003203 | 0.000000 | 0.003203 |
+
+All nine repair-mechanism checks passed. The repaired step matched the
+clean step's measured gradient and update norms.
+
+Scope: rebuilding occurred before the first optimizer step, with empty
+optimizer state. This verifies the update mechanism; it does not establish
+validation-performance improvement or recovery from a trained checkpoint.
+
+Report: `artifacts/optimizer_probes/probe-20260927T052121051006Z/optimizer_probe_report.json`

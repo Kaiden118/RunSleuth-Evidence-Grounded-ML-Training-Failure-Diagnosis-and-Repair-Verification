@@ -60,7 +60,7 @@ Set your API key and replace the run paths with the directories printed above:
 
 ```bat
 set "GEMINI_API_KEY=YOUR_API_KEY"
-set "GEMINI_MODEL=gemini-3.5-flash-lite"
+set "GEMINI_MODEL=gemini-3.8-flash"
 set "REFERENCE_RUN=artifacts/runs/clean-REPLACE_WITH_TIMESTAMP"
 set "FAILED_RUN=artifacts/runs/high-lr-REPLACE_WITH_TIMESTAMP"
 python -m runsleuth.agent_diagnose --reference-run "%REFERENCE_RUN%" --candidate-run "%FAILED_RUN%"

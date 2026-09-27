@@ -23,6 +23,11 @@ llm = [
     "openai",
 ]
 
+camelyon = [
+    "datasets>=3,<5",
+    "huggingface-hub>=0.34,<2",
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

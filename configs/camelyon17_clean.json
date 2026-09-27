@@ -1,0 +1,21 @@
+{
+  "dataset": "camelyon17",
+  "dataset_version": "1.0",
+  "model": "resnet18",
+  "pretrained_weights": "IMAGENET1K_V1",
+  "hf_revision": "d784d5344ba6c967f83f9f3d9b2f1e2a4d6eb78f",
+  "run_name": "camelyon17-clean",
+  "seed": 42,
+  "subset_seed": 2026,
+  "epochs": 3,
+  "batch_size": 32,
+  "learning_rate": 0.0001,
+  "weight_decay": 0.0001,
+  "max_train_samples": 20000,
+  "max_id_val_samples": 5000,
+  "max_ood_val_samples": 5000,
+  "num_workers": 0,
+  "data_dir": "C:/Users/ADMIN/rs-data/c17",
+  "output_dir": "artifacts/camelyon_runs",
+  "device": "cuda"
+}

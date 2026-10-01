@@ -88,3 +88,36 @@ Both reports proposed no patch; no optimizer repair was executed.
 Reports:
 - `artifacts/agent_runs/20260927T045102117145Z/agent_report.json`
 - `artifacts/agent_runs/20260927T045113830418Z/agent_report.json`
+
+## Bounded repair handoff
+
+A saved, evidence-validated Agent diagnosis can now enter a controlled
+repair workflow through `python -m runsleuth.optimizer_agent_repair`.
+
+The default mode validates the evidence and saves a repair plan.
+Explicit `--execute` runs bounded training and verification.
+
+The controller selects the allowlisted action
+`rebuild_optimizer_before_first_step`; the Agent's `proposed_patch`
+remains null. Training starts from the saved reference initialization,
+not from a failed checkpoint.
+
+### Recorded execution: 2026-09-27
+
+Three variants ran for three epochs each: clean, stale head, and repaired
+stale head. This execution made no new LLM calls.
+
+| Check | Observed | Requirement | Result |
+|---|---:|---:|---|
+| Structural verification | All checks passed | All must pass | Pass |
+| OOD accuracy drop versus stale head | 1.40 percentage points | At most 1.00 | Fail |
+| OOD loss ratio versus stale head | 1.1831 | At most 1.10 | Fail |
+
+Execution status: `completed`. Acceptance decision: `rejected`.
+
+The optimizer binding was repaired, but the performance non-regression
+requirements were not met. Thresholds were preserved. This single-seed
+development experiment does not establish general performance effects.
+
+Local execution record:
+`artifacts/optimizer_agent_repairs/20260927T071333035701Z/optimizer_agent_repair_report.json`

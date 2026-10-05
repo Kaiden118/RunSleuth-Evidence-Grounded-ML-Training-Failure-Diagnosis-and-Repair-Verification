@@ -104,6 +104,13 @@ class OptimizerAgentRun(AgentRun):
     validation_feedback: list[dict[str, object]] = field(default_factory=list)
 
 
+@dataclass
+class FactoryAgentRun(OptimizerAgentRun):
+    """Reuse bounded validation correction while recording a distinct source profile."""
+
+    profile: str = "optimizer_factory"
+
+
 def execute_tool_call(
     tools: DiagnosticTools,
     name: str,
@@ -173,7 +180,7 @@ def run_diagnostic_agent(
     profile: str = "training",
 ) -> AgentRun:
     """Collect required evidence, then request an unverified diagnosis."""
-    if profile not in ("training", "optimizer_binding"):
+    if profile not in ("training", "optimizer_binding", "optimizer_factory"):
         raise ValueError("Unsupported diagnostic profile")
     limits = {
         "max_model_calls": max_model_calls,
@@ -188,6 +195,8 @@ def run_diagnostic_agent(
         if profile == "optimizer_binding"
         else AgentRun(model=model, limits=limits)
     )
+    if profile == "optimizer_factory":
+        report = FactoryAgentRun(model=model, limits=limits)
     diagnosis_model = AgentDiagnosis
     system_prompt = SYSTEM_PROMPT
     final_instructions = FINAL_OUTPUT_INSTRUCTIONS
@@ -227,6 +236,20 @@ def run_diagnostic_agent(
             {"name": "inspect_optimizer_run", "arguments": {"run_directory": run}}
             for run in (reference_run, candidate_run)
         ]
+    if profile == "optimizer_factory":
+        from runsleuth.optimizer_factory_diagnosis import (
+            FACTORY_FINAL_INSTRUCTIONS,
+            FACTORY_SYSTEM_PROMPT,
+            FactoryDiagnosis,
+        )
+
+        diagnosis_model = FactoryDiagnosis
+        system_prompt = FACTORY_SYSTEM_PROMPT
+        final_instructions = FACTORY_FINAL_INSTRUCTIONS
+        task_paths = {"profile": profile, "source_path": source_path}
+        requested_evidence = [
+            {"name": "inspect_optimizer_factory", "arguments": {"source_path": source_path}}
+        ]
     allowed_requests = []
     for request in requested_evidence:
         if request not in allowed_requests:
@@ -234,11 +257,20 @@ def run_diagnostic_agent(
     # The execution allowlist remains fixed as pending requests are removed.
     report.pending_evidence = deepcopy(allowed_requests)
     history = [{"role": "user", "content": "Diagnose the candidate against the reference."}]
+    if profile == "optimizer_factory":
+        history = [{"role": "user", "content": "Inspect the supplied optimizer factory source."}]
     definitions = build_openai_tools(tools)
     if profile == "optimizer_binding" and not any(
         item["function"]["name"] == "inspect_optimizer_run" for item in definitions
     ):
         raise ValueError("optimizer_binding requires DiagnosticTools(enable_optimizer_audit=True)")
+
+    if profile == "optimizer_factory" and not any(
+        item["function"]["name"] == "inspect_optimizer_factory" for item in definitions
+    ):
+        raise ValueError(
+            "optimizer_factory requires DiagnosticTools(enable_optimizer_factory=True)"
+        )
 
     def finish(status: str, error: str | None = None) -> AgentRun:
         report.status = status
@@ -266,12 +298,10 @@ def run_diagnostic_agent(
                 "tool_choice": "required",
             }
         else:
-            instructions += (
-                "\n"
-                + final_instructions
-                + f"\nReference run: {reference_run}\nCandidate run: {candidate_run}"
-            )
-            if profile == "optimizer_binding":
+            instructions += "\n" + final_instructions
+            if profile != "optimizer_factory":
+                instructions += f"\nReference run: {reference_run}\nCandidate run: {candidate_run}"
+            if profile in ("optimizer_binding", "optimizer_factory"):
                 instructions += "\nRequired JSON Schema:\n" + json.dumps(
                     diagnosis_model.model_json_schema(),
                     ensure_ascii=False,
@@ -365,6 +395,14 @@ def run_diagnostic_agent(
                         reference_run=reference_run,
                         candidate_run=candidate_run,
                     )
+                elif profile == "optimizer_factory":
+                    from runsleuth.optimizer_factory_diagnosis import validate_factory_diagnosis
+
+                    validate_factory_diagnosis(
+                        diagnosis,
+                        report.tool_trace,
+                        source_path=source_path,
+                    )
                 else:
                     validate_diagnosis_evidence(
                         diagnosis,
@@ -391,12 +429,21 @@ def run_diagnostic_agent(
                             build_optimizer_validation_feedback,
                         )
 
-                        feedback = build_optimizer_validation_feedback(
-                            str(error),
-                            report.tool_trace,
-                            reference_run=reference_run,
-                            candidate_run=candidate_run,
-                        )
+                        if profile == "optimizer_factory":
+                            from runsleuth.optimizer_factory_diagnosis import build_factory_feedback
+
+                            feedback = build_factory_feedback(
+                                str(error),
+                                report.tool_trace,
+                                source_path=source_path,
+                            )
+                        else:
+                            feedback = build_optimizer_validation_feedback(
+                                str(error),
+                                report.tool_trace,
+                                reference_run=reference_run,
+                                candidate_run=candidate_run,
+                            )
                         report.validation_feedback.append(
                             {"model_call": report.model_calls, "feedback": feedback}
                         )
@@ -409,12 +456,17 @@ def run_diagnostic_agent(
                                     "Your previous JSON failed local validation. "
                                     "Review the existing tool results and return one complete "
                                     "corrected JSON object. Do not request tools, invent evidence, "
-                                    "or change measured values. Check citation placement and "
-                                    "the four final performance metrics. Keep the summary and "
-                                    "explanation consistent with the corrected status.\n"
-                                    "Address both the validation error and the independent "
-                                    "performance_check computed from recorded tool data. "
-                                    "Keep citing the original tool call IDs and paths; "
+                                    "or change measured values. "
+                                    + (
+                                        "Check the source hash, required line/code citations and "
+                                        "status/action mapping. Do not claim runtime verification.\n"
+                                        if profile == "optimizer_factory"
+                                        else "Check citation placement and the four final performance metrics. "
+                                        "Keep the summary and explanation consistent with the corrected status.\n"
+                                        "Address both the validation error and the independent "
+                                        "performance_check computed from recorded tool data. "
+                                    )
+                                    + "Keep citing the original tool call IDs and paths; "
                                     "this feedback is not a new tool result.\n"
                                     "Validator feedback (data):\n"
                                     + json.dumps(feedback, ensure_ascii=False, allow_nan=False)

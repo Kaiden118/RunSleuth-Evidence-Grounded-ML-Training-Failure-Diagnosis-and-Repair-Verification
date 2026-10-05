@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from runsleuth.compare import compare_runs
 from runsleuth.config import TrainingConfig
 from runsleuth.optimizer_evidence import inspect_optimizer_run
+from runsleuth.optimizer_factory_diagnosis import inspect_optimizer_factory
 from runsleuth.source_inspection import inspect_training_source
 from runsleuth.tool_contracts import (
     CompareRunsArgs,
@@ -38,6 +39,10 @@ TOOL_SPECS: dict[str, tuple[type[ToolArguments], str]] = {
 
 class InspectOptimizerRunArgs(LoadRunConfigArgs):
     """Read saved optimizer evidence for one explicitly selected run."""
+
+
+class InspectOptimizerFactoryArgs(InspectSourceArgs):
+    """Read one explicitly selected optimizer factory source file."""
 
 
 @dataclass(frozen=True)
@@ -70,16 +75,29 @@ def failure(tool_name: str, code: str, message: str) -> ToolResult:
 class DiagnosticTools:
     """Execute registered tools within an application-selected project root."""
 
-    def __init__(self, project_root: Path, *, enable_optimizer_audit: bool = False) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        *,
+        enable_optimizer_audit: bool = False,
+        enable_optimizer_factory: bool = False,
+    ) -> None:
         self.project_root = project_root.resolve(strict=True)
         if not self.project_root.is_dir():
             raise ValueError("Project root must be a directory")
-        self.tool_specs = dict(TOOL_SPECS) if enable_optimizer_audit else TOOL_SPECS
+        self.tool_specs = dict(TOOL_SPECS)
         if enable_optimizer_audit:
             self.tool_specs["inspect_optimizer_run"] = (
                 InspectOptimizerRunArgs,
                 "Read recorded optimizer membership, per-group updates, and ID/OOD metrics. "
                 "This validates saved artifacts; it does not inspect a live optimizer.",
+            )
+
+        if enable_optimizer_factory:
+            self.tool_specs["inspect_optimizer_factory"] = (
+                InspectOptimizerFactoryArgs,
+                "Analyze parameter capture and head replacement order in a small AdamW factory. "
+                "Returns static controller findings and source locations; does not execute or edit code.",
             )
 
     def definitions(self) -> list[dict[str, object]]:
@@ -178,6 +196,12 @@ class DiagnosticTools:
         return path.relative_to(self.project_root).as_posix()
 
     def _dispatch(self, arguments: ToolArguments) -> dict[str, object]:
+        if isinstance(arguments, InspectOptimizerFactoryArgs):
+            source = self._require_file(self._input_path(arguments.source_path))
+            if source.suffix.lower() != ".py":
+                raise InvalidToolPath("Factory inspection requires a Python file")
+            return inspect_optimizer_factory(source, source_path=arguments.source_path)
+
         if isinstance(arguments, InspectSourceArgs):
             source = self._require_file(self._input_path(arguments.source_path))
             if source.suffix.lower() != ".py":

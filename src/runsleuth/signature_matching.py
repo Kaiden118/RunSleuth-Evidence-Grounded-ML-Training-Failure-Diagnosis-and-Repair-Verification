@@ -88,6 +88,27 @@ def _inferred_first_step_lr(run: dict, group: str) -> float | None:
     return first["first_step_parameter_update_l2_norm"] / math.sqrt(first["parameter_elements"])
 
 
+def input_shift(run: dict, train: str = "train", evaluation: str = "id_eval") -> dict | None:
+    """Compare model-input statistics of the training split with a same-distribution split.
+
+    standardized_mean_shift is the largest per-channel |mean difference| in training
+    standard deviations; std_ratio is the largest per-channel ratio of standard
+    deviations in either direction. None when either split was not recorded.
+    """
+    statistics = run.get("input_statistics") or {}
+    left, right = statistics.get(train), statistics.get(evaluation)
+    if not left or not right:
+        return None
+    pairs = list(zip(left["channel_mean"], right["channel_mean"], left["channel_std"], strict=True))
+    stds = list(zip(left["channel_std"], right["channel_std"], strict=True))
+    if any(value <= 0 for pair in stds for value in pair):
+        return None
+    return {
+        "standardized_mean_shift": max(abs(a - b) / scale for a, b, scale in pairs),
+        "std_ratio": max(max(a / b, b / a) for a, b in stds),
+    }
+
+
 def _optimizer_family(optimizer_name: str | None) -> str | None:
     if optimizer_name is None:
         return None

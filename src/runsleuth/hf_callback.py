@@ -56,6 +56,11 @@ class RunSleuthCallback(TrainerCallback):
             "seed": args.seed,
         }
 
+    def observe_batch(self, split: str, inputs, labels=None) -> None:
+        """Forward a collated batch to the monitor; batches before training starts are ignored."""
+        if self.monitor is not None:
+            self.monitor.observe_batch(split, inputs, labels)
+
     def on_epoch_begin(self, args, state, control, **kwargs):
         self._epoch = self.monitor.epoch()
         self._epoch.__enter__()

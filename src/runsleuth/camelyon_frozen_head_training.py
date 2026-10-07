@@ -5,216 +5,53 @@ frozen_head and frozen_head_repaired, then applies structural checks, the unchan
 development performance policy, and bitwise checkpoint comparisons for the
 observed predictions.
 
-camelyon_optimizer_training.py is a recorded fixture for the source-localization
-experiments, which parse its optimizer dispatch, so it is imported but never
-modified. The variant loop and performance gate below mirror it; tests require
-identical results on the shared clean and stale_head variants and identical gate
-outputs.
+The training loop and development gate come from camelyon_variant_runner, which
+mirrors the stale-binding experiment without modifying its recorded fixture.
 """
 
 import argparse
 import json
 import platform
-import shutil
-from dataclasses import asdict, replace
+from dataclasses import replace
 from datetime import UTC, datetime
 from math import isclose
 from pathlib import Path
 from time import perf_counter
 
-from runsleuth.camelyon_optimizer_probe import (
-    check_matching_data,
-    file_sha256,
-    load_reference,
-    read_json,
-)
+from runsleuth.camelyon_optimizer_probe import file_sha256, load_reference, read_json
 from runsleuth.camelyon_optimizer_training import (
     REPAIR_POLICY,
     _complete_coverage,
     _finite_number,
     _valid_domain_metrics,
-    append_json,
-    snapshot_sources,
     write_json,
+)
+from runsleuth.camelyon_variant_runner import (
+    match_outcome,
+    metric_differences,
+    performance_checks,
+    run_training_variant,
+    snapshot_sources_with,
 )
 
 VARIANTS = ("clean", "stale_head", "frozen_head", "frozen_head_repaired")
 COMPARATORS = ("clean", "frozen_head")
 FROZEN_HEAD_NAMES = ["fc.bias", "fc.weight"]
-EXTRA_SOURCES = ("camelyon_frozen_head_training.py", "frozen_head_probe.py")
+EXTRA_SOURCES = (
+    "camelyon_frozen_head_training.py",
+    "camelyon_variant_runner.py",
+    "frozen_head_probe.py",
+)
+VARIANT_TASK = "camelyon17_frozen_head_training_variant"
 NORMS = ("mean_gradient_l2_norm", "mean_parameter_update_l2_norm")
 
 
-def _run_frozen_variant(
-    variant, config, reference_manifest, state, expected_hash, directory, device
-):
-    """Mirror camelyon_optimizer_training._run_variant except for the optimizer factory."""
-    import torch
-    from torch import nn
-
-    from runsleuth.camelyon import (
-        _check_training_result,
-        _evaluate_domains,
-        build_camelyon_model,
-    )
-    from runsleuth.camelyon_data import build_camelyon_data
+def _frozen_head_optimizer(model, variant, config):
     from runsleuth.frozen_head_probe import make_variant_optimizer
-    from runsleuth.optimizer_audit import audit_optimizer_parameters
-    from runsleuth.optimizer_probe import state_dict_sha256
-    from runsleuth.parameter_group_monitor import ParameterGroupMonitor
-    from runsleuth.telemetry import EpochMetrics, append_epoch_metrics
-    from runsleuth.train import seed_everything, train_one_epoch
 
-    directory.mkdir()
-    config.save(directory / "config.json")
-    report = {
-        "variant": variant,
-        "status": "running",
-        "completed_epochs": 0,
-        "task": "camelyon17_frozen_head_training_variant",
-        "error": None,
-        "run_directory": str(directory),
-        "parameter_group_epochs": [],
-        "test_evaluated": False,
-    }
-    started = perf_counter()
-    try:
-        seed_everything(config.seed)
-        print(f"phase=load_cached_data variant={variant}", flush=True)
-        data = build_camelyon_data(config, device=device, download=False)
-        check_matching_data(reference_manifest, data.manifest)
-        write_json(directory / "data_manifest.json", data.manifest)
-        report["data_manifest_sha256"] = file_sha256(directory / "data_manifest.json")
-        model = build_camelyon_model(pretrained=False)
-        model.load_state_dict(state, strict=True)
-        model.to(device)
-        optimizer, repair = make_variant_optimizer(
-            model,
-            variant=variant,
-            learning_rate=config.learning_rate,
-            weight_decay=config.weight_decay,
-        )
-        if repair is not None:
-            report["repair"] = repair
-        report["initial_state_sha256"] = state_dict_sha256(model.state_dict())
-        if report["initial_state_sha256"] != expected_hash:
-            raise ValueError("Variant does not match the reference initialization")
-        report["optimizer_audit"] = asdict(audit_optimizer_parameters(model, optimizer))
-        loss_function = nn.CrossEntropyLoss()
-        baseline = _evaluate_domains(model, data, loss_function, device)
-        report["initialization_metrics"] = baseline
-        write_json(directory / "baseline_metrics.json", {"epoch": 0, **baseline})
-        print(json.dumps({"variant": variant, "epoch": 0, **baseline}), flush=True)
-        for epoch in range(1, config.epochs + 1):
-            print(f"phase=train variant={variant} epoch={epoch}/{config.epochs}", flush=True)
-            if device.type == "cuda":
-                torch.cuda.synchronize(device)
-                torch.cuda.reset_peak_memory_stats(device)
-            epoch_started = perf_counter()
-            with ParameterGroupMonitor(model, optimizer) as monitor:
-                training = train_one_epoch(
-                    model, data.train_loader, optimizer, loss_function, device
-                )
-            groups = {"epoch": epoch, **monitor.summary()}
-            _check_training_result(training)
-            domains = _evaluate_domains(model, data, loss_function, device)
-            if device.type == "cuda":
-                torch.cuda.synchronize(device)
-            metrics = EpochMetrics(
-                epoch=epoch,
-                train_loss=training.loss,
-                train_accuracy=training.accuracy,
-                validation_loss=domains["id_validation_loss"],
-                validation_accuracy=domains["id_validation_accuracy"],
-                mean_gradient_norm=training.mean_gradient_norm,
-                mean_parameter_update_norm=training.mean_parameter_update_norm,
-            )
-            domain_row = {
-                "epoch": epoch,
-                **domains,
-                "epoch_seconds": perf_counter() - epoch_started,
-                "peak_cuda_memory_mb": (
-                    torch.cuda.max_memory_allocated(device) / 1024**2
-                    if device.type == "cuda"
-                    else None
-                ),
-            }
-            append_epoch_metrics(directory / "metrics.jsonl", metrics)
-            append_json(directory / "domain_metrics.jsonl", domain_row)
-            append_json(directory / "parameter_group_metrics.jsonl", groups)
-            report["parameter_group_epochs"].append(groups)
-            report["completed_epochs"] = epoch
-            report["final_metrics"] = {**asdict(metrics), **domain_row}
-            print(
-                json.dumps(
-                    {"variant": variant, **report["final_metrics"], "parameter_groups": groups},
-                    allow_nan=False,
-                ),
-                flush=True,
-            )
-        report["final_optimizer_audit"] = asdict(audit_optimizer_parameters(model, optimizer))
-        checkpoint = directory / "model_state_dict.pt"
-        torch.save(model.state_dict(), checkpoint)
-        report["model_checkpoint"] = str(checkpoint)
-        report["checkpoint_sha256"] = file_sha256(checkpoint)
-        report["status"] = "completed"
-    except (Exception, KeyboardInterrupt) as error:
-        report["status"] = "failed"
-        report["error"] = {"type": type(error).__name__, "message": str(error)}
-        raise
-    finally:
-        report["elapsed_seconds"] = perf_counter() - started
-        write_json(directory / "run_report.json", report)
-    return report
-
-
-def _performance_checks(variants: dict, candidate: str, comparators: tuple[str, ...]) -> list:
-    """Mirror the stale-binding experiment's development gate for one candidate."""
-    performance = []
-    repaired_metrics = variants[candidate]["final_metrics"]
-    for comparator in comparators:
-        reference_metrics = variants[comparator]["final_metrics"]
-        valid = _valid_domain_metrics(repaired_metrics) and _valid_domain_metrics(reference_metrics)
-        for domain in ("id", "ood"):
-            for metric in ("accuracy", "loss"):
-                actual = repaired_metrics[f"{domain}_validation_{metric}"]
-                reference = reference_metrics[f"{domain}_validation_{metric}"]
-                accuracy = metric == "accuracy"
-                threshold = REPAIR_POLICY["max_accuracy_drop" if accuracy else "max_loss_ratio"]
-                observed = None
-                if valid:
-                    observed = (
-                        reference - actual
-                        if accuracy
-                        else (actual / reference if reference > 0 else None)
-                    )
-                passed = valid and (
-                    actual >= reference - threshold if accuracy else actual <= reference * threshold
-                )
-                performance.append(
-                    {
-                        "comparator": comparator,
-                        "domain": domain,
-                        "metric": "accuracy_drop" if accuracy else "loss_ratio",
-                        "repaired_value": actual if _finite_number(actual) else None,
-                        "reference_value": reference if _finite_number(reference) else None,
-                        "observed_value": observed if _finite_number(observed) else None,
-                        "operator": "<=",
-                        "threshold": threshold,
-                        "passed": passed,
-                    }
-                )
-    return performance
-
-
-def _snapshot_sources(directory: Path) -> dict[str, str]:
-    hashes = snapshot_sources(directory)
-    destination = directory / "source_snapshot"
-    destination.mkdir(exist_ok=True)
-    for name in EXTRA_SOURCES:
-        shutil.copyfile(Path(__file__).parent / name, destination / name)
-        hashes[name] = file_sha256(destination / name)
-    return hashes
+    return make_variant_optimizer(
+        model, variant=variant, learning_rate=config.learning_rate, weight_decay=config.weight_decay
+    )
 
 
 def _all_tensors_trainable_with_gradients(row: dict, group: str) -> bool:
@@ -238,25 +75,6 @@ def _frozen(row: dict, group: str) -> bool:
         and counts["max_tensors_with_gradient"] == 0
         and counts["mean_parameter_update_l2_norm"] == 0
     )
-
-
-def _metric_differences(left: dict, right: dict) -> dict:
-    differences = {}
-    for domain in ("id", "ood"):
-        for metric in ("accuracy", "loss"):
-            key = f"{domain}_validation_{metric}"
-            values = (left["final_metrics"].get(key), right["final_metrics"].get(key))
-            valid = all(_finite_number(value) for value in values)
-            differences[key] = values[0] - values[1] if valid else None
-    return differences
-
-
-def _match_outcome(bitwise_equal: bool, differences: dict) -> str:
-    if bitwise_equal:
-        return "bitwise_equal"
-    if all(value == 0 for value in differences.values()):
-        return "metrics_equal_not_bitwise"
-    return "differs"
 
 
 def compare_checkpoints(variants: dict, initial_state: dict) -> dict:
@@ -386,11 +204,11 @@ def assess_frozen_head_training(
         ),
     }
     structural = {**checks, **repair_checks}
-    performance = _performance_checks(variants, "frozen_head_repaired", COMPARATORS)
+    performance = performance_checks(variants, "frozen_head_repaired", COMPARATORS)
     structure_verified = all(structural.values())
     performance_nonregression = all(check["passed"] for check in performance)
-    frozen_vs_stale = _metric_differences(frozen, stale)
-    repaired_vs_clean = _metric_differences(repaired, clean)
+    frozen_vs_stale = metric_differences(frozen, stale)
+    repaired_vs_clean = metric_differences(repaired, clean)
     predictions = {
         "P1_frozen_head_bitwise_unchanged": (
             comparisons["head_unchanged_from_initial"]["frozen_head"]
@@ -400,13 +218,13 @@ def assess_frozen_head_training(
             )
         ),
         "P2_frozen_vs_stale": {
-            "outcome": _match_outcome(
+            "outcome": match_outcome(
                 comparisons["frozen_vs_stale_non_head_state_bitwise_equal"], frozen_vs_stale
             ),
             "final_metric_differences": frozen_vs_stale,
         },
         "P3_repaired_vs_clean": {
-            "outcome": _match_outcome(
+            "outcome": match_outcome(
                 comparisons["repaired_vs_clean_state_bitwise_equal"], repaired_vs_clean
             ),
             "final_metric_differences": repaired_vs_clean,
@@ -517,7 +335,7 @@ def run_frozen_head_training(
                 else "CPU",
                 "precision": "float32",
                 "optimizer": "AdamW",
-                "source_sha256": _snapshot_sources(directory),
+                "source_sha256": snapshot_sources_with(directory, EXTRA_SOURCES),
             },
         )
         report["reference_config_sha256"] = file_sha256(reference_run / "config.json")
@@ -534,7 +352,7 @@ def run_frozen_head_training(
                 output_dir=str(directory),
                 device=str(device),
             )
-            report["variants"][variant] = _run_frozen_variant(
+            report["variants"][variant] = run_training_variant(
                 variant,
                 variant_config,
                 reference_manifest,
@@ -542,6 +360,8 @@ def run_frozen_head_training(
                 expected_hash,
                 directory / variant,
                 device,
+                make_optimizer=_frozen_head_optimizer,
+                task=VARIANT_TASK,
             )
         comparisons = compare_checkpoints(report["variants"], state)
         report["checkpoint_comparisons"] = comparisons

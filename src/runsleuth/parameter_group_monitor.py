@@ -70,12 +70,21 @@ class ParameterGroupMonitor:
 
     Hooks and temporary snapshots are removed on every context exit. A failed
     or incomplete epoch never yields a successful summary.
+
+    With allow_missing_steps, a training forward that is never followed by an
+    optimizer step is counted instead of rejected, so a missing step becomes
+    evidence (training_forwards > optimizer_steps). Group statistics cover only
+    the steps that happened and are None when no step happened.
     """
 
-    def __init__(self, model: nn.Module, optimizer: Optimizer) -> None:
+    def __init__(
+        self, model: nn.Module, optimizer: Optimizer, *, allow_missing_steps: bool = False
+    ) -> None:
         _parameter_groups(model)
         self.model = model
         self.optimizer = optimizer
+        self._allow_missing_steps = allow_missing_steps
+        self._training_forwards = 0
         self._handles: list[Any] = []
         self._used = False
         self._active = False
@@ -129,10 +138,13 @@ class ParameterGroupMonitor:
     def _before_forward(self, module: nn.Module, inputs: tuple[Any, ...]) -> None:
         if not module.training or not torch.is_grad_enabled():
             return
-        if self._forward_pending or self._pending_step is not None:
+        if self._pending_step is not None or (
+            self._forward_pending and not self._allow_missing_steps
+        ):
             raise RuntimeError("Previous training forward has no completed optimizer step")
         module.zero_grad(set_to_none=True)
         self._forward_pending = True
+        self._training_forwards += 1
 
     def _before_step(self, optimizer: Optimizer, args: tuple, kwargs: dict) -> None:
         if not self._forward_pending:
@@ -213,11 +225,20 @@ class ParameterGroupMonitor:
             raise RuntimeError("ParameterGroupMonitor has not entered its context")
         if self._failed:
             raise RuntimeError("Cannot summarize a failed parameter group monitoring context")
-        if self._forward_pending or self._pending_step is not None:
+        if self._pending_step is not None or (
+            self._forward_pending and not self._allow_missing_steps
+        ):
             raise RuntimeError("Cannot summarize an incomplete optimizer step")
-        if self._optimizer_steps == 0:
+        if self._optimizer_steps == 0 and not (
+            self._allow_missing_steps and self._training_forwards > 0
+        ):
             raise RuntimeError("Parameter group monitoring observed zero optimizer steps")
-        result: dict[str, Any] = {"optimizer_steps": self._optimizer_steps}
+        result: dict[str, Any] = {
+            "optimizer_steps": self._optimizer_steps,
+            "training_forwards": self._training_forwards,
+        }
+        if self._optimizer_steps == 0:
+            return {**result, "head": None, "backbone": None}
         for group, totals in self._totals.items():
             sizes, trainable, with_gradient = zip(*self._counts[group], strict=True)
             if len(set(sizes)) != 1:

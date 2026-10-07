@@ -249,6 +249,33 @@ class ParameterGroupMonitorTests(unittest.TestCase):
                 model(self.inputs)
             self.assertTrue(torch.equal(model.fc.weight.grad, expected))
         self.assertEqual(monitor.summary()["optimizer_steps"], 2)
+        self.assertEqual(monitor.summary()["training_forwards"], 2)
+
+    def test_missing_steps_are_counted_when_allowed(self):
+        model, optimizer = self.make_pair()
+        before = {name: parameter.detach().clone() for name, parameter in model.named_parameters()}
+        with ParameterGroupMonitor(model, optimizer, allow_missing_steps=True) as monitor:
+            self.train(model, optimizer, optimizer_step_enabled=False)
+        self.assertEqual(
+            monitor.summary(),
+            {"optimizer_steps": 0, "training_forwards": 2, "head": None, "backbone": None},
+        )
+        for name, parameter in model.named_parameters():
+            self.assertTrue(torch.equal(parameter, before[name]), name)
+        self.assert_cleaned_up(monitor, model, optimizer)
+
+    def test_partial_steps_report_groups_over_completed_steps_only(self):
+        model, optimizer = self.make_pair()
+        with ParameterGroupMonitor(model, optimizer, allow_missing_steps=True) as monitor:
+            for index, (inputs, targets) in enumerate(self.loader):
+                optimizer.zero_grad(set_to_none=True)
+                nn.functional.cross_entropy(model(inputs), targets).backward()
+                if index == 1:
+                    optimizer.step()
+        summary = monitor.summary()
+        self.assertEqual((summary["optimizer_steps"], summary["training_forwards"]), (1, 2))
+        self.assertEqual(summary["head"]["min_tensors_with_gradient"], 2)
+        self.assertGreater(summary["backbone"]["mean_parameter_update_l2_norm"], 0)
 
     def test_no_steps_and_skipped_steps_fail_and_remove_hooks(self):
         for skip_training in (True, False):

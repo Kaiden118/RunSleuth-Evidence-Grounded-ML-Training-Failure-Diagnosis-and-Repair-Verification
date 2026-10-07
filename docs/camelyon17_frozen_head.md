@@ -186,3 +186,55 @@ Existing fields keep their meaning; new fields are additive.
   ResNet18: `deepcopy` keeps `requires_grad=False`; `state_dict` does not store it;
   AdamW with weight decay leaves a parameter without gradients unchanged while the
   backbone trains through it. None of the predictions has been run.
+
+## Stage 1 run (Windows CMD)
+
+From the repository root in the `runsleuth` environment, once per seed baseline:
+
+```bat
+python -m runsleuth.camelyon_frozen_head_probe --reference-run artifacts/optimizer_sweeps/20261001T033140591688Z/seed-7/baseline/seed-7-baseline-20261001T033141996710Z
+python -m runsleuth.camelyon_frozen_head_probe --reference-run artifacts/optimizer_sweeps/20261001T033140591688Z/seed-2026/baseline/seed-2026-baseline-20261001T034655720221Z
+```
+
+The probe always runs on CPU, uses cached data only and exits nonzero unless every
+mechanism check passes. Predictions and candidate verdicts are reported as observed.
+
+## Observed result: stage 1 single-step probe
+
+Both seeds completed on CPU with torch 2.13.0, one fixed 32-image training batch
+and one optimizer step per variant. All seven mechanism checks passed for each seed.
+
+Seed 7 (seed 2026 shows the same pattern):
+
+| Variant | Head trainable | Head tensors with gradient | Head update L2 | Backbone update L2 | Missing / foreign |
+|---|---:|---:|---:|---:|---:|
+| `clean` | 2/2 | 2/2 | 0.003203 | 0.334142 | 0 / 0 |
+| `stale_head` | 2/2 | 2/2 | 0 | 0.334142 | 2 / 2 |
+| `frozen_head` | 0/2 | 0/2 | 0 | 0.334142 | 0 / 0 |
+| `frozen_head_repaired` | 2/2 | 2/2 | 0.003203 | 0.334142 | 0 / 0 |
+| `frozen_head_optimizer_rebuilt` | 0/2 | 0/2 | 0 | 0.334142 | 0 / 0 |
+
+- P1 held: the frozen head was bitwise unchanged after the step.
+- P2 held: `frozen_head` and `stale_head` had identical pre-update loss, backbone
+  gradient hashes and post-step backbone hashes. For one step, the two faults are
+  indistinguishable from the backbone's side; only E1, E2 and E6 separate them.
+- P3 held: `frozen_head_repaired` matched `clean` bitwise for gradients and
+  post-step parameters of both groups.
+- P4 held: restoring `requires_grad` was accepted; rebuilding the optimizer was
+  rejected because not all parameters were trainable and the head had neither
+  gradients nor updates.
+- As expected, the existing optimizer audit reported complete coverage for
+  `frozen_head`.
+
+On AdamW's first step, each element moves by about `learning_rate * sign(gradient)`
+when gradients are well above epsilon, so the update norm is close to
+`learning_rate * sqrt(elements)`: 0.003203 = 1e-4 * sqrt(1026) for the head. A
+single-step update norm therefore shows whether tensors moved, not how strongly.
+The evidence relies on zero versus nonzero updates and on bitwise hashes.
+
+Scope: one optimizer step per variant; mechanism evidence only. No validation,
+training or performance result is claimed. Stage 2 has not been run.
+
+Reports:
+`artifacts/frozen_head_probes/probe-20261007T051446706061Z/frozen_head_probe_report.json` (seed 7),
+`artifacts/frozen_head_probes/probe-20261007T051729795038Z/frozen_head_probe_report.json` (seed 2026)

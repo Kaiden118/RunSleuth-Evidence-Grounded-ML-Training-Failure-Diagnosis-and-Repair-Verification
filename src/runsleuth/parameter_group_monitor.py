@@ -11,20 +11,24 @@ from torch import Tensor, nn
 from torch.optim import Optimizer
 
 
-def _parameter_groups(model: nn.Module) -> dict[str, dict[str, nn.Parameter]]:
+def _parameter_groups(
+    model: nn.Module, head_prefix: str = "fc."
+) -> dict[str, dict[str, nn.Parameter]]:
     groups: dict[str, dict[str, nn.Parameter]] = {"head": {}, "backbone": {}}
     for name, parameter in model.named_parameters():
-        group = "head" if name.startswith("fc.") else "backbone"
+        group = "head" if name.startswith(head_prefix) else "backbone"
         groups[group][name] = parameter
     if not groups["head"] or not groups["backbone"]:
-        raise ValueError("Monitoring requires model.fc and backbone parameter tensors")
+        raise ValueError(
+            f"Monitoring requires model.{head_prefix.rstrip('.')} and backbone parameter tensors"
+        )
     devices = {parameter.device for group in groups.values() for parameter in group.values()}
     if len(devices) != 1:
         raise ValueError("Monitoring requires all model parameters on one device")
     return groups
 
 
-def parameter_trainability(model: nn.Module) -> dict[str, dict[str, Any]]:
+def parameter_trainability(model: nn.Module, head_prefix: str = "fc.") -> dict[str, dict[str, Any]]:
     """Count trainable tensors per group and name frozen ones, without parameter objects."""
     return {
         group: {
@@ -34,7 +38,7 @@ def parameter_trainability(model: nn.Module) -> dict[str, dict[str, Any]]:
                 name for name, parameter in parameters.items() if not parameter.requires_grad
             ),
         }
-        for group, parameters in _parameter_groups(model).items()
+        for group, parameters in _parameter_groups(model, head_prefix).items()
     }
 
 
@@ -81,12 +85,18 @@ class ParameterGroupMonitor:
     """
 
     def __init__(
-        self, model: nn.Module, optimizer: Optimizer, *, allow_missing_steps: bool = False
+        self,
+        model: nn.Module,
+        optimizer: Optimizer,
+        *,
+        allow_missing_steps: bool = False,
+        head_prefix: str = "fc.",
     ) -> None:
-        _parameter_groups(model)
+        _parameter_groups(model, head_prefix)
         self.model = model
         self.optimizer = optimizer
         self._allow_missing_steps = allow_missing_steps
+        self._head_prefix = head_prefix
         self._training_forwards = 0
         self._handles: list[Any] = []
         self._used = False
@@ -159,7 +169,7 @@ class ParameterGroupMonitor:
             raise RuntimeError("Optimizer step has no preceding training forward")
         if self._pending_step is not None:
             raise RuntimeError("Previous optimizer step is incomplete")
-        groups = _parameter_groups(self.model)
+        groups = _parameter_groups(self.model, self._head_prefix)
         if not any(
             parameter.grad is not None
             for parameters in groups.values()

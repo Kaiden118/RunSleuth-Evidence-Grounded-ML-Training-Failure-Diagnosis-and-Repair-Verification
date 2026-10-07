@@ -98,10 +98,19 @@ def _optimizer_family(optimizer_name: str | None) -> str | None:
 def extract_evidence(
     run: dict, reference: dict | None = None, optimizer_name: str | None = None
 ) -> dict:
-    """Normalize one run report into named evidence values; None means unavailable."""
+    """Normalize one run report into named evidence values; None means unavailable.
+
+    The optimizer name defaults to the one RunMonitor records. Gradient and update
+    evidence fall back to RunMonitor's epoch-level measurements when the report has
+    no per-batch training metrics.
+    """
     rows = run.get("parameter_group_epochs", [])
     final = run.get("final_metrics", {})
-    audit = run.get("optimizer_audit") or {}
+    # The final audit also covers a head replaced after the monitor was created.
+    audit = run.get("final_optimizer_audit") or run.get("optimizer_audit") or {}
+    last = rows[-1] if rows else {}
+    head_prefix = run.get("head_prefix", "fc.")
+    optimizer_name = optimizer_name or run.get("optimizer")
     # Rows written before training_forwards existed come from the strict monitor,
     # which rejects any forward without a step, so they imply one step per forward.
     steps_per_forward = [
@@ -114,12 +123,16 @@ def extract_evidence(
         "optimizer_family": _optimizer_family(optimizer_name),
         "status_diverged": run.get("status") == "diverged",
         "max_optimizer_steps_per_forward": max(steps_per_forward) if steps_per_forward else None,
-        "final_mean_gradient_norm": final.get("mean_gradient_norm"),
-        "final_mean_update_norm": final.get("mean_parameter_update_norm"),
+        "final_mean_gradient_norm": final.get(
+            "mean_gradient_norm", last.get("gradient_l2_at_epoch_end")
+        ),
+        "final_mean_update_norm": final.get(
+            "mean_parameter_update_norm", last.get("epoch_parameter_change_l2")
+        ),
         "audit_missing_trainable_tensors": None if missing is None else len(missing),
         "audit_missing_head_tensors": None
         if missing is None
-        else sum(name.startswith("fc.") for name in missing),
+        else sum(name.startswith(head_prefix) for name in missing),
         "audit_foreign_tensors": audit.get("foreign_parameter_tensors"),
         "reference_available": reference is not None,
     }
@@ -301,7 +314,9 @@ def main() -> None:
     single = commands.add_parser("diagnose", help="Diagnose one variant run report")
     single.add_argument("--run", type=Path, required=True)
     single.add_argument("--reference", type=Path)
-    single.add_argument("--optimizer", help="Optimizer class name, for example AdamW")
+    single.add_argument(
+        "--optimizer", help="Optimizer class name, for example AdamW (default: from the report)"
+    )
     batch = commands.add_parser("evaluate", help="Score labeled experiment reports")
     batch.add_argument("reports", type=Path, nargs="+")
     batch.add_argument("--output", type=Path)

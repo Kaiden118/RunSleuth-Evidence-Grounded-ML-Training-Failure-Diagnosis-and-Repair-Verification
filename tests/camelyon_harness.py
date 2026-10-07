@@ -37,6 +37,7 @@ class CamelyonHarness(unittest.TestCase):
 
     # Nonzero weight decay: an untouched frozen head also shows AdamW skipped its decay.
     weight_decay = 0.01
+    learning_rate = 0.03
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -49,7 +50,7 @@ class CamelyonHarness(unittest.TestCase):
             device="cpu",
             epochs=3,
             batch_size=2,
-            learning_rate=0.03,
+            learning_rate=self.learning_rate,
             weight_decay=self.weight_decay,
             output_dir=str(self.output),
             seed=17,

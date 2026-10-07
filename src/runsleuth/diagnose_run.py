@@ -27,6 +27,11 @@ SYSTEM_PROMPT = """You are RunSleuth's diagnosis reviewer for PyTorch training r
 You receive evidence extracted from training telemetry, a library of known failure
 signatures, and a deterministic matcher's verdict for every signature condition.
 Use only the supplied evidence; never assume facts that are not in it.
+Each signature lists "requires" and "contradicts" conditions. A signature is
+supported when every requires condition is true and no contradicts condition is
+true. A contradicts condition with result false means the contradicting fact is
+absent; it does not count against the signature. A result of null means the value
+was unavailable (status missing, needs_reference or skipped_without_reference).
 Choose one diagnosis: a signature id, "no_known_fault", or "insufficient_evidence".
 Cite 1 to 8 evidence items by their exact names with the exact values supplied,
 and say whether each supports or contradicts your diagnosis.
@@ -80,18 +85,22 @@ def validate_llm_diagnosis(raw: str, evidence: dict, allowed: set[str]) -> tuple
 
 
 def _compact_verdicts(result: dict) -> list[dict]:
+    """Keep required and contradicting conditions apart: their results mean opposite things."""
+    keys = ("evidence", "op", "expected", "observed", "result", "status")
+
+    def compact(conditions):
+        return [
+            {key: condition.get(key) for key in keys}
+            for condition in conditions
+            if "evidence" in condition
+        ]
+
     return [
         {
             "id": item["id"],
             "verdict": item["verdict"],
-            "conditions": [
-                {
-                    key: condition.get(key)
-                    for key in ("evidence", "op", "expected", "observed", "result", "status")
-                }
-                for condition in item["requires"] + item["contradicts"]
-                if "evidence" in condition
-            ],
+            "requires": compact(item["requires"]),
+            "contradicts": compact(item["contradicts"]),
         }
         for item in result["verdicts"]
     ]

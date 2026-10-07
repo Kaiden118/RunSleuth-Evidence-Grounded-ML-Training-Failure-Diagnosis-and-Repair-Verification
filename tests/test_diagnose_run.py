@@ -75,6 +75,20 @@ class DiagnoseRunTests(unittest.TestCase):
         self.assertEqual(payload["matcher_diagnosis"], "high_learning_rate")
         json.dumps(result, allow_nan=False)
 
+    def test_payload_keeps_requires_and_contradicts_apart(self):
+        # A real review misread a false contradicting condition as a failed requirement
+        # when both lists were merged; roles must stay explicit.
+        _, client = self.review([reply()])
+        system, user = (message["content"] for message in client.requests[0]["messages"])
+        self.assertIn("does not count against the signature", system)
+        verdicts = {item["id"]: item for item in json.loads(user)["matcher_verdicts"]}
+        contradiction = verdicts["high_learning_rate"]["contradicts"][0]
+        self.assertEqual(
+            (contradiction["evidence"], contradiction["result"]),
+            ("max_optimizer_steps_per_forward", False),
+        )
+        self.assertNotIn("conditions", verdicts["high_learning_rate"])
+
     def test_wrong_citation_is_retried_with_the_issues(self):
         result, client = self.review([reply(value=0.5), reply()])
         self.assertEqual(result["llm"]["status"], "completed")

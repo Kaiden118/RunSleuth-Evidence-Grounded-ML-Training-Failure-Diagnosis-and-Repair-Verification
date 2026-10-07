@@ -67,15 +67,27 @@ class ParameterGroupMonitor:
     including a replacement head absent from optimizer parameter groups.
     Each step also counts trainable tensors and tensors with gradients per
     group, so an absent gradient (a frozen head) is not mistaken for a zero one.
+    Per group it also records the mean weight norm, the mean per-step
+    update-to-weight ratio, and the epoch's first update norm with the element
+    count; for AdamW's first step the latter approximate lr * sqrt(elements).
 
     Hooks and temporary snapshots are removed on every context exit. A failed
     or incomplete epoch never yields a successful summary.
+
+    With allow_missing_steps, a training forward that is never followed by an
+    optimizer step is counted instead of rejected, so a missing step becomes
+    evidence (training_forwards > optimizer_steps). Group statistics cover only
+    the steps that happened and are None when no step happened.
     """
 
-    def __init__(self, model: nn.Module, optimizer: Optimizer) -> None:
+    def __init__(
+        self, model: nn.Module, optimizer: Optimizer, *, allow_missing_steps: bool = False
+    ) -> None:
         _parameter_groups(model)
         self.model = model
         self.optimizer = optimizer
+        self._allow_missing_steps = allow_missing_steps
+        self._training_forwards = 0
         self._handles: list[Any] = []
         self._used = False
         self._active = False
@@ -83,7 +95,12 @@ class ParameterGroupMonitor:
         self._forward_pending = False
         self._pending_step: dict[str, Any] | None = None
         self._optimizer_steps = 0
-        self._totals = {group: {"gradient": 0.0, "update": 0.0} for group in ("head", "backbone")}
+        self._totals = {
+            group: {"gradient": 0.0, "update": 0.0, "parameter": 0.0, "ratio": 0.0}
+            for group in ("head", "backbone")
+        }
+        self._first_updates: dict[str, float] = {}
+        self._elements: dict[str, int] = {}
         self._counts: dict[str, list[tuple[int, int, int]]] = {group: [] for group in self._totals}
 
     def __enter__(self) -> ParameterGroupMonitor:
@@ -129,10 +146,13 @@ class ParameterGroupMonitor:
     def _before_forward(self, module: nn.Module, inputs: tuple[Any, ...]) -> None:
         if not module.training or not torch.is_grad_enabled():
             return
-        if self._forward_pending or self._pending_step is not None:
+        if self._pending_step is not None or (
+            self._forward_pending and not self._allow_missing_steps
+        ):
             raise RuntimeError("Previous training forward has no completed optimizer step")
         module.zero_grad(set_to_none=True)
         self._forward_pending = True
+        self._training_forwards += 1
 
     def _before_step(self, optimizer: Optimizer, args: tuple, kwargs: dict) -> None:
         if not self._forward_pending:
@@ -169,6 +189,13 @@ class ParameterGroupMonitor:
             "groups": groups,
             "gradients": gradients,
             "counts": counts,
+            "parameter_norms": {
+                group: _l2_norm(parameters.values()) for group, parameters in groups.items()
+            },
+            "elements": {
+                group: sum(parameter.numel() for parameter in parameters.values())
+                for group, parameters in groups.items()
+            },
             "snapshots": snapshots,
         }
 
@@ -195,9 +222,17 @@ class ParameterGroupMonitor:
                 for group, parameters in pending["groups"].items()
             }
             for group in self._totals:
+                norm, update = pending["parameter_norms"][group], updates[group]
                 self._totals[group]["gradient"] += pending["gradients"][group]
-                self._totals[group]["update"] += updates[group]
+                self._totals[group]["update"] += update
+                self._totals[group]["parameter"] += norm
+                self._totals[group]["ratio"] += (
+                    update / norm if norm > 0 else (0.0 if update == 0 else math.inf)
+                )
                 self._counts[group].append(pending["counts"][group])
+                self._elements[group] = pending["elements"][group]
+                if self._optimizer_steps == 0:
+                    self._first_updates[group] = update
             self._optimizer_steps += 1
             self._forward_pending = False
         finally:
@@ -213,11 +248,20 @@ class ParameterGroupMonitor:
             raise RuntimeError("ParameterGroupMonitor has not entered its context")
         if self._failed:
             raise RuntimeError("Cannot summarize a failed parameter group monitoring context")
-        if self._forward_pending or self._pending_step is not None:
+        if self._pending_step is not None or (
+            self._forward_pending and not self._allow_missing_steps
+        ):
             raise RuntimeError("Cannot summarize an incomplete optimizer step")
-        if self._optimizer_steps == 0:
+        if self._optimizer_steps == 0 and not (
+            self._allow_missing_steps and self._training_forwards > 0
+        ):
             raise RuntimeError("Parameter group monitoring observed zero optimizer steps")
-        result: dict[str, Any] = {"optimizer_steps": self._optimizer_steps}
+        result: dict[str, Any] = {
+            "optimizer_steps": self._optimizer_steps,
+            "training_forwards": self._training_forwards,
+        }
+        if self._optimizer_steps == 0:
+            return {**result, "head": None, "backbone": None}
         for group, totals in self._totals.items():
             sizes, trainable, with_gradient = zip(*self._counts[group], strict=True)
             if len(set(sizes)) != 1:
@@ -225,6 +269,10 @@ class ParameterGroupMonitor:
             result[group] = {
                 "mean_gradient_l2_norm": totals["gradient"] / self._optimizer_steps,
                 "mean_parameter_update_l2_norm": totals["update"] / self._optimizer_steps,
+                "mean_parameter_l2_norm": totals["parameter"] / self._optimizer_steps,
+                "mean_update_to_weight_ratio": totals["ratio"] / self._optimizer_steps,
+                "first_step_parameter_update_l2_norm": self._first_updates[group],
+                "parameter_elements": self._elements[group],
                 "parameter_tensors": sizes[0],
                 "min_trainable_tensors": min(trainable),
                 "max_trainable_tensors": max(trainable),

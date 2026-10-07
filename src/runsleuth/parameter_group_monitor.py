@@ -24,6 +24,20 @@ def _parameter_groups(model: nn.Module) -> dict[str, dict[str, nn.Parameter]]:
     return groups
 
 
+def parameter_trainability(model: nn.Module) -> dict[str, dict[str, Any]]:
+    """Count trainable tensors per group and name frozen ones, without parameter objects."""
+    return {
+        group: {
+            "parameter_tensors": len(parameters),
+            "trainable_tensors": sum(parameter.requires_grad for parameter in parameters.values()),
+            "frozen_names": sorted(
+                name for name, parameter in parameters.items() if not parameter.requires_grad
+            ),
+        }
+        for group, parameters in _parameter_groups(model).items()
+    }
+
+
 def _l2_norm(tensors: Iterable[Tensor]) -> float:
     """Reduce on the model device, with one scalar transfer per group norm."""
     norms = []
@@ -51,6 +65,8 @@ class ParameterGroupMonitor:
     head parameters cannot accumulate gradients across batches. Evaluation
     forwards are ignored. Optimizer hooks measure current model parameters,
     including a replacement head absent from optimizer parameter groups.
+    Each step also counts trainable tensors and tensors with gradients per
+    group, so an absent gradient (a frozen head) is not mistaken for a zero one.
 
     Hooks and temporary snapshots are removed on every context exit. A failed
     or incomplete epoch never yields a successful summary.
@@ -68,6 +84,7 @@ class ParameterGroupMonitor:
         self._pending_step: dict[str, Any] | None = None
         self._optimizer_steps = 0
         self._totals = {group: {"gradient": 0.0, "update": 0.0} for group in ("head", "backbone")}
+        self._counts: dict[str, list[tuple[int, int, int]]] = {group: [] for group in self._totals}
 
     def __enter__(self) -> ParameterGroupMonitor:
         if self._used:
@@ -135,6 +152,14 @@ class ParameterGroupMonitor:
             )
             for group, parameters in groups.items()
         }
+        counts = {
+            group: (
+                len(parameters),
+                sum(parameter.requires_grad for parameter in parameters.values()),
+                sum(parameter.grad is not None for parameter in parameters.values()),
+            )
+            for group, parameters in groups.items()
+        }
         snapshots = {
             name: parameter.detach().clone()
             for parameters in groups.values()
@@ -143,6 +168,7 @@ class ParameterGroupMonitor:
         self._pending_step = {
             "groups": groups,
             "gradients": gradients,
+            "counts": counts,
             "snapshots": snapshots,
         }
 
@@ -171,6 +197,7 @@ class ParameterGroupMonitor:
             for group in self._totals:
                 self._totals[group]["gradient"] += pending["gradients"][group]
                 self._totals[group]["update"] += updates[group]
+                self._counts[group].append(pending["counts"][group])
             self._optimizer_steps += 1
             self._forward_pending = False
         finally:
@@ -181,7 +208,7 @@ class ParameterGroupMonitor:
             self._pending_step = None
 
     def summary(self) -> dict[str, Any]:
-        """Return JSON-compatible means; reject failed or unfinished epochs."""
+        """Return JSON-compatible means and tensor counts; reject failed or unfinished epochs."""
         if not self._used:
             raise RuntimeError("ParameterGroupMonitor has not entered its context")
         if self._failed:
@@ -192,9 +219,17 @@ class ParameterGroupMonitor:
             raise RuntimeError("Parameter group monitoring observed zero optimizer steps")
         result: dict[str, Any] = {"optimizer_steps": self._optimizer_steps}
         for group, totals in self._totals.items():
+            sizes, trainable, with_gradient = zip(*self._counts[group], strict=True)
+            if len(set(sizes)) != 1:
+                raise RuntimeError("Parameter group size changed within the epoch")
             result[group] = {
                 "mean_gradient_l2_norm": totals["gradient"] / self._optimizer_steps,
                 "mean_parameter_update_l2_norm": totals["update"] / self._optimizer_steps,
+                "parameter_tensors": sizes[0],
+                "min_trainable_tensors": min(trainable),
+                "max_trainable_tensors": max(trainable),
+                "min_tensors_with_gradient": min(with_gradient),
+                "max_tensors_with_gradient": max(with_gradient),
             }
             if any(not math.isfinite(value) for value in result[group].values()):
                 raise ValueError("Parameter group monitoring produced non-finite mean norms")

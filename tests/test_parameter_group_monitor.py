@@ -17,7 +17,7 @@ except ModuleNotFoundError as error:
     nn = None
 
 if torch is not None:
-    from runsleuth.parameter_group_monitor import ParameterGroupMonitor
+    from runsleuth.parameter_group_monitor import ParameterGroupMonitor, parameter_trainability
     from runsleuth.train import train_one_epoch
 
     class TinyModel(nn.Module):
@@ -48,8 +48,10 @@ class ParameterGroupMonitorTests(unittest.TestCase):
     def make_pair(self, variant="clean"):
         model = deepcopy(self.model)
         head = deepcopy(model.fc)
-        if variant == "clean":
+        if variant in ("clean", "frozen_head"):
             model.fc = head
+        if variant == "frozen_head":
+            model.fc.requires_grad_(False)
         optimizer = torch.optim.AdamW(model.parameters(), lr=0.01, weight_decay=0.02)
         if variant == "stale_head":
             model.fc = head
@@ -151,6 +153,88 @@ class ParameterGroupMonitorTests(unittest.TestCase):
                 summaries[0][group]["mean_gradient_l2_norm"],
                 summaries[1][group]["mean_gradient_l2_norm"],
             )
+
+    def test_tensor_counts_separate_frozen_head_from_stale_head(self):
+        # variant: (head trainable tensors, head tensors with gradient)
+        expected = {"clean": (2, 2), "stale_head": (2, 2), "frozen_head": (0, 0)}
+        for variant, (trainable, with_gradient) in expected.items():
+            with self.subTest(variant=variant):
+                model, optimizer = self.make_pair(variant)
+                initial_head = [parameter.detach().clone() for parameter in model.fc.parameters()]
+                with ParameterGroupMonitor(model, optimizer) as monitor:
+                    self.train(model, optimizer)
+                summary = monitor.summary()
+                head, backbone = summary["head"], summary["backbone"]
+                self.assertEqual(head["parameter_tensors"], 2)
+                self.assertEqual(head["min_trainable_tensors"], trainable)
+                self.assertEqual(head["max_trainable_tensors"], trainable)
+                self.assertEqual(head["min_tensors_with_gradient"], with_gradient)
+                self.assertEqual(head["max_tensors_with_gradient"], with_gradient)
+                for key in ("min_trainable_tensors", "min_tensors_with_gradient"):
+                    self.assertEqual(backbone[key], backbone["parameter_tensors"])
+                self.assertGreater(backbone["mean_parameter_update_l2_norm"], 0)
+                head_unchanged = all(
+                    torch.equal(parameter, initial)
+                    for parameter, initial in zip(model.fc.parameters(), initial_head, strict=True)
+                )
+                self.assertEqual(head_unchanged, variant != "clean")
+                if variant == "frozen_head":
+                    self.assertEqual(head["mean_gradient_l2_norm"], 0.0)
+                    self.assertEqual(head["mean_parameter_update_l2_norm"], 0.0)
+                else:
+                    self.assertGreater(head["mean_gradient_l2_norm"], 0)
+                json.dumps(summary, allow_nan=False)
+
+    def test_tensor_counts_report_minimum_and_maximum_across_steps(self):
+        model, optimizer = self.make_pair("frozen_head")
+        with ParameterGroupMonitor(model, optimizer) as monitor:
+            for index, (inputs, targets) in enumerate(self.loader):
+                if index == 1:
+                    model.fc.requires_grad_(True)
+                optimizer.zero_grad(set_to_none=True)
+                nn.functional.cross_entropy(model(inputs), targets).backward()
+                optimizer.step()
+        summary = monitor.summary()
+        head = summary["head"]
+        self.assertEqual(summary["optimizer_steps"], 2)
+        self.assertEqual((head["min_trainable_tensors"], head["max_trainable_tensors"]), (0, 2))
+        self.assertEqual(
+            (head["min_tensors_with_gradient"], head["max_tensors_with_gradient"]), (0, 2)
+        )
+        self.assertGreater(head["mean_parameter_update_l2_norm"], 0)
+
+    def test_group_size_change_within_epoch_is_rejected(self):
+        model, optimizer = self.make_pair()
+        monitor = ParameterGroupMonitor(model, optimizer)
+        with self.assertRaisesRegex(RuntimeError, "size changed"):
+            with monitor:
+                for index, (inputs, targets) in enumerate(self.loader):
+                    if index == 1:
+                        model.fc = nn.Linear(4, 2, bias=False)
+                    optimizer.zero_grad(set_to_none=True)
+                    nn.functional.cross_entropy(model(inputs), targets).backward()
+                    optimizer.step()
+        self.assert_cleaned_up(monitor, model, optimizer)
+
+    def test_parameter_trainability_names_frozen_tensors(self):
+        for variant, frozen in (("clean", []), ("frozen_head", ["fc.bias", "fc.weight"])):
+            with self.subTest(variant=variant):
+                model, _ = self.make_pair(variant)
+                self.assertEqual(
+                    parameter_trainability(model),
+                    {
+                        "head": {
+                            "parameter_tensors": 2,
+                            "trainable_tensors": 2 - len(frozen),
+                            "frozen_names": frozen,
+                        },
+                        "backbone": {
+                            "parameter_tensors": 2,
+                            "trainable_tensors": 2,
+                            "frozen_names": [],
+                        },
+                    },
+                )
 
     def test_evaluation_and_no_grad_forwards_do_not_clear_gradients_or_count_steps(self):
         model, optimizer = self.make_pair()

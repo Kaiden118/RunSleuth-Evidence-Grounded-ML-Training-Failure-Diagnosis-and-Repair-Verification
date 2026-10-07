@@ -23,6 +23,11 @@ llm = [
     "openai",
 ]
 
+hf = [
+    "transformers>=5.19,<6",
+    "accelerate>=1.15,<2",
+]
+
 camelyon = [
     "datasets>=3,<5",
     "huggingface-hub>=0.34,<2",

@@ -251,6 +251,50 @@ class ParameterGroupMonitorTests(unittest.TestCase):
         self.assertEqual(monitor.summary()["optimizer_steps"], 2)
         self.assertEqual(monitor.summary()["training_forwards"], 2)
 
+    def test_weight_norms_ratios_and_first_update_match_independent_loop(self):
+        model, optimizer = self.make_pair()
+        reference_model, reference_optimizer = self.make_pair()
+        with ParameterGroupMonitor(model, optimizer) as monitor:
+            self.train(model, optimizer)
+        actual = monitor.summary()
+        records = {group: {"norm": [], "update": []} for group in ("head", "backbone")}
+        reference_model.train()
+        for inputs, targets in self.loader:
+            reference_model.zero_grad(set_to_none=True)
+            reference_optimizer.zero_grad(set_to_none=True)
+            nn.functional.cross_entropy(reference_model(inputs), targets).backward()
+            groups = {
+                "head": dict(reference_model.fc.named_parameters(prefix="fc")),
+                "backbone": dict(reference_model.backbone.named_parameters(prefix="backbone")),
+            }
+            before = {
+                name: parameter.detach().clone()
+                for name, parameter in reference_model.named_parameters()
+            }
+            for group, parameters in groups.items():
+                records[group]["norm"].append(self.reference_norm(parameters.values()))
+            reference_optimizer.step()
+            for group, parameters in groups.items():
+                records[group]["update"].append(
+                    self.reference_norm(
+                        parameter.detach() - before[name] for name, parameter in parameters.items()
+                    )
+                )
+        for group, elements in (("head", 10), ("backbone", 16)):
+            norms, updates = records[group]["norm"], records[group]["update"]
+            self.assertEqual(actual[group]["parameter_elements"], elements)
+            self.assertAlmostEqual(
+                actual[group]["mean_parameter_l2_norm"], sum(norms) / 2, places=6
+            )
+            self.assertAlmostEqual(
+                actual[group]["mean_update_to_weight_ratio"],
+                sum(update / norm for update, norm in zip(updates, norms, strict=True)) / 2,
+                places=6,
+            )
+            self.assertAlmostEqual(
+                actual[group]["first_step_parameter_update_l2_norm"], updates[0], places=6
+            )
+
     def test_missing_steps_are_counted_when_allowed(self):
         model, optimizer = self.make_pair()
         before = {name: parameter.detach().clone() for name, parameter in model.named_parameters()}

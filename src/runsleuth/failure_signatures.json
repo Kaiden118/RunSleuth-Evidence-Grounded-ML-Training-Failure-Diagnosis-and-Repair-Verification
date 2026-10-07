@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "description": "Declarative training-failure signatures. A signature is supported when every required condition holds and no contradicting condition holds. Conditions marked needs_reference are evaluated only when a healthy reference run is supplied; without one they leave the verdict pending (missing_reference=pending, the default) or are skipped as corroboration (missing_reference=ignore).",
+  "thresholds": {
+    "max_adamw_finetune_learning_rate": {
+      "value": 0.001,
+      "source": "Heuristic upper end of typical AdamW learning rates for fine-tuning pretrained vision backbones (roughly 1e-5 to 1e-3). Not calibrated on RunSleuth runs."
+    },
+    "min_learning_rate_ratio_to_reference": {
+      "value": 10,
+      "source": "Order-of-magnitude rule for a learning rate far above a known-good reference. Not calibrated on RunSleuth runs."
+    }
+  },
+  "signatures": [
+    {
+      "id": "stale_optimizer_binding",
+      "subsystem": "optimizer",
+      "scope": "group_local",
+      "description": "The optimizer still holds replaced head parameters: the current head receives gradients but is never updated, while the backbone trains.",
+      "requires": [
+        {"evidence": "head_min_gradient_fraction", "op": "==", "value": 1, "meaning": "every current head tensor has a gradient at every step"},
+        {"evidence": "head_max_update_norm", "op": "==", "value": 0, "meaning": "the head is never updated"},
+        {"evidence": "audit_missing_head_tensors", "op": ">", "value": 0, "meaning": "current head tensors are absent from the optimizer"},
+        {"evidence": "backbone_min_update_norm", "op": ">", "value": 0, "meaning": "the backbone updates in every epoch"}
+      ],
+      "contradicts": [
+        {"evidence": "head_min_trainable_fraction", "op": "<", "value": 1, "meaning": "a head tensor is not trainable"}
+      ],
+      "repair": {"action": "rebuild_optimizer", "timing": "before_first_optimizer_step", "description": "Construct the optimizer from model.parameters() after the head has been replaced."}
+    },
+    {
+      "id": "frozen_head",
+      "subsystem": "model",
+      "scope": "group_local",
+      "description": "The classification head has requires_grad=False although full-model training is intended: it receives no gradients and never changes while the backbone trains.",
+      "requires": [
+        {"evidence": "head_max_trainable_fraction", "op": "==", "value": 0, "meaning": "no head tensor is trainable"},
+        {"evidence": "head_max_gradient_fraction", "op": "==", "value": 0, "meaning": "no head tensor ever has a gradient"},
+        {"evidence": "head_max_update_norm", "op": "==", "value": 0, "meaning": "the head is never updated"},
+        {"evidence": "backbone_min_update_norm", "op": ">", "value": 0, "meaning": "the backbone updates in every epoch"},
+        {"evidence": "reference_head_min_trainable_fraction", "op": "==", "value": 1, "needs_reference": true, "meaning": "the healthy reference trains its head, so freezing is unintended"}
+      ],
+      "contradicts": [
+        {"evidence": "head_max_gradient_fraction", "op": ">", "value": 0, "meaning": "a head tensor receives gradients"},
+        {"evidence": "audit_missing_trainable_tensors", "op": ">", "value": 0, "meaning": "trainable tensors are missing from the optimizer"}
+      ],
+      "repair": {"action": "restore_head_requires_grad", "timing": "before_first_optimizer_step", "description": "Set requires_grad=True on the head; the optimizer already contains its tensors."}
+    },
+    {
+      "id": "high_learning_rate",
+      "subsystem": "configuration",
+      "scope": "global",
+      "description": "The learning rate is far too high for fine-tuning. For Adam-family optimizers the first update moves each element by about the learning rate, so the effective learning rate is inferred from telemetry rather than read from the config.",
+      "requires": [
+        {"evidence": "optimizer_family", "op": "==", "value": "adam", "meaning": "the first-step inference assumes an Adam-family optimizer"},
+        {"evidence": "backbone_inferred_first_step_lr", "op": ">", "value": "$max_adamw_finetune_learning_rate", "meaning": "the inferred first-step learning rate exceeds the fine-tuning range"},
+        {"evidence": "backbone_inferred_lr_ratio_to_reference", "op": ">=", "value": "$min_learning_rate_ratio_to_reference", "needs_reference": true, "missing_reference": "ignore", "meaning": "the inferred learning rate is at least ten times the reference's"}
+      ],
+      "contradicts": [
+        {"evidence": "max_optimizer_steps_per_forward", "op": "==", "value": 0, "meaning": "no optimizer step ever runs"}
+      ],
+      "repair": {"action": "restore_config_field", "field": "learning_rate", "timing": "before_training", "description": "Restore the reference learning rate; without a reference, lower it into the fine-tuning range."}
+    },
+    {
+      "id": "missing_optimizer_step",
+      "subsystem": "training_loop",
+      "scope": "global",
+      "description": "Forward and backward passes run but optimizer.step() is never called: gradients exist and no parameter changes.",
+      "requires": [
+        {"evidence": "max_optimizer_steps_per_forward", "op": "==", "value": 0, "meaning": "training forwards run without any optimizer step"},
+        {"evidence": "final_mean_gradient_norm", "op": ">", "value": 0, "meaning": "backward still produces gradients"},
+        {"evidence": "final_mean_update_norm", "op": "==", "value": 0, "meaning": "no parameter changes"}
+      ],
+      "contradicts": [
+        {"evidence": "final_mean_update_norm", "op": ">", "value": 0, "meaning": "parameters change"}
+      ],
+      "repair": {"action": "restore_config_field", "field": "optimizer_step_enabled", "timing": "before_training", "description": "Call optimizer.step() after backward in every training iteration."}
+    }
+  ]
+}

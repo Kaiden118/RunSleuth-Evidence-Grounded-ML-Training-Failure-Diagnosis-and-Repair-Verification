@@ -238,3 +238,66 @@ training or performance result is claimed. Stage 2 has not been run.
 Reports:
 `artifacts/frozen_head_probes/probe-20261007T051446706061Z/frozen_head_probe_report.json` (seed 7),
 `artifacts/frozen_head_probes/probe-20261007T051729795038Z/frozen_head_probe_report.json` (seed 2026)
+
+## Stage 2 run (Windows CMD)
+
+```bat
+python -m runsleuth.camelyon_frozen_head_training --reference-run artifacts/optimizer_sweeps/20261001T033140591688Z/seed-7/baseline/seed-7-baseline-20261001T033141996710Z
+python -m runsleuth.camelyon_frozen_head_training --reference-run artifacts/optimizer_sweeps/20261001T033140591688Z/seed-2026/baseline/seed-2026-baseline-20261001T034655720221Z
+```
+
+The command exits nonzero unless the mechanism is reproduced and the repair is accepted.
+
+Implementation note: `camelyon_optimizer_training.py` is a recorded fixture for the
+source-localization experiments, which parse its optimizer dispatch, so it was not
+modified. The stage 2 runner mirrors its variant loop and performance gate. Tests
+require bitwise-identical checkpoints and identical metrics for the shared `clean`
+and `stale_head` variants, and identical gate outputs.
+
+P2 and P3 do not specify a tolerance above. Before stage 2 was run, the runner was
+written to report each comparison as `bitwise_equal`, `metrics_equal_not_bitwise` or
+`differs`, with signed final-metric differences, and to apply no pass threshold.
+
+## Observed result: stage 2 bounded training
+
+Both seeds completed on CUDA (RTX 5060 Ti) with three epochs per variant, 24
+training epochs in total and no model calls. All ten mechanism checks and all five
+repair checks passed for each seed.
+
+| Seed | Variant | ID accuracy | OOD accuracy | ID loss | OOD loss |
+|---|---|---:|---:|---:|---:|
+| 7 | `clean` | 0.9784 | 0.8994 | 0.06668 | 0.41611 |
+| 7 | `stale_head` | 0.9792 | 0.8938 | 0.06377 | 0.39132 |
+| 7 | `frozen_head` | 0.9792 | 0.8938 | 0.06377 | 0.39132 |
+| 7 | `frozen_head_repaired` | 0.9784 | 0.8994 | 0.06668 | 0.41611 |
+| 2026 | `clean` | 0.9794 | 0.9038 | 0.06225 | 0.37101 |
+| 2026 | `stale_head` | 0.9766 | 0.8928 | 0.07775 | 0.36016 |
+| 2026 | `frozen_head` | 0.9766 | 0.8928 | 0.07775 | 0.36016 |
+| 2026 | `frozen_head_repaired` | 0.9794 | 0.9038 | 0.06225 | 0.37101 |
+
+- P1 held for both seeds: the frozen head had no gradients and zero updates in
+  every epoch, and its final tensors were bitwise identical to initialization.
+- P2 outcome for both seeds: `bitwise_equal`. On CUDA, every non-head parameter and
+  buffer of `frozen_head` matched `stale_head` bitwise after three epochs.
+- P3 outcome for both seeds: `bitwise_equal`. The repaired checkpoint matched
+  `clean` bitwise.
+- Repair decision for both seeds: `accepted`, with structure verified and all eight
+  development performance checks passed.
+
+Against `frozen_head`, the repaired run's OOD loss ratio was 1.0633 (seed 7) and
+1.0301 (seed 2026), and its ID loss ratio was 1.0456 (seed 7) and 0.8007 (seed 2026),
+all within the 1.10 limit. The frozen head had lower OOD loss in both seeds. With
+two seeds and a development policy, this supports neither a benefit nor a harm of a
+fixed head; it does show that validation metrics alone would not reveal this fault.
+
+A first attempt (`run-20261007T061342891035Z`) was stopped during seed 7's fourth
+variant and produced no final report. It was rerun from scratch. For the three
+variants it completed, final metrics were exactly equal and checkpoints were bitwise
+identical to the rerun, so these CUDA runs were reproducible across processes.
+
+Scope: two seeds, author-constructed fault and development thresholds; no
+statistical or performance-recovery claim. No test-set evaluation was performed.
+
+Reports:
+`artifacts/frozen_head_training/run-20261007T062923611734Z/frozen_head_training_report.json` (seed 7),
+`artifacts/frozen_head_training/run-20261007T064319356166Z/frozen_head_training_report.json` (seed 2026)

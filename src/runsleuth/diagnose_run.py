@@ -32,7 +32,10 @@ supported when every requires condition is true and no contradicts condition is
 true. A contradicts condition with result false means the contradicting fact is
 absent; it does not count against the signature. A result of null means the value
 was unavailable (status missing, needs_reference or skipped_without_reference).
-Choose one diagnosis: a signature id, "no_known_fault", or "insufficient_evidence".
+Choose one diagnosis: a signature id, "no_known_fault", "insufficient_evidence", or
+"pending_reference". Answer "pending_reference" when a signature is supported except
+for conditions with status needs_reference: only a healthy reference run can establish
+that intent, so do not assume it.
 Cite 1 to 8 evidence items by their exact names with the exact values supplied,
 and say whether each supports or contradicts your diagnosis.
 If you disagree with the matcher, explain why in disagreement_with_matcher;
@@ -111,6 +114,7 @@ def request_llm_diagnosis(client, model: str, matcher: dict, library: dict) -> d
     allowed = {signature["id"] for signature in library["signatures"]} | {
         "no_known_fault",
         "insufficient_evidence",
+        "pending_reference",
     }
     signatures = [
         {key: signature[key] for key in ("id", "subsystem", "scope", "description", "repair")}
@@ -200,11 +204,23 @@ def diagnose_run(
     if review["status"] != "completed":
         result["llm_note"] = f"LLM review {review['status']}; the matcher's diagnosis stands"
         return result
-    agrees = review["diagnosis"]["diagnosis"] == matcher["diagnosis"]
+    llm_diagnosis = review["diagnosis"]["diagnosis"]
+    agrees = llm_diagnosis == matcher["diagnosis"]
     result["conflict"] = not agrees
     result["decided_by"] = "signature_matcher_and_llm" if agrees else "signature_matcher"
     if not agrees:
-        result["llm_note"] = "LLM disagrees with the matcher; flagged for human review"
+        assumed = (
+            matcher["diagnosis"] == "pending_reference"
+            and llm_diagnosis in matcher["pending_reference"]
+        )
+        result["conflict_kind"] = (
+            "assumed_reference_condition" if assumed else "different_diagnosis"
+        )
+        result["llm_note"] = (
+            f"LLM chose {llm_diagnosis} without the reference it needs; flagged for human review"
+            if assumed
+            else "LLM disagrees with the matcher; flagged for human review"
+        )
     return result
 
 

@@ -89,6 +89,35 @@ class DiagnoseRunTests(unittest.TestCase):
         )
         self.assertNotIn("conditions", verdicts["high_learning_rate"])
 
+    def test_pending_reference_can_be_agreed_and_skipping_it_is_a_named_conflict(self):
+        # A real review of a frozen head without a reference had no way to agree:
+        # pending_reference was not an allowed answer.
+        def frozen_reply(diagnosis):
+            return json.dumps(
+                {
+                    "diagnosis": diagnosis,
+                    "explanation": "The head is frozen; only a reference can show intent.",
+                    "citations": [
+                        {"name": "head_max_trainable_fraction", "value": 0.0, "role": "supports"}
+                    ],
+                    "repair": "Confirm intent with a reference run.",
+                    "confidence": "medium",
+                    "disagreement_with_matcher": None,
+                }
+            )
+
+        frozen = SCENARIOS["frozen_head"]
+        for diagnosis, conflict, kind in (
+            ("pending_reference", False, None),
+            ("frozen_head", True, "assumed_reference_condition"),
+        ):
+            with self.subTest(diagnosis=diagnosis):
+                client = FakeClient([frozen_reply(diagnosis)])
+                result = module.diagnose_run(frozen, client=client, model="fake-model")
+                self.assertEqual(result["final_diagnosis"], "pending_reference")
+                self.assertEqual(result["conflict"], conflict)
+                self.assertEqual(result.get("conflict_kind"), kind)
+
     def test_wrong_citation_is_retried_with_the_issues(self):
         result, client = self.review([reply(value=0.5), reply()])
         self.assertEqual(result["llm"]["status"], "completed")

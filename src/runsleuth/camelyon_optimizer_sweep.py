@@ -248,20 +248,22 @@ def run_optimizer_sweep(
         return summary_path
     print(f"sweep_directory={directory}", flush=True)
     print("budget=" + json.dumps(plan["budget"]), flush=True)
-    for case in cases:
+    for index, case in enumerate(cases, start=1):
         seed = case["seed"]
         case.update(status="running", phase="baseline_training")
         summary["status"] = "running"
         persist()
         try:
-            seed_directory = _scoped(root, directory / f"seed-{seed}")
+            # Short names keep Windows paths under 260 characters for any seed; the
+            # case records which seed each directory holds.
+            seed_directory = _scoped(root, directory / f"s{index}")
             case["output_directory"] = seed_directory.relative_to(root).as_posix()
             seed_directory.mkdir()
             intended = replace(
                 config,
                 seed=seed,
                 epochs=epochs,
-                run_name=f"seed-{seed}-baseline",
+                run_name="baseline",
                 output_dir=str(seed_directory / "baseline"),
             )
             _execute_seed(case, intended, seed_directory, plan, root, persist)

@@ -9,13 +9,15 @@ prompt and the repair gate. Commit the seeds file before training, so the histor
 shows the draw came first. run trains a new baseline and the stale-binding pair per
 seed through the sweep, then the frozen-head, configuration and DeiT experiments,
 and writes the held-out diagnosis and repair records. It refuses to start if a
-frozen component changed since the draw, and resumes after an interruption by
-skipping finished steps.
+frozen component changed since the draw or if a seed's files would exceed the
+Windows path limit, and resumes after an interruption: a seed whose sweep failed
+is swept again, and finished experiments are skipped.
 """
 
 import argparse
 import hashlib
 import json
+import os
 import secrets
 import subprocess
 from datetime import UTC, datetime
@@ -28,6 +30,17 @@ from runsleuth.rescore_repairs import rescore_report
 USED_SEEDS = (7, 42, 2026)
 SEED_LIMIT = 2**31
 EXPERIMENTS = ("frozen_head", "config_faults", "vit")
+# Where the development runs went; nesting held-out runs deeper would push Windows
+# paths past their limit.
+OUTPUT_DIRECTORIES = {
+    "frozen_head": Path("artifacts/frozen_head_training"),
+    "config_faults": Path("artifacts/config_fault_training"),
+    "vit": Path("artifacts/vit_fault_training"),
+}
+# The longest path a seed writes below the workspace (the stale-binding pair's
+# metrics), measured on the development runs with the sweep's short names.
+LONGEST_RELATIVE_PATH = 140
+WINDOWS_PATH_LIMIT = 259
 DEFAULT_SEEDS_FILE = Path("evaluations/heldout_seeds.json")
 
 
@@ -88,6 +101,29 @@ def draw_seeds(count: int, path: Path, *, randbelow=secrets.randbelow, git=_git)
     }
     _write(path, record)
     return record
+
+
+def _long_paths_enabled() -> bool:
+    try:
+        import winreg
+
+        location = r"SYSTEM\CurrentControlSet\Control\FileSystem"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, location) as key:
+            return winreg.QueryValueEx(key, "LongPathsEnabled")[0] == 1
+    except (ImportError, OSError):
+        return False
+
+
+def check_path_budget(
+    root: Path, *, windows: bool = os.name == "nt", long_paths=_long_paths_enabled
+) -> None:
+    """Fail before any training when a seed's files would exceed the Windows limit."""
+    longest = len(str(root.resolve())) + LONGEST_RELATIVE_PATH
+    if windows and longest > WINDOWS_PATH_LIMIT and not long_paths():
+        raise RuntimeError(
+            f"Paths would reach {longest} characters, beyond the Windows limit of "
+            f"{WINDOWS_PATH_LIMIT}: move the workspace to a shorter folder or enable long paths"
+        )
 
 
 def _runners() -> dict:
@@ -159,6 +195,10 @@ def repair_outcomes(stale_reports: list, experiment_reports: list) -> dict:
     return {"faults": faults, "cases": cases}
 
 
+def _swept(entry: dict) -> bool:
+    return entry.get("stale_binding", {}).get("status") == "completed"
+
+
 def run_heldout(
     seeds_path: Path,
     reference_run: Path,
@@ -175,6 +215,7 @@ def run_heldout(
             "A frozen component changed since the draw (signatures, prompt or gate); "
             "held-out results would no longer test what was frozen"
         )
+    check_path_budget(Path.cwd())
     runners = runners or _runners()
     seeds = draw["seeds"]
     name = "seeds-" + "-".join(map(str, seeds))
@@ -188,23 +229,27 @@ def run_heldout(
             "task": "heldout_batch",
             "seeds_file": {"path": seeds_path.as_posix(), "sha256": file_sha256(seeds_path)},
             "status": "running",
-            "sweep": None,
+            "sweeps": [],
             "seeds": {str(seed): {} for seed in seeds},
         }
     )
+    if "sweep" in state:  # batches before per-seed retries kept a single sweep
+        state["sweeps"] = [state.pop("sweep")] if state["sweep"] else []
     state["run_commit"] = git("rev-parse", "HEAD")
     state["source_changed_since_draw"] = bool(
         git("diff", "--name-only", draw["code_commit"], "--", "src")
     )
     _write(state_path, state)
 
-    if state["sweep"] is None or state["sweep"]["status"] not in (
-        "completed",
-        "completed_with_errors",
-    ):
-        summary_path = sweep(reference_run, seeds)
+    # A seed whose baseline or stale-binding pair failed is swept again from scratch;
+    # its experiments only ever run on a completed sweep.
+    pending = [seed for seed in seeds if not _swept(state["seeds"][str(seed)])]
+    if pending:
+        summary_path = sweep(reference_run, pending)
         summary = _read(Path(summary_path))
-        state["sweep"] = {"summary": _relative(summary_path), "status": summary["status"]}
+        state["sweeps"].append(
+            {"seeds": pending, "summary": _relative(summary_path), "status": summary["status"]}
+        )
         for case in summary["cases"]:
             entry = state["seeds"][str(case["seed"])]
             entry["baseline_run"] = case.get("baseline_run")
@@ -216,7 +261,7 @@ def run_heldout(
 
     for seed in seeds:
         entry = state["seeds"][str(seed)]
-        if not entry.get("baseline_run"):
+        if not _swept(entry):
             continue
         for experiment in EXPERIMENTS:
             if entry.get(experiment, {}).get("status") in ("completed", "inconclusive"):
@@ -224,7 +269,7 @@ def run_heldout(
             print(f"phase=seed-{seed}-{experiment}", flush=True)
             try:
                 path = runners[experiment](
-                    Path(entry["baseline_run"]), directory / f"seed-{seed}" / experiment, 3, device
+                    Path(entry["baseline_run"]), OUTPUT_DIRECTORIES[experiment], 3, device
                 )
                 entry[experiment] = {
                     "status": _read(Path(path))["status"],
@@ -268,9 +313,7 @@ def run_heldout(
     }
     _write(Path(state["results"]["signature_matching"]), diagnosis)
     _write(Path(state["results"]["repairs"]), repairs)
-    finished = state["sweep"]["status"] == "completed" and len(completed) == len(seeds) * len(
-        EXPERIMENTS
-    )
+    finished = len(stale) == len(seeds) and len(completed) == len(seeds) * len(EXPERIMENTS)
     state["status"] = "completed" if finished else "completed_with_errors"
     _write(state_path, state)
     return state_path

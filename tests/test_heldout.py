@@ -71,26 +71,30 @@ class FakeGit:
 class FakeTraining:
     """The sweep and the three experiment runners, writing minimal completed reports."""
 
-    def __init__(self, failing=()):
+    def __init__(self, failing=(), failing_seeds=()):
         self.failing = set(failing)
+        self.failing_seeds = set(failing_seeds)
         self.calls = []
 
     def sweep(self, reference_run, seeds):
         self.calls.append(("sweep", tuple(seeds)))
-        cases = [
-            {
-                "seed": seed,
-                "status": "completed",
-                "baseline_run": f"artifacts/sweep/seed-{seed}/baseline",
-                "training_report": {
-                    "path": write(
-                        f"artifacts/sweep/seed-{seed}/stale.json", stale_report()
-                    ).as_posix()
-                },
-            }
-            for seed in seeds
-        ]
-        return write("artifacts/sweep/sweep_summary.json", {"status": "completed", "cases": cases})
+        cases = []
+        for seed in seeds:
+            if seed in self.failing_seeds:  # as the real sweep records a failed baseline
+                cases.append({"seed": seed, "status": "error", "error": {"type": "OSError"}})
+                continue
+            stale = write(f"artifacts/sweep/seed-{seed}/stale.json", stale_report())
+            cases.append(
+                {
+                    "seed": seed,
+                    "status": "completed",
+                    "baseline_run": f"artifacts/sweep/seed-{seed}/baseline",
+                    "training_report": {"path": stale.as_posix()},
+                }
+            )
+        status = "completed_with_errors" if self.failing_seeds & set(seeds) else "completed"
+        summary = f"artifacts/sweep/{len(self.calls)}/sweep_summary.json"
+        return write(summary, {"status": status, "cases": cases})
 
     def runners(self):
         def runner(experiment):
@@ -98,14 +102,15 @@ class FakeTraining:
                 self.calls.append((experiment, reference_run.as_posix()))
                 if experiment in self.failing:
                     raise RuntimeError("CUDA out of memory")
-                write(output_dir / "run-1" / "environment.json", {"optimizer": "AdamW"})
+                run_directory = output_dir / f"run-{len(self.calls)}"
+                write(run_directory / "environment.json", {"optimizer": "AdamW"})
                 variants = {name: SCENARIOS[kind] for name, kind in VARIANTS[experiment].items()}
                 report = {
                     "status": "completed",
                     "variants": variants,
                     "repair_verification": VERIFICATIONS[experiment],
                 }
-                return write(output_dir / "run-1" / "report.json", report)
+                return write(run_directory / "report.json", report)
 
             return run
 
@@ -201,6 +206,54 @@ class HeldoutTests(unittest.TestCase):
         self.assertEqual([call[0] for call in retry.calls], ["vit", "vit"])
         self.assertEqual(state["status"], "completed")
         self.assertTrue(state["source_changed_since_draw"])
+
+    def test_a_seed_whose_sweep_failed_is_swept_again_alone(self):
+        self.draw()
+        first = FakeTraining(failing_seeds={456})
+        state = self.run_batch(first)
+        self.assertEqual(state["status"], "completed_with_errors")
+        self.assertNotIn(("vit", "artifacts/sweep/seed-456/baseline"), first.calls)
+        self.assertEqual(state["seeds"]["456"]["stale_binding"]["status"], "error")
+        retry = FakeTraining()
+        state = self.run_batch(retry)
+        self.assertEqual(retry.calls[0], ("sweep", (456,)))
+        self.assertEqual(len(retry.calls), 1 + len(module.EXPERIMENTS))
+        self.assertEqual(state["status"], "completed")
+        self.assertEqual([sweep["seeds"] for sweep in state["sweeps"]], [[123, 456], [456]])
+        for experiment, directory in module.OUTPUT_DIRECTORIES.items():
+            self.assertTrue(
+                state["seeds"]["456"][experiment]["report"].startswith(directory.as_posix())
+            )
+
+    def test_a_batch_recorded_before_retries_keeps_its_failed_sweep(self):
+        self.draw()
+        failed = {"status": "error", "report": None}
+        legacy = {
+            "status": "completed_with_errors",
+            "sweep": {
+                "summary": "artifacts/old/sweep_summary.json",
+                "status": "completed_with_errors",
+            },
+            "seeds": {
+                "123": {"baseline_run": None, "stale_binding": failed},
+                "456": {"baseline_run": None, "stale_binding": failed},
+            },
+        }
+        write("artifacts/heldout/seeds-123-456/batch.json", legacy)
+        training = FakeTraining()
+        state = self.run_batch(training)
+        self.assertEqual(training.calls[0], ("sweep", (123, 456)))
+        self.assertNotIn("sweep", state)
+        self.assertEqual(state["sweeps"][0]["summary"], "artifacts/old/sweep_summary.json")
+        self.assertEqual(state["status"], "completed")
+
+    def test_paths_beyond_the_windows_limit_stop_before_training(self):
+        deep = Path("C:/" + "w" * 200)
+        with self.assertRaisesRegex(RuntimeError, "shorter folder or enable long paths"):
+            module.check_path_budget(deep, windows=True, long_paths=lambda: False)
+        module.check_path_budget(deep, windows=True, long_paths=lambda: True)
+        module.check_path_budget(deep, windows=False)
+        module.check_path_budget(Path("C:/w"), windows=True, long_paths=lambda: False)
 
     def test_a_changed_frozen_component_blocks_the_batch(self):
         self.draw()

@@ -120,6 +120,14 @@ class CamelyonOptimizerSweepTests(unittest.TestCase):
         self.assertEqual(
             result["summary"]["structural_verified"], {"numerator": 2, "denominator": 2}
         )
+        # Seeds stay out of directory names, so long random seeds fit Windows paths.
+        self.assertEqual(
+            [case["output_directory"].rsplit("/", 1)[-1] for case in result["cases"]],
+            ["s1", "s2"],
+        )
+        self.assertEqual(
+            {call.args[0].run_name for call in self.baseline_mock.call_args_list}, {"baseline"}
+        )
         source_config = handoff_fixtures.read_json(self.source / "config.json")
         for call in self.baseline_mock.call_args_list:
             actual = asdict(call.args[0])

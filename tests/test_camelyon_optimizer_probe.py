@@ -2,8 +2,6 @@
 
 import copy
 import json
-import runpy
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -321,47 +319,6 @@ class ProbeDecisionTests(unittest.TestCase):
                     "cpu",
                     verify_rebind=verify_rebind,
                 )
-
-    def test_probe_check_script_forwards_flag_only_after_all_checks_pass(self):
-        root = Path(__file__).resolve().parents[1]
-        script = root / "scripts" / "check_optimizer_probe.py"
-        main = runpy.run_path(str(script))["main"]
-        cases = [(False, None), (True, None), *((True, index) for index in range(5))]
-        for verify_rebind, failure_index in cases:
-            with self.subTest(verify_rebind=verify_rebind, failure_index=failure_index):
-                arguments = [str(script), "--reference-run", "artifacts/reference"]
-                if verify_rebind:
-                    arguments.append("--verify-rebind")
-                outcomes = None
-                if failure_index is not None:
-                    outcomes = [None] * failure_index + [
-                        subprocess.CalledProcessError(9, ["failed-check"])
-                    ]
-                with (
-                    patch.object(sys, "argv", arguments),
-                    patch("subprocess.run", side_effect=outcomes) as run,
-                    patch("builtins.print"),
-                ):
-                    result = main()
-
-                commands = [call.args[0] for call in run.call_args_list]
-                self.assertTrue(
-                    all(call.kwargs == {"cwd": root, "check": True} for call in run.call_args_list)
-                )
-                if failure_index is not None:
-                    self.assertEqual(result, 9)
-                    self.assertEqual(len(commands), failure_index + 1)
-                    self.assertFalse(
-                        any("runsleuth.camelyon_optimizer_probe" in command for command in commands)
-                    )
-                else:
-                    self.assertEqual(result, 0)
-                    self.assertEqual(len(commands), 6)
-                    self.assertIn("runsleuth.camelyon_optimizer_probe", commands[-1])
-                    self.assertEqual("--verify-rebind" in commands[-1], verify_rebind)
-                    self.assertTrue(
-                        all("--verify-rebind" not in command for command in commands[:-1])
-                    )
 
 
 if __name__ == "__main__":

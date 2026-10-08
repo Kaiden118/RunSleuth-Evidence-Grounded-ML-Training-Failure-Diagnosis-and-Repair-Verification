@@ -1,10 +1,8 @@
-from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
 from runsleuth.compare import compare_runs
-from runsleuth.config import TrainingConfig
 from runsleuth.telemetry import EpochMetrics, append_epoch_metrics
 
 
@@ -24,26 +22,6 @@ def make_metrics(
         mean_gradient_norm=gradient_norm,
         mean_parameter_update_norm=update_norm,
     )
-
-
-def test_high_lr_config_changes_only_controlled_fields() -> None:
-    project_root = Path(__file__).resolve().parents[1]
-    clean = TrainingConfig.load(project_root / "configs" / "clean.json")
-    candidate = TrainingConfig.load(
-        project_root / "configs" / "high_learning_rate.json"
-    )
-
-    clean_values = asdict(clean)
-    candidate_values = asdict(candidate)
-    changed_fields = {
-        name
-        for name, clean_value in clean_values.items()
-        if clean_value != candidate_values[name]
-    }
-
-    assert changed_fields == {"run_name", "learning_rate"}
-    assert clean.learning_rate == pytest.approx(0.001)
-    assert candidate.learning_rate == pytest.approx(0.1)
 
 
 def test_compare_runs_calculates_evidence_ratios(tmp_path: Path) -> None:

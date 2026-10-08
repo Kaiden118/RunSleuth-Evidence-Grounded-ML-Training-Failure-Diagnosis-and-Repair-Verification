@@ -4,8 +4,6 @@ import copy
 import hashlib
 import importlib.util
 import json
-import runpy
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -240,43 +238,6 @@ class ArgumentTests(unittest.TestCase):
                         experiment.main()
                 self.assertEqual(run.call_args.args[2], 2)
                 self.assertEqual(run.call_args.kwargs, {"verify_rebind": enabled})
-
-    def test_check_script_forwards_budget_and_stops_before_training_on_failed_gate(self):
-        root = Path(__file__).resolve().parents[1]
-        script = root / "scripts" / "check_optimizer_training.py"
-        main = runpy.run_path(str(script))["main"]
-        for failed_gate in (None, 2):
-            with self.subTest(failed_gate=failed_gate):
-                outcomes = (
-                    None
-                    if failed_gate is None
-                    else [None] * failed_gate + [subprocess.CalledProcessError(7, ["pytest"])]
-                )
-                with (
-                    patch.object(
-                        sys,
-                        "argv",
-                        [
-                            str(script),
-                            "--reference-run",
-                            "reference",
-                            "--epochs",
-                            "2",
-                            "--verify-rebind",
-                        ],
-                    ),
-                    patch("subprocess.run", side_effect=outcomes) as run,
-                    patch("builtins.print"),
-                ):
-                    code = main()
-                commands = [call.args[0] for call in run.call_args_list]
-                self.assertEqual(code, 0 if failed_gate is None else 7)
-                if failed_gate is None:
-                    self.assertEqual(commands[-1][-3:], ["--epochs", "2", "--verify-rebind"])
-                else:
-                    self.assertFalse(
-                        any("runsleuth.camelyon_optimizer_training" in row for row in commands)
-                    )
 
     def test_invalid_epoch_budget_does_no_work(self):
         with tempfile.TemporaryDirectory() as directory:

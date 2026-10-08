@@ -6,9 +6,10 @@
 Training is an ordinary PyTorch loop instrumented only by RunMonitor. The repair is
 chosen from the diagnosis, never from the injected fault, so a wrong diagnosis
 applies a wrong repair that verification rejects. A repair is accepted only when
-re-diagnosis of the retrained run finds no known fault and the development
-performance gate passes. Repairs run automatically only inside this demo; for a
-user's own code RunSleuth suggests them.
+re-diagnosis of the retrained run finds no known fault and development gate v2
+passes: no regression against the healthy reference, or against the faulty run
+when no reference is given. Repairs run automatically only inside this demo; for
+a user's own code RunSleuth suggests them.
 """
 
 import argparse
@@ -21,8 +22,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from runsleuth.camelyon_optimizer_probe import check_matching_data, load_reference
-from runsleuth.camelyon_optimizer_training import REPAIR_POLICY, _valid_domain_metrics
-from runsleuth.camelyon_variant_runner import performance_checks
+from runsleuth.camelyon_optimizer_training import _valid_domain_metrics
+from runsleuth.camelyon_variant_runner import verify_repair
 from runsleuth.diagnose_run import diagnose_run, summary_text
 
 FAULTS = ("clean", "stale_head", "frozen_head", "high_learning_rate", "missing_optimizer_step")
@@ -210,25 +211,29 @@ def run_demo(
         )
         recheck = diagnose_run(repaired, reference, optimizer_name="AdamW")
         variants = {"faulty": faulty, "repaired": repaired}
-        comparators = []
-        if reference is not None and reference.get("final_metrics", {}).get("epoch") == epochs:
+        usable_reference = (
+            reference is not None
+            and reference.get("final_metrics", {}).get("epoch") == epochs
+            and _valid_domain_metrics(reference["final_metrics"])
+        )
+        if usable_reference:
             variants["reference"] = reference
-            comparators.append("reference")
-        if _valid_domain_metrics(faulty.get("final_metrics", {})):
-            comparators.append("faulty")
+        gate = verify_repair(
+            variants,
+            "repaired",
+            reference="reference" if usable_reference else None,
+            faulty="faulty" if _valid_domain_metrics(faulty.get("final_metrics", {})) else None,
+        )
         structural = (
             repaired["status"] == "completed" and recheck["final_diagnosis"] == "no_known_fault"
         )
-        performance = performance_checks(variants, "repaired", tuple(comparators))
-        passed = all(check["passed"] for check in performance)
         report["verification"] = {
-            "decision": "accepted" if structural and passed else "rejected",
+            "decision": (
+                "accepted" if structural and gate["performance_nonregression"] else "rejected"
+            ),
             "re_diagnosis": recheck["final_diagnosis"],
             "structure_verified": structural,
-            "comparators": comparators,
-            "performance_checks": performance,
-            "performance_nonregression": passed,
-            "policy": dict(REPAIR_POLICY),
+            **gate,
             "scope": "development policy; no statistical or performance-recovery claim",
         }
     report["injected_fault"] = fault

@@ -4,7 +4,7 @@ Both faults are global: they affect every parameter group, unlike the head-only
 stale binding and frozen head. Each variant trains from the saved reference
 initialization with the shared variant loop. A repair restores the faulty field
 to the reference configuration before training and is verified by bounded
-retraining under the unchanged development performance policy.
+retraining under development gate v2 (camelyon_variant_runner.REPAIR_GATE).
 """
 
 import argparse
@@ -25,11 +25,12 @@ from runsleuth.camelyon_optimizer_training import (
     write_json,
 )
 from runsleuth.camelyon_variant_runner import (
+    REPAIR_GATE,
     match_outcome,
     metric_differences,
-    performance_checks,
     run_training_variant,
     snapshot_sources_with,
+    verify_repair,
 )
 
 HIGH_LEARNING_RATE_FACTOR = 100
@@ -259,24 +260,21 @@ def assess_config_fault_training(
             == clean_steps,
         }
         structural = {**common, **fault_checks[fault], **repair_checks}
-        comparators = ("clean", fault) if _completed(faulty, epochs) else ("clean",)
-        performance = performance_checks(variants, repaired_name, comparators)
+        faulty_valid = _completed(faulty, epochs)
+        gate = verify_repair(
+            variants, repaired_name, reference="clean", faulty=fault if faulty_valid else None
+        )
         structure_verified = all(structural.values())
-        performance_nonregression = all(check["passed"] for check in performance)
+        passed = structure_verified and gate["performance_nonregression"]
         verification[fault] = {
             "candidate": repaired_name,
-            "decision": (
-                "accepted" if structure_verified and performance_nonregression else "rejected"
-            ),
+            "decision": "accepted" if passed else "rejected",
             "structural_checks": structural,
             "structure_verified": structure_verified,
-            "policy": dict(REPAIR_POLICY),
-            "comparators": list(comparators),
+            **gate,
             "skipped_comparators": {}
-            if fault in comparators
+            if faulty_valid
             else {fault: f"faulty run status {faulty['status']}; no valid final metrics"},
-            "performance_checks": performance,
-            "performance_nonregression": performance_nonregression,
             "scope": "development policy; no statistical or performance-recovery claim",
         }
     predictions = {
@@ -372,8 +370,9 @@ def run_config_fault_training(
                 "scope": "development experiment; not a held-out benchmark",
                 "epochs_per_variant": epochs,
                 "candidates": dict(FAULTS),
-                "comparators": "clean and the faulty variant; a faulty variant without valid "
-                "final metrics (diverged) is skipped and recorded",
+                "gate": dict(REPAIR_GATE),
+                "comparators": "clean gates; the faulty variant is informational, and skipped "
+                "and recorded without valid final metrics (diverged)",
                 "domains": ["id", "ood"],
                 "checkpoint_selection": "fixed_final_epoch",
                 "ood_used_for_repair_acceptance": True,

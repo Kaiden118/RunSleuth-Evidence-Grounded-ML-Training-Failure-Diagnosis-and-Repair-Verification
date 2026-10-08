@@ -5,6 +5,7 @@ experiments, which parse its optimizer dispatch, so it is imported but never
 modified. run_training_variant mirrors its _run_variant and performance_checks
 mirrors its gate; tests require identical results on shared variants and identical
 gate outputs. Experiments plug in their own optimizer factory and loop options.
+verify_repair applies development gate v2 on top of performance_checks.
 """
 
 import json
@@ -22,6 +23,18 @@ from runsleuth.camelyon_optimizer_training import (
     snapshot_sources,
     write_json,
 )
+
+# Gate v1 required no regression against both the healthy and the faulty run. It
+# rejected repairs that restored the clean model bitwise, because those silent faults
+# trained as well as or better than clean. How the faulty run trains measures the
+# fault, not the repair, so v2 gates on the healthy reference and records the faulty
+# comparison. Revised after seeing those rejections; development policy only.
+REPAIR_GATE = {
+    "version": 2,
+    "gating_comparator": "healthy reference of the same setup; the faulty run without one",
+    "faulty_run": "informational when a healthy reference gates",
+    "no_valid_comparator": "rejected",
+}
 
 
 def _non_finite_state(model) -> bool:
@@ -223,6 +236,39 @@ def performance_checks(variants: dict, candidate: str, comparators: tuple[str, .
                     }
                 )
     return performance
+
+
+def verify_repair(
+    variants: dict, candidate: str, *, reference: str | None, faulty: str | None
+) -> dict:
+    """Gate v2 for one candidate; callers pass only comparators with valid final metrics.
+
+    The healthy reference gates and the faulty run is informational. Without a
+    reference the faulty run gates; with neither, the gate fails instead of passing
+    on zero checks.
+    """
+    gating = reference or faulty
+    informational = faulty if reference else None
+    checks = performance_checks(variants, candidate, (gating,) if gating else ())
+    # True when the faulty run itself passes the gate: the fault left no regression
+    # that validation metrics alone could catch.
+    faulty_passes = None
+    if reference and faulty:
+        faulty_passes = all(
+            check["passed"] for check in performance_checks(variants, faulty, (reference,))
+        )
+    return {
+        "gate": dict(REPAIR_GATE),
+        "policy": dict(REPAIR_POLICY),
+        "comparators": [gating] if gating else [],
+        "performance_checks": checks,
+        "performance_nonregression": bool(checks) and all(check["passed"] for check in checks),
+        "informational_comparators": [informational] if informational else [],
+        "informational_checks": performance_checks(
+            variants, candidate, (informational,) if informational else ()
+        ),
+        "faulty_passes_gate_vs_reference": faulty_passes,
+    }
 
 
 def snapshot_sources_with(directory: Path, extra_sources: tuple[str, ...]) -> dict[str, str]:

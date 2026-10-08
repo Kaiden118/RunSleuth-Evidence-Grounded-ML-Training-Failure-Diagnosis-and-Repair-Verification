@@ -87,6 +87,7 @@ class ConfigFaultTrainingTests(CamelyonHarness):
         self.assertTrue(result["mechanism_reproduced"], result["checks"])
         verification = result["repair_verification"]["high_learning_rate"]
         self.assertEqual(verification["comparators"], ["clean"])
+        self.assertEqual(verification["informational_comparators"], [])
         self.assertIn("high_learning_rate", verification["skipped_comparators"])
         self.assertIsNone(result["predictions"]["high_learning_rate_first_update_ratio_to_clean"])
 

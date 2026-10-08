@@ -1,9 +1,9 @@
 """Stage 2 of the frozen-head experiment: bounded training from a saved initialization.
 
 Design and predictions: docs/camelyon17_frozen_head.md. Trains clean, stale_head,
-frozen_head and frozen_head_repaired, then applies structural checks, the unchanged
-development performance policy, and bitwise checkpoint comparisons for the
-observed predictions.
+frozen_head and frozen_head_repaired, then applies structural checks, development
+gate v2 (camelyon_variant_runner.REPAIR_GATE), and bitwise checkpoint comparisons
+for the observed predictions.
 
 The training loop and development gate come from camelyon_variant_runner, which
 mirrors the stale-binding experiment without modifying its recorded fixture.
@@ -27,15 +27,15 @@ from runsleuth.camelyon_optimizer_training import (
     write_json,
 )
 from runsleuth.camelyon_variant_runner import (
+    REPAIR_GATE,
     match_outcome,
     metric_differences,
-    performance_checks,
     run_training_variant,
     snapshot_sources_with,
+    verify_repair,
 )
 
 VARIANTS = ("clean", "stale_head", "frozen_head", "frozen_head_repaired")
-COMPARATORS = ("clean", "frozen_head")
 FROZEN_HEAD_NAMES = ["fc.bias", "fc.weight"]
 EXTRA_SOURCES = (
     "camelyon_frozen_head_training.py",
@@ -204,9 +204,8 @@ def assess_frozen_head_training(
         ),
     }
     structural = {**checks, **repair_checks}
-    performance = performance_checks(variants, "frozen_head_repaired", COMPARATORS)
+    gate = verify_repair(variants, "frozen_head_repaired", reference="clean", faulty="frozen_head")
     structure_verified = all(structural.values())
-    performance_nonregression = all(check["passed"] for check in performance)
     frozen_vs_stale = metric_differences(frozen, stale)
     repaired_vs_clean = metric_differences(repaired, clean)
     predictions = {
@@ -235,14 +234,13 @@ def assess_frozen_head_training(
         "mechanism_reproduced": all(checks.values()),
         "repair_verification": {
             "decision": (
-                "accepted" if structure_verified and performance_nonregression else "rejected"
+                "accepted"
+                if structure_verified and gate["performance_nonregression"]
+                else "rejected"
             ),
             "structural_checks": structural,
             "structure_verified": structure_verified,
-            "policy": dict(REPAIR_POLICY),
-            "comparators": list(COMPARATORS),
-            "performance_checks": performance,
-            "performance_nonregression": performance_nonregression,
+            **gate,
             "scope": "development policy; no statistical or performance-recovery claim",
         },
         "predictions": predictions,
@@ -313,7 +311,9 @@ def run_frozen_head_training(
                 "scope": "development experiment; not a held-out benchmark",
                 "epochs_per_variant": epochs,
                 "candidate": "frozen_head_repaired",
-                "comparators": list(COMPARATORS),
+                "gate": dict(REPAIR_GATE),
+                "comparators": ["clean"],
+                "informational_comparators": ["frozen_head"],
                 "domains": ["id", "ood"],
                 "checkpoint_selection": "fixed_final_epoch",
                 "ood_used_for_repair_acceptance": True,

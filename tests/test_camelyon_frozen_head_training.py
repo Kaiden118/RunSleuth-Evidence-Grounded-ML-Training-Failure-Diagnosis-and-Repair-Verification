@@ -42,7 +42,10 @@ class FrozenHeadTrainingTests(CamelyonHarness):
         self.assertEqual(len({str(model.training_order) for model in self.models}), 1)
         verification = report["repair_verification"]
         self.assertTrue(verification["structure_verified"], verification["structural_checks"])
-        self.assertEqual(verification["comparators"], ["clean", "frozen_head"])
+        self.assertEqual(
+            (verification["comparators"], verification["informational_comparators"]),
+            (["clean"], ["frozen_head"]),
+        )
         self.assertEqual(
             verification["decision"],
             "accepted" if verification["performance_nonregression"] else "rejected",

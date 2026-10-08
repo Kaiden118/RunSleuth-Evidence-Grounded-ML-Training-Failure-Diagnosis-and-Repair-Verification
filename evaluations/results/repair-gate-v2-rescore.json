@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "task": "repair_gate_rescore",
+  "gate": {
+    "version": 2,
+    "gating_comparator": "healthy reference of the same setup; the faulty run without one",
+    "faulty_run": "informational when a healthy reference gates",
+    "no_valid_comparator": "rejected"
+  },
+  "scope": "post hoc: gate v2 was revised after gate v1 rejected repairs in these runs; not independent validation",
+  "reports": [
+    {
+      "path": "artifacts\\optimizer_sweeps\\20261001T033140591688Z\\seed-7\\paired\\pair-20261001T033536762353Z\\optimizer_training_report.json",
+      "sha256": "1df85199c5adec2c02426de19446b8892676101d0bb7c77592d122dca0f6577b"
+    },
+    {
+      "path": "artifacts\\optimizer_sweeps\\20261001T033140591688Z\\seed-2026\\paired\\pair-20261001T035032688824Z\\optimizer_training_report.json",
+      "sha256": "07f7d451451c6daaa1a86188ea4697d453d5d944b010c6b84a0e239c8713a455"
+    },
+    {
+      "path": "artifacts\\frozen_head_training\\run-20261007T062923611734Z\\frozen_head_training_report.json",
+      "sha256": "090b2774293688e825badcbf69033f49d13c1d63d11f084c12ef93cbc478709f"
+    },
+    {
+      "path": "artifacts\\frozen_head_training\\run-20261007T064319356166Z\\frozen_head_training_report.json",
+      "sha256": "6edd02f84130f22d067033dffbfa9324c1ff320fa4cf35ce88450e2540febf44"
+    },
+    {
+      "path": "artifacts\\config_fault_training\\run-20261007T164347633639Z\\config_fault_training_report.json",
+      "sha256": "83b7fbc71419eeecba9569f7b718b750a250b10c52311889ea1bf93812148a7c"
+    },
+    {
+      "path": "artifacts\\config_fault_training\\run-20261007T170847253267Z\\config_fault_training_report.json",
+      "sha256": "3138d977a0604c1185ecf8b6e1f5110e173e7a2c692a8149a0f26c9170d6caab"
+    },
+    {
+      "path": "artifacts\\vit_fault_training\\run-20261008T001516880242Z\\vit_fault_report.json",
+      "sha256": "fe953eebf6960a7b8aea1c8f0272984cb47a848fbb0692384dca2dff8685739e"
+    },
+    {
+      "path": "artifacts\\vit_fault_training\\run-20261008T005316403335Z\\vit_fault_report.json",
+      "sha256": "44cba8a143b566bfc8e300c6d744e273090ec8566d55b8ac1e2648a04dfd4726"
+    }
+  ],
+  "summary": {
+    "cases": 14,
+    "v1_accepted": 10,
+    "v2_accepted": 14,
+    "changed": [
+      "camelyon17_deit_fault_training seed 7 imagenet_head_kept: rejected -> accepted",
+      "camelyon17_deit_fault_training seed 7 frozen_patch_embedding: rejected -> accepted",
+      "camelyon17_deit_fault_training seed 2026 imagenet_head_kept: rejected -> accepted",
+      "camelyon17_deit_fault_training seed 2026 frozen_patch_embedding: rejected -> accepted"
+    ],
+    "faulty_passes_gate_vs_reference": 5
+  },
+  "cases": [
+    {
+      "report": "artifacts\\optimizer_sweeps\\20261001T033140591688Z\\seed-7\\paired\\pair-20261001T033536762353Z\\optimizer_training_report.json",
+      "task": "camelyon17_optimizer_rebind_verification",
+      "seed": 7,
+      "fault": "stale_head",
+      "candidate": "stale_head_repaired",
+      "structure_verified": true,
+      "v1_decision": "accepted",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": true
+    },
+    {
+      "report": "artifacts\\optimizer_sweeps\\20261001T033140591688Z\\seed-2026\\paired\\pair-20261001T035032688824Z\\optimizer_training_report.json",
+      "task": "camelyon17_optimizer_rebind_verification",
+      "seed": 2026,
+      "fault": "stale_head",
+      "candidate": "stale_head_repaired",
+      "structure_verified": true,
+      "v1_decision": "accepted",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "report": "artifacts\\frozen_head_training\\run-20261007T062923611734Z\\frozen_head_training_report.json",
+      "task": "camelyon17_frozen_head_training",
+      "seed": 7,
+      "fault": "frozen_head",
+      "candidate": "frozen_head_repaired",
+      "structure_verified": true,
+      "v1_decision": "accepted",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": true
+    },
+    {
+      "report": "artifacts\\frozen_head_training\\run-20261007T064319356166Z\\frozen_head_training_report.json",
+      "task": "camelyon17_frozen_head_training",
+      "seed": 2026,
+      "fault": "frozen_head",
+      "candidate": "frozen_head_repaired",
+      "structure_verified": true,
+      "v1_decision": "accepted",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261007T164347633639Z\\config_fault_training_report.json",
+      "task": "camelyon17_config_fault_training",
+      "seed": 7,
+      "fault": "high_learning_rate",
+      "candidate": "high_learning_rate_repaired",
+      "structure_verified": true,
+      "v1_decision": "accepted",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261007T164347633639Z\\config_fault_training_report.json",
+      "task": "camelyon17_config_fault_training",
+      "seed": 7,
+      "fault": "missing_optimizer_step",
+      "candidate": "missing_optimizer_step_repaired",
+      "structure_verified": true,
+      "v1_decision": "accepted",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261007T170847253267Z\\config_fault_training_report.json",
+      "task": "camelyon17_config_fault_training",
+      "seed": 2026,
+      "fault": "high_learning_rate",
+      "candidate": "high_learning_rate_repaired",
+      "structure_verified": true,
+      "v1_decision": "accepted",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261007T170847253267Z\\config_fault_training_report.json",
+      "task": "camelyon17_config_fault_training",
+      "seed": 2026,
+      "fault": "missing_optimizer_step",
+      "candidate": "missing_optimizer_step_repaired",
+      "structure_verified": true,
+      "v1_decision": "accepted",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T001516880242Z\\vit_fault_report.json",
+      "task": "camelyon17_deit_fault_training",
+      "seed": 7,
+      "fault": "train_eval_normalization_mismatch",
+      "candidate": "train_eval_normalization_mismatch_repaired",
+      "structure_verified": true,
+      "v1_decision": "accepted",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T001516880242Z\\vit_fault_report.json",
+      "task": "camelyon17_deit_fault_training",
+      "seed": 7,
+      "fault": "imagenet_head_kept",
+      "candidate": "imagenet_head_kept_repaired",
+      "structure_verified": true,
+      "v1_decision": "rejected",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [
+        "imagenet_head_kept:id_loss_ratio"
+      ],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T001516880242Z\\vit_fault_report.json",
+      "task": "camelyon17_deit_fault_training",
+      "seed": 7,
+      "fault": "frozen_patch_embedding",
+      "candidate": "frozen_patch_embedding_repaired",
+      "structure_verified": true,
+      "v1_decision": "rejected",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [
+        "frozen_patch_embedding:ood_accuracy_drop",
+        "frozen_patch_embedding:ood_loss_ratio"
+      ],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": true
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T005316403335Z\\vit_fault_report.json",
+      "task": "camelyon17_deit_fault_training",
+      "seed": 2026,
+      "fault": "train_eval_normalization_mismatch",
+      "candidate": "train_eval_normalization_mismatch_repaired",
+      "structure_verified": true,
+      "v1_decision": "accepted",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T005316403335Z\\vit_fault_report.json",
+      "task": "camelyon17_deit_fault_training",
+      "seed": 2026,
+      "fault": "imagenet_head_kept",
+      "candidate": "imagenet_head_kept_repaired",
+      "structure_verified": true,
+      "v1_decision": "rejected",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [
+        "imagenet_head_kept:id_accuracy_drop",
+        "imagenet_head_kept:id_loss_ratio",
+        "imagenet_head_kept:ood_accuracy_drop",
+        "imagenet_head_kept:ood_loss_ratio"
+      ],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": true
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T005316403335Z\\vit_fault_report.json",
+      "task": "camelyon17_deit_fault_training",
+      "seed": 2026,
+      "fault": "frozen_patch_embedding",
+      "candidate": "frozen_patch_embedding_repaired",
+      "structure_verified": true,
+      "v1_decision": "rejected",
+      "v2_decision": "accepted",
+      "v1_failed_checks": [
+        "frozen_patch_embedding:id_accuracy_drop",
+        "frozen_patch_embedding:id_loss_ratio",
+        "frozen_patch_embedding:ood_accuracy_drop"
+      ],
+      "v2_failed_checks": [],
+      "faulty_passes_gate_vs_reference": true
+    }
+  ]
+}

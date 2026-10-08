@@ -62,7 +62,10 @@ class DemoTests(CamelyonHarness):
                 verification = report["verification"]
                 self.assertEqual(verification["re_diagnosis"], "no_known_fault")
                 self.assertTrue(verification["structure_verified"])
-                self.assertEqual(verification["comparators"], ["reference", "faulty"])
+                self.assertEqual(
+                    (verification["comparators"], verification["informational_comparators"]),
+                    (["reference"], ["faulty"]),
+                )
                 self.assertEqual(
                     verification["decision"],
                     "accepted" if verification["performance_nonregression"] else "rejected",

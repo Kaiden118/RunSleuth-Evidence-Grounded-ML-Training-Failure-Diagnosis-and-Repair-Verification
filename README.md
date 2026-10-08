@@ -23,28 +23,35 @@ membership and input statistics.
    or without a healthy reference run.
 3. **Review** with an LLM (Gemini) that must cite the evidence; it cannot
    overrule the deterministic verdict.
-4. **Verify** the minimal repair with bounded retraining and a no-regression gate.
+4. **Verify** the minimal repair with bounded retraining and a no-regression gate
+   against a healthy run.
 
 ## Results
 
 Camelyon17-WILDS (20K training patches; in-distribution and unseen-hospital
 validation), ResNet18 and DeiT-small, seeds 7 and 2026, author-injected faults.
 
-| Fault | Decisive evidence | Repair accepted |
-|---|---|---:|
-| Stale optimizer binding | Head gets gradients but never updates | 2/2 |
-| Frozen classifier head | Head untrainable; the reference trains it | 2/2 |
-| Learning rate 100x too high | Effective rate inferred from AdamW's first update | 2/2 |
-| Missing `optimizer.step()` | Forwards without optimizer steps | 2/2 |
-| Train/eval normalization mismatch | Training and evaluation input statistics disagree | 2/2 |
-| ImageNet head kept for 2 labels | 1000 head outputs for 2 classes | 0/2* |
-| Frozen patch embedding | Part of the backbone untrainable | 0/2* |
+| Fault | Decisive evidence | Silent in metrics* | Repair accepted |
+|---|---|---:|---:|
+| Stale optimizer binding | Head gets gradients but never updates | 1/2 | 2/2 |
+| Frozen classifier head | Head untrainable; the reference trains it | 1/2 | 2/2 |
+| Learning rate 100x too high | Effective rate inferred from AdamW's first update | 0/2 | 2/2 |
+| Missing `optimizer.step()` | Forwards without optimizer steps | 0/2 | 2/2 |
+| Train/eval normalization mismatch | Training and evaluation input statistics disagree | 0/2 | 2/2 |
+| ImageNet head kept for 2 labels | 1000 head outputs for 2 classes | 1/2 | 2/2 |
+| Frozen patch embedding | Part of the backbone untrainable | 2/2 | 2/2 |
 
 - **Diagnosis:** 46/46 runs correct with a healthy reference and 40/46 without
   (the other 6 are correctly deferred to a reference), with no false positives
   on 26 healthy runs ([record](evaluations/results/signature-matching-20261008.json)).
-- \*These repairs restored the clean model bitwise, but the faulty runs trained
-  as well or better, so the no-regression gate rejected them.
+- \*The faulty run stayed within the no-regression thresholds (1 point accuracy,
+  10% loss) of the healthy run, so a check on validation metrics alone would not
+  flag it.
+- **Repair gate:** a repair must not regress against the healthy run. The first
+  gate also compared against the faulty run and rejected the last two repairs on
+  both seeds, although they restored the clean model bitwise. The gate was revised
+  after seeing this and re-scored on the same runs
+  ([record](evaluations/results/repair-gate-v2-rescore.json)).
 - The DeiT checkpoint's Hugging Face image processor contradicts its model card
   on normalization; RunSleuth's input statistics catch the resulting mismatch.
 

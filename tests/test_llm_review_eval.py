@@ -17,6 +17,10 @@ from runsleuth import llm_review_eval as module
 VARIANTS = ("clean", "high_learning_rate", "frozen_head")
 
 
+class ServiceUnavailable(RuntimeError):
+    status_code = 503
+
+
 class EchoClient:
     """Answers with the matcher's diagnosis, or a fixed one, citing one exact evidence value."""
 
@@ -30,7 +34,7 @@ class EchoClient:
     def create(self, **request):
         self.requests.append(request)
         if self.error:
-            raise RuntimeError("quota exceeded")
+            raise ServiceUnavailable("model overloaded")
         payload = json.loads(request["messages"][1]["content"])
         name, value = next(
             (name, value)
@@ -113,7 +117,8 @@ class ReviewEvaluationTests(unittest.TestCase):
         )
         overall = summary["overall"]
         self.assertFalse(summary["complete"])
-        self.assertEqual(overall["completed"], 6)
+        self.assertEqual((overall["completed"], summary["expected_cases"]), (6, 12))
+        self.assertIn("    6/12", module.summary_table([summary]).splitlines()[1])
         self.assertEqual(overall["valid_on_first_attempt"], 5)
         self.assertEqual(overall["issue_types"], {"schema": 1})
         self.assertEqual(overall["agrees_with_matcher"], 1)
@@ -122,10 +127,15 @@ class ReviewEvaluationTests(unittest.TestCase):
         )
         self.assertEqual(overall["llm_matches_truth"], 2)
 
-    def test_api_errors_stop_the_run_and_are_retried_on_resume(self):
-        failing = EchoClient(error=True)
-        directory = self.run_reviews(failing)
+    def test_api_errors_wait_stop_the_run_and_are_retried_on_resume(self):
+        failing, waits = EchoClient(error=True), []
+        directory = self.run_reviews(failing, pause=4.0, error_wait=30.0, sleep=waits.append)
         self.assertEqual(len(failing.requests), module.MAX_CONSECUTIVE_API_ERRORS)
+        self.assertEqual(waits, [30.0, 30.0])
+        record = json.loads((directory / "cases.jsonl").read_text("utf-8").splitlines()[0])
+        self.assertEqual(
+            record["review"]["error"], {"type": "ServiceUnavailable", "status_code": 503}
+        )
         self.assertEqual(module.summarize(directory)["overall"]["api_error"], 3)
         resumed = EchoClient()
         self.run_reviews(resumed)

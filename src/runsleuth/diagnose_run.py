@@ -160,7 +160,12 @@ def request_llm_diagnosis(client, model: str, matcher: dict, library: dict) -> d
                 max_tokens=MAX_OUTPUT_TOKENS,
             )
         except Exception as error:  # network, quota or provider errors end the review
-            record.update(status="api_error", error={"type": type(error).__name__})
+            # The HTTP status separates a quota limit (429) from an overloaded server (503).
+            status_code = getattr(error, "status_code", None)
+            record.update(
+                status="api_error",
+                error={"type": type(error).__name__, "status_code": status_code},
+            )
             return record
         usage = getattr(response, "usage", None)
         record["input_tokens"] += getattr(usage, "prompt_tokens", 0) or 0

@@ -90,9 +90,14 @@ def run_reviews(
     *,
     limit: int | None = None,
     pause: float = 0.0,
+    error_wait: float = 0.0,
     sleep=time.sleep,
 ) -> Path:
-    """Review every pending case; returns the run directory."""
+    """Review every pending case; returns the run directory.
+
+    pause separates cases; error_wait follows an API error, so a briefly overloaded
+    server can recover before the next case.
+    """
     directory = run_directory(output_dir, provider, model)
     directory.mkdir(parents=True, exist_ok=True)
     settings = {
@@ -116,11 +121,11 @@ def run_reviews(
     total = len(done) + len(pending)
     if limit is not None:
         pending = pending[:limit]
-    consecutive_errors = 0
+    consecutive_errors, wait = 0, 0.0
     with (directory / "cases.jsonl").open("a", encoding="utf-8") as stream:
         for index, (case_id, mode, item) in enumerate(pending, start=1):
-            if index > 1 and pause:
-                sleep(pause)
+            if wait:
+                sleep(wait)
             reference = item["reference"] if mode == "with_reference" else None
             started = time.perf_counter()
             result = diagnose_run(
@@ -130,15 +135,18 @@ def run_reviews(
             stream.write(json.dumps(record, allow_nan=False) + "\n")
             stream.flush()
             outcome = "conflict" if record["conflict"] else "agrees"
+            status = record["llm_status"]
+            if error := record["review"].get("error"):
+                status += f" {error['type']} {error.get('status_code')}"
             print(
                 f"[{len(done) + index}/{total}] {case_id}: "
-                f"{record['llm_status']} {record['llm_diagnosis']} ({outcome}, "
+                f"{status} {record['llm_diagnosis']} ({outcome}, "
                 f"{record['latency_seconds']:.1f}s)",
                 flush=True,
             )
-            consecutive_errors = (
-                consecutive_errors + 1 if record["llm_status"] == "api_error" else 0
-            )
+            failed = record["llm_status"] == "api_error"
+            consecutive_errors = consecutive_errors + 1 if failed else 0
+            wait = max(pause, error_wait) if failed else pause
             if consecutive_errors >= MAX_CONSECUTIVE_API_ERRORS:
                 print(
                     f"Stopped after {consecutive_errors} API errors in a row (quota or server); "
@@ -200,6 +208,7 @@ def summarize(directory: Path) -> dict:
     records = [latest[case_id] for case_id in expected if case_id in latest]
     return {
         **{key: settings[key] for key in ("provider", "model", "max_output_tokens")},
+        "expected_cases": len(expected),
         "complete": len(records) == len(expected)
         and all(record["llm_status"] in FINAL_STATUSES for record in records),
         "overall": _statistics(records),
@@ -248,7 +257,7 @@ def summary_table(summaries: list[dict]) -> str:
         conflicts = overall["conflicts"]
         latency = overall["mean_latency_seconds"]
         lines.append(
-            f"{summary['model']:<28}{overall['completed']:>5}/{overall['cases']:<4}"
+            f"{summary['model']:<28}{overall['completed']:>5}/{summary['expected_cases']:<4}"
             f"{rate(overall, 'valid_on_first_attempt'):>9}{rate(overall, 'agrees_with_matcher'):>8}"
             f"{conflicts.get('assumed_reference_condition', 0):>9}"
             f"{conflicts.get('different_diagnosis', 0):>9}{overall['llm_matches_truth']:>7}"
@@ -275,6 +284,9 @@ def main() -> None:
     run.add_argument("--output-dir", type=Path, default=Path("artifacts/llm_review_eval"))
     run.add_argument("--limit", type=int, help="Review at most this many pending cases")
     run.add_argument("--pause", type=float, default=0.0, help="Seconds between cases")
+    run.add_argument(
+        "--error-wait", type=float, default=0.0, help="Seconds to wait after an API error"
+    )
     summary = commands.add_parser("summarize", help="Compare finished run directories")
     summary.add_argument("directories", type=Path, nargs="+")
     summary.add_argument("--output", type=Path)
@@ -292,6 +304,7 @@ def main() -> None:
             args.output_dir,
             limit=args.limit,
             pause=args.pause,
+            error_wait=args.error_wait,
         )
         print(summary_table([summarize(directory)]))
         print(f"run_directory={directory}")

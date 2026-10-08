@@ -87,14 +87,27 @@ class ViTFaultTests(CamelyonHarness):
                 )
         for row in variants["clean"]["parameter_group_epochs"]:
             self.assertEqual(row["metrics"].keys() >= set(runner.METRIC_NAMES.values()), True)
+        self.assertTrue(report["determinism"]["deterministic_algorithms"])
+        self.assertFalse(torch.are_deterministic_algorithms_enabled())
+        self.assertEqual(
+            report["observations"]["clean_configured_repairs_bitwise_equal_to_clean"],
+            {"imagenet_head_kept_repaired": True, "frozen_patch_embedding_repaired": True},
+        )
 
-    def test_collator_normalizes_per_split_resizes_and_records(self):
+    def test_collate_then_preprocess_normalizes_per_split_resizes_and_records(self):
         plan = runner.variant_plan()["train_eval_normalization_mismatch"]
         callback = RecordingCallback()
-        collate = runner.SplitCollator(plan, callback, image_size=32)
+        preprocess = runner.SplitPreprocessor(plan, callback, image_size=32)
         image = torch.zeros(3, 96, 96)  # ImageNet-normalized zeros are the ImageNet mean
-        train = collate([{"image": image, "label": 1, "split": "train"}])
-        evaluation = collate([{"image": image, "label": 0, "split": "id_eval"}])
+        batch = runner.split_collate([{"image": image, "label": 1, "split": "train"}])
+        self.assertEqual(
+            (batch["split"], tuple(batch["pixel_values"].shape)), ("train", (1, 3, 96, 96))
+        )
+        train = preprocess(batch)
+        evaluation = preprocess(
+            runner.split_collate([{"image": image, "label": 0, "split": "id_eval"}])
+        )
+        self.assertNotIn("split", train)
         self.assertEqual(tuple(train["pixel_values"].shape), (1, 3, 32, 32))
         mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
         self.assertTrue(
@@ -107,7 +120,7 @@ class ViTFaultTests(CamelyonHarness):
         )
         self.assertEqual([split for split, _, _ in callback.batches], ["train", "id_eval"])
         with self.assertRaisesRegex(ValueError, "mixes splits"):
-            collate(
+            runner.split_collate(
                 [
                     {"image": image, "label": 0, "split": "train"},
                     {"image": image, "label": 0, "split": "id_eval"},

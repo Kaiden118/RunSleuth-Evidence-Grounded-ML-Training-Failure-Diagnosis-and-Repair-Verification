@@ -14,12 +14,17 @@ gradient clipping 1.0, constant learning rate):
 
 Each fault has a repaired variant, verified by bounded retraining under the
 unchanged development performance policy. Input statistics are recorded on the
-exact tensors the model receives.
+exact tensors the model receives. Training is made deterministic (deterministic
+algorithms, eager attention, a fixed cuBLAS workspace set before CUDA starts) so
+identical configurations reproduce bitwise; resizing and normalization run on the
+training device.
 """
 
 import argparse
 import json
+import os
 import platform
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,6 +43,7 @@ from runsleuth.camelyon_variant_runner import (
     performance_checks,
     snapshot_sources_with,
 )
+from runsleuth.optimizer_probe import state_dict_sha256
 from runsleuth.signature_matching import input_shift
 
 MODEL_NAME = "facebook/deit-small-patch16-224"
@@ -105,16 +111,55 @@ def variant_plan() -> dict[str, dict]:
     }
 
 
+@contextmanager
+def deterministic_training():
+    """Enable deterministic algorithms for the block and restore the previous settings.
+
+    The cuBLAS workspace setting only takes effect if set before CUDA creates its
+    handles, so enter this before any CUDA work in the process.
+    """
+    import torch
+
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    previous = (
+        torch.are_deterministic_algorithms_enabled(),
+        torch.backends.cudnn.deterministic,
+        torch.backends.cudnn.benchmark,
+    )
+    torch.use_deterministic_algorithms(True)
+    torch.backends.cudnn.deterministic, torch.backends.cudnn.benchmark = True, False
+    try:
+        yield {
+            "deterministic_algorithms": True,
+            "attention": "eager",
+            "cublas_workspace_config": os.environ["CUBLAS_WORKSPACE_CONFIG"],
+        }
+    finally:
+        torch.use_deterministic_algorithms(previous[0])
+        torch.backends.cudnn.deterministic, torch.backends.cudnn.benchmark = previous[1:]
+
+
 def load_pretrained(plan: dict):
-    """Load the cached DeiT checkpoint; without num_labels the ImageNet head is kept."""
+    """Load the cached DeiT checkpoint with eager attention; without num_labels the
+    ImageNet head is kept."""
     from transformers import AutoModelForImageClassification
 
-    options = {}
+    options = {"attn_implementation": "eager"}
     if plan["num_labels"] is not None:
-        options = {"num_labels": plan["num_labels"], "ignore_mismatched_sizes": True}
+        options |= {"num_labels": plan["num_labels"], "ignore_mismatched_sizes": True}
     return AutoModelForImageClassification.from_pretrained(
         MODEL_NAME, local_files_only=True, **options
     )
+
+
+def model_commit() -> str | None:
+    """The cached snapshot's commit, read from the local Hugging Face cache path."""
+    try:
+        from transformers.utils import cached_file
+
+        return Path(cached_file(MODEL_NAME, "config.json", local_files_only=True)).parent.name
+    except (ImportError, OSError):
+        return None
 
 
 def to_model_inputs(images, normalization: str, image_size: int):
@@ -123,7 +168,7 @@ def to_model_inputs(images, normalization: str, image_size: int):
     from torch.nn import functional
 
     def column(values):
-        return torch.tensor(values, dtype=images.dtype).view(1, 3, 1, 1)
+        return torch.tensor(values, dtype=images.dtype, device=images.device).view(1, 3, 1, 1)
 
     raw = images * column(IMAGENET_STD) + column(IMAGENET_MEAN)
     if raw.shape[-1] != image_size or raw.shape[-2] != image_size:
@@ -148,25 +193,49 @@ class SplitDataset:
         return {"image": image, "label": int(label), "split": self.split}
 
 
-class SplitCollator:
-    """Build model inputs with the split's normalization and record them in the run report."""
+def split_collate(items: list[dict]) -> dict:
+    """Stack cached images and labels; the split travels with the batch."""
+    import torch
+
+    split = items[0]["split"]
+    if any(item["split"] != split for item in items):
+        raise ValueError("A batch mixes splits")
+    return {
+        "pixel_values": torch.stack([item["image"] for item in items]),
+        "labels": torch.tensor([item["label"] for item in items]),
+        "split": split,
+    }
+
+
+class SplitPreprocessor:
+    """On the training device: apply the split's normalization, resize, record inputs."""
 
     def __init__(self, plan: dict, callback, image_size: int) -> None:
         self.plan, self.callback, self.image_size = plan, callback, image_size
 
-    def __call__(self, items: list[dict]) -> dict:
-        import torch
-
-        split = items[0]["split"]
-        if any(item["split"] != split for item in items):
-            raise ValueError("A batch mixes splits")
+    def __call__(self, inputs: dict) -> dict:
+        inputs = dict(inputs)
+        split = inputs.pop("split")
         key = "train_normalization" if split == "train" else "eval_normalization"
-        pixel_values = to_model_inputs(
-            torch.stack([item["image"] for item in items]), self.plan[key], self.image_size
-        )
-        labels = torch.tensor([item["label"] for item in items])
-        self.callback.observe_batch(split, pixel_values, labels)
-        return {"pixel_values": pixel_values, "labels": labels}
+        pixel_values = to_model_inputs(inputs["pixel_values"], self.plan[key], self.image_size)
+        self.callback.observe_batch(split, pixel_values, inputs["labels"])
+        return {**inputs, "pixel_values": pixel_values}
+
+
+def _trainer_class():
+    from transformers import Trainer
+
+    class PreprocessingTrainer(Trainer):
+        """Run SplitPreprocessor after the Trainer has moved a batch to the device."""
+
+        def __init__(self, *args, preprocess, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.preprocess = preprocess
+
+        def _prepare_inputs(self, inputs):
+            return self.preprocess(super()._prepare_inputs(inputs))
+
+    return PreprocessingTrainer
 
 
 def _accuracy(prediction) -> dict:
@@ -180,9 +249,11 @@ def _accuracy(prediction) -> dict:
     return {"accuracy": float((np.argmax(logits, axis=-1) == prediction.label_ids).mean())}
 
 
-def run_variant(name, plan, *, config, data, directory, device, model_factory, image_size):
+def run_variant(
+    name, plan, *, config, data, directory, device, model_factory, image_size, max_steps=None
+):
     """Train one variant with the Trainer and return its RunSleuth run report."""
-    from transformers import Trainer, TrainingArguments, set_seed
+    from transformers import TrainingArguments, set_seed
 
     from runsleuth.hf_callback import RunSleuthCallback
 
@@ -196,6 +267,7 @@ def run_variant(name, plan, *, config, data, directory, device, model_factory, i
     arguments = TrainingArguments(
         output_dir=str(directory / "trainer" / name),
         num_train_epochs=config.epochs,
+        max_steps=-1 if max_steps is None else max_steps,
         per_device_train_batch_size=config.batch_size,
         per_device_eval_batch_size=64,
         learning_rate=config.learning_rate,
@@ -216,7 +288,7 @@ def run_variant(name, plan, *, config, data, directory, device, model_factory, i
         disable_tqdm=True,
         remove_unused_columns=False,
     )
-    trainer = Trainer(
+    trainer = _trainer_class()(
         model=model,
         args=arguments,
         train_dataset=SplitDataset(data.train_loader.dataset, "train"),
@@ -224,9 +296,10 @@ def run_variant(name, plan, *, config, data, directory, device, model_factory, i
             "id": SplitDataset(data.id_val_loader.dataset, "id_eval"),
             "ood": SplitDataset(data.ood_val_loader.dataset, "ood_eval"),
         },
-        data_collator=SplitCollator(plan, callback, image_size),
+        data_collator=split_collate,
         compute_metrics=_accuracy,
         callbacks=[callback],
+        preprocess=SplitPreprocessor(plan, callback, image_size),
     )
     started = perf_counter()
     trainer.train()
@@ -235,7 +308,7 @@ def run_variant(name, plan, *, config, data, directory, device, model_factory, i
     report.update(
         variant=name,
         plan=plan,
-        model_commit=getattr(model.config, "_commit_hash", None),
+        final_state_sha256=state_dict_sha256(model.state_dict()),
         elapsed_seconds=perf_counter() - started,
     )
     if plan["repair"] is not None:
@@ -385,6 +458,13 @@ def assess_vit_faults(variants: dict, plan: dict, epochs: int) -> dict:
             for name, variant in variants.items()
             if name != "clean"
         },
+        # These repaired variants are configured exactly like clean, so with
+        # deterministic training they should reproduce it bitwise.
+        "clean_configured_repairs_bitwise_equal_to_clean": {
+            name: variants[name].get("final_state_sha256") is not None
+            and variants[name].get("final_state_sha256") == clean.get("final_state_sha256")
+            for name in ("imagenet_head_kept_repaired", "frozen_patch_embedding_repaired")
+        },
         "processor_vs_imagenet_normalization": {
             "description": "processor (0.5) normalization for training and evaluation minus "
             "ImageNet normalization for both; answers which suits these weights here",
@@ -449,7 +529,10 @@ def run_vit_faults(
     }
     print(f"experiment_directory={directory}", flush=True)
     started = perf_counter()
+    determinism = deterministic_training()
     try:
+        report["determinism"] = determinism.__enter__()
+        report["model_commit"] = model_commit() if model_factory is load_pretrained else None
         write_json(
             directory / "environment.json",
             {
@@ -483,6 +566,7 @@ def run_vit_faults(
         report["error"] = {"type": type(error).__name__, "message": str(error)}
         raise
     finally:
+        determinism.__exit__(None, None, None)
         report["elapsed_seconds"] = perf_counter() - started
         write_json(report_path, report)
         print(f"vit_fault_report={report_path}", flush=True)

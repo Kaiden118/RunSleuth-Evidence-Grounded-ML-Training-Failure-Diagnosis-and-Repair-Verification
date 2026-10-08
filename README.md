@@ -3,7 +3,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white)
 ![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?logo=huggingface&logoColor=black)
-![LLM](https://img.shields.io/badge/LLM-Gemini-8E75B2)
+![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20Ollama-8E75B2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 RunSleuth diagnoses silent PyTorch training faults from structural telemetry and
@@ -21,8 +21,8 @@ membership and input statistics.
    `Trainer` with `RunSleuthCallback`.
 2. **Diagnose** by matching the run against declarative failure signatures, with
    or without a healthy reference run.
-3. **Review** with an LLM (Gemini) that must cite the evidence; it cannot
-   overrule the deterministic verdict.
+3. **Review** with an LLM (Gemini, or a local model through Ollama) that must
+   cite the evidence; it cannot overrule the deterministic verdict.
 4. **Verify** the minimal repair with bounded retraining and a no-regression gate
    against a healthy run.
 
@@ -54,6 +54,23 @@ validation), ResNet18 and DeiT-small, seeds 7 and 2026, author-injected faults.
   ([record](evaluations/results/repair-gate-v2-rescore.json)).
 - The DeiT checkpoint's Hugging Face image processor contradicts its model card
   on normalization; RunSleuth's input statistics catch the resulting mismatch.
+
+**LLM review.** Both reviewers saw the same evidence for the 46 runs, with and
+without a reference: 92 reviews each, one sampled reply per review
+([record](evaluations/results/llm-review-eval.json)).
+
+| Reviewer | Valid reply on first try | Agrees with matcher | Mean latency |
+|---|---:|---:|---:|
+| Gemini 3.5 Flash-Lite (API) | 92/92 | 89/92 | 6 s |
+| Qwen3 8B (local, Ollama) | 86/92 | 91/91† | 72 s |
+
+- Gemini's three disagreements were all on faulty runs and all wrong: twice it
+  held a high learning rate pending a reference the signature does not need,
+  and once it called a frozen patch embedding normal partial fine-tuning. The
+  matcher stays final, so each was only flagged for review.
+- Citation checks caught Qwen citing evidence that does not exist; its retry
+  fixed it. †One Qwen review never followed the reply schema, so the matcher's
+  diagnosis stood alone.
 
 Results cover two seeds and development thresholds, not a statistical benchmark.
 
@@ -112,6 +129,20 @@ set "GEMINI_API_KEY=your-api-key"
 set "GEMINI_MODEL=gemini-3.8-flash"
 ```
 
+Or review locally with [Ollama](https://ollama.com) by adding `--provider ollama`.
+Quit the Ollama tray app, start the server with a longer context than its
+default, and pull the model in a second terminal:
+
+```bat
+set "OLLAMA_CONTEXT_LENGTH=12288"
+ollama serve
+```
+
+```bat
+ollama pull qwen3:8b
+set "OLLAMA_MODEL=qwen3:8b"
+```
+
 ### 3. Diagnose your own training
 
 Wrap each epoch of your loop with `RunMonitor`:
@@ -154,6 +185,14 @@ Score the signature matcher on the experiment reports these commands print:
 
 ```bat
 python -m runsleuth.signature_matching evaluate <experiment-report.json> ...
+```
+
+Compare LLM reviewers on the same cases. Runs resume where they stopped; add
+`--pause 5 --error-wait 60` for the Gemini free tier:
+
+```bat
+python -m runsleuth.llm_review_eval run --provider ollama --model qwen3:8b --from-record evaluations/results/signature-matching-20261008.json
+python -m runsleuth.llm_review_eval summarize artifacts/llm_review_eval/ollama-qwen3-8b ...
 ```
 
 ### Tests

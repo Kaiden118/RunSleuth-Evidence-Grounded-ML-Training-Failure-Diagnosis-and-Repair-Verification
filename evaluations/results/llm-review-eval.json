@@ -1,0 +1,1946 @@
+{
+  "schema_version": 1,
+  "task": "llm_review_evaluation",
+  "scope": "development evaluation on author-injected faults; one sampled reply per case at provider defaults",
+  "runs": [
+    {
+      "provider": "gemini",
+      "model": "gemini-3.5-flash-lite",
+      "max_output_tokens": 4000,
+      "expected_cases": 92,
+      "complete": true,
+      "overall": {
+        "cases": 92,
+        "completed": 92,
+        "invalid_output": 0,
+        "api_error": 0,
+        "valid_on_first_attempt": 92,
+        "agrees_with_matcher": 89,
+        "conflicts": {
+          "different_diagnosis": 3
+        },
+        "llm_matches_truth": 83,
+        "llm_defers_with_true_fault": 6,
+        "matcher_matches_truth": 86,
+        "issue_types": {},
+        "truncated_replies": 0,
+        "input_tokens": 340136,
+        "output_tokens": 29241,
+        "mean_latency_seconds": 6.222414290217438
+      },
+      "by_mode": {
+        "reference_free": {
+          "cases": 46,
+          "completed": 46,
+          "invalid_output": 0,
+          "api_error": 0,
+          "valid_on_first_attempt": 46,
+          "agrees_with_matcher": 44,
+          "conflicts": {
+            "different_diagnosis": 2
+          },
+          "llm_matches_truth": 38,
+          "llm_defers_with_true_fault": 6,
+          "matcher_matches_truth": 40,
+          "issue_types": {},
+          "truncated_replies": 0,
+          "input_tokens": 169606,
+          "output_tokens": 14120,
+          "mean_latency_seconds": 6.352395300000017
+        },
+        "with_reference": {
+          "cases": 46,
+          "completed": 46,
+          "invalid_output": 0,
+          "api_error": 0,
+          "valid_on_first_attempt": 46,
+          "agrees_with_matcher": 45,
+          "conflicts": {
+            "different_diagnosis": 1
+          },
+          "llm_matches_truth": 45,
+          "llm_defers_with_true_fault": 0,
+          "matcher_matches_truth": 46,
+          "issue_types": {},
+          "truncated_replies": 0,
+          "input_tokens": 170530,
+          "output_tokens": 15121,
+          "mean_latency_seconds": 6.09243328043486
+        }
+      },
+      "by_health": {
+        "healthy": {
+          "cases": 52,
+          "completed": 52,
+          "invalid_output": 0,
+          "api_error": 0,
+          "valid_on_first_attempt": 52,
+          "agrees_with_matcher": 52,
+          "conflicts": {},
+          "llm_matches_truth": 52,
+          "llm_defers_with_true_fault": 0,
+          "matcher_matches_truth": 52,
+          "issue_types": {},
+          "truncated_replies": 0,
+          "input_tokens": 193140,
+          "output_tokens": 16536,
+          "mean_latency_seconds": 5.859763478846162
+        },
+        "faulty": {
+          "cases": 40,
+          "completed": 40,
+          "invalid_output": 0,
+          "api_error": 0,
+          "valid_on_first_attempt": 40,
+          "agrees_with_matcher": 37,
+          "conflicts": {
+            "different_diagnosis": 3
+          },
+          "llm_matches_truth": 31,
+          "llm_defers_with_true_fault": 6,
+          "matcher_matches_truth": 34,
+          "issue_types": {},
+          "truncated_replies": 0,
+          "input_tokens": 146996,
+          "output_tokens": 12705,
+          "mean_latency_seconds": 6.693860345000099
+        }
+      },
+      "cases": [
+        {
+          "case_id": "run-20261007T062923611734Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:stale_head:reference_free",
+          "truth": "stale_optimizer_binding",
+          "matcher": "stale_optimizer_binding",
+          "llm_status": "completed",
+          "llm": "stale_optimizer_binding",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:stale_head:with_reference",
+          "truth": "stale_optimizer_binding",
+          "matcher": "stale_optimizer_binding",
+          "llm_status": "completed",
+          "llm": "stale_optimizer_binding",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:frozen_head:reference_free",
+          "truth": "frozen_head",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:frozen_head:with_reference",
+          "truth": "frozen_head",
+          "matcher": "frozen_head",
+          "llm_status": "completed",
+          "llm": "frozen_head",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:frozen_head_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:frozen_head_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:stale_head:reference_free",
+          "truth": "stale_optimizer_binding",
+          "matcher": "stale_optimizer_binding",
+          "llm_status": "completed",
+          "llm": "stale_optimizer_binding",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:stale_head:with_reference",
+          "truth": "stale_optimizer_binding",
+          "matcher": "stale_optimizer_binding",
+          "llm_status": "completed",
+          "llm": "stale_optimizer_binding",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:frozen_head:reference_free",
+          "truth": "frozen_head",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:frozen_head:with_reference",
+          "truth": "frozen_head",
+          "matcher": "frozen_head",
+          "llm_status": "completed",
+          "llm": "frozen_head",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:frozen_head_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:frozen_head_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:high_learning_rate:reference_free",
+          "truth": "high_learning_rate",
+          "matcher": "high_learning_rate",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": "different_diagnosis",
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:high_learning_rate:with_reference",
+          "truth": "high_learning_rate",
+          "matcher": "high_learning_rate",
+          "llm_status": "completed",
+          "llm": "high_learning_rate",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:high_learning_rate_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:high_learning_rate_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:missing_optimizer_step:reference_free",
+          "truth": "missing_optimizer_step",
+          "matcher": "missing_optimizer_step",
+          "llm_status": "completed",
+          "llm": "missing_optimizer_step",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:missing_optimizer_step:with_reference",
+          "truth": "missing_optimizer_step",
+          "matcher": "missing_optimizer_step",
+          "llm_status": "completed",
+          "llm": "missing_optimizer_step",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:missing_optimizer_step_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:missing_optimizer_step_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:high_learning_rate:reference_free",
+          "truth": "high_learning_rate",
+          "matcher": "high_learning_rate",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": "different_diagnosis",
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:high_learning_rate:with_reference",
+          "truth": "high_learning_rate",
+          "matcher": "high_learning_rate",
+          "llm_status": "completed",
+          "llm": "high_learning_rate",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:high_learning_rate_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:high_learning_rate_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:missing_optimizer_step:reference_free",
+          "truth": "missing_optimizer_step",
+          "matcher": "missing_optimizer_step",
+          "llm_status": "completed",
+          "llm": "missing_optimizer_step",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:missing_optimizer_step:with_reference",
+          "truth": "missing_optimizer_step",
+          "matcher": "missing_optimizer_step",
+          "llm_status": "completed",
+          "llm": "missing_optimizer_step",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:missing_optimizer_step_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:missing_optimizer_step_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:train_eval_normalization_mismatch:reference_free",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:train_eval_normalization_mismatch:with_reference",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:train_eval_normalization_mismatch_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:train_eval_normalization_mismatch_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:imagenet_head_kept:reference_free",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:imagenet_head_kept:with_reference",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:imagenet_head_kept_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:imagenet_head_kept_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:frozen_patch_embedding:reference_free",
+          "truth": "frozen_backbone_module",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:frozen_patch_embedding:with_reference",
+          "truth": "frozen_backbone_module",
+          "matcher": "frozen_backbone_module",
+          "llm_status": "completed",
+          "llm": "frozen_backbone_module",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:frozen_patch_embedding_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:frozen_patch_embedding_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:train_eval_normalization_mismatch:reference_free",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:train_eval_normalization_mismatch:with_reference",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:train_eval_normalization_mismatch_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:train_eval_normalization_mismatch_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:imagenet_head_kept:reference_free",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:imagenet_head_kept:with_reference",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:imagenet_head_kept_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:imagenet_head_kept_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:frozen_patch_embedding:reference_free",
+          "truth": "frozen_backbone_module",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:frozen_patch_embedding:with_reference",
+          "truth": "frozen_backbone_module",
+          "matcher": "frozen_backbone_module",
+          "llm_status": "completed",
+          "llm": "frozen_backbone_module",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:frozen_patch_embedding_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:frozen_patch_embedding_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:train_eval_normalization_mismatch:reference_free",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:train_eval_normalization_mismatch:with_reference",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:train_eval_normalization_mismatch_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:train_eval_normalization_mismatch_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:imagenet_head_kept:reference_free",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:imagenet_head_kept:with_reference",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:imagenet_head_kept_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:imagenet_head_kept_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:frozen_patch_embedding:reference_free",
+          "truth": "frozen_backbone_module",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:frozen_patch_embedding:with_reference",
+          "truth": "frozen_backbone_module",
+          "matcher": "frozen_backbone_module",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": "different_diagnosis",
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:frozen_patch_embedding_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:frozen_patch_embedding_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:train_eval_normalization_mismatch:reference_free",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:train_eval_normalization_mismatch:with_reference",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:train_eval_normalization_mismatch_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:train_eval_normalization_mismatch_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:imagenet_head_kept:reference_free",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:imagenet_head_kept:with_reference",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:imagenet_head_kept_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:imagenet_head_kept_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:frozen_patch_embedding:reference_free",
+          "truth": "frozen_backbone_module",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:frozen_patch_embedding:with_reference",
+          "truth": "frozen_backbone_module",
+          "matcher": "frozen_backbone_module",
+          "llm_status": "completed",
+          "llm": "frozen_backbone_module",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:frozen_patch_embedding_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:frozen_patch_embedding_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        }
+      ],
+      "reports": [
+        {
+          "path": "artifacts\\frozen_head_training\\run-20261007T062923611734Z\\frozen_head_training_report.json",
+          "sha256": "090b2774293688e825badcbf69033f49d13c1d63d11f084c12ef93cbc478709f"
+        },
+        {
+          "path": "artifacts\\frozen_head_training\\run-20261007T064319356166Z\\frozen_head_training_report.json",
+          "sha256": "6edd02f84130f22d067033dffbfa9324c1ff320fa4cf35ce88450e2540febf44"
+        },
+        {
+          "path": "artifacts\\config_fault_training\\run-20261007T164347633639Z\\config_fault_training_report.json",
+          "sha256": "83b7fbc71419eeecba9569f7b718b750a250b10c52311889ea1bf93812148a7c"
+        },
+        {
+          "path": "artifacts\\config_fault_training\\run-20261007T170847253267Z\\config_fault_training_report.json",
+          "sha256": "3138d977a0604c1185ecf8b6e1f5110e173e7a2c692a8149a0f26c9170d6caab"
+        },
+        {
+          "path": "artifacts\\vit_fault_training\\run-20261007T224104476477Z\\vit_fault_report.json",
+          "sha256": "934625f1da7171760ead58df02840e84079dfdd792ab1e09b8a4f400b6174f92"
+        },
+        {
+          "path": "artifacts\\vit_fault_training\\run-20261007T231759576896Z\\vit_fault_report.json",
+          "sha256": "6fa5c0b0a45b2ecdbd7a08f901612ad541979b8d06c56273849105e39feb588e"
+        },
+        {
+          "path": "artifacts\\vit_fault_training\\run-20261008T001516880242Z\\vit_fault_report.json",
+          "sha256": "fe953eebf6960a7b8aea1c8f0272984cb47a848fbb0692384dca2dff8685739e"
+        },
+        {
+          "path": "artifacts\\vit_fault_training\\run-20261008T005316403335Z\\vit_fault_report.json",
+          "sha256": "44cba8a143b566bfc8e300c6d744e273090ec8566d55b8ac1e2648a04dfd4726"
+        }
+      ]
+    },
+    {
+      "provider": "ollama",
+      "model": "qwen3:8b",
+      "max_output_tokens": 4000,
+      "expected_cases": 92,
+      "complete": true,
+      "overall": {
+        "cases": 92,
+        "completed": 91,
+        "invalid_output": 1,
+        "api_error": 0,
+        "valid_on_first_attempt": 86,
+        "agrees_with_matcher": 91,
+        "conflicts": {},
+        "llm_matches_truth": 85,
+        "llm_defers_with_true_fault": 6,
+        "matcher_matches_truth": 86,
+        "issue_types": {
+          "schema": 26,
+          "unknown_evidence": 1
+        },
+        "truncated_replies": 0,
+        "input_tokens": 347709,
+        "output_tokens": 126435,
+        "mean_latency_seconds": 71.74173419130432
+      },
+      "by_mode": {
+        "reference_free": {
+          "cases": 46,
+          "completed": 45,
+          "invalid_output": 1,
+          "api_error": 0,
+          "valid_on_first_attempt": 42,
+          "agrees_with_matcher": 45,
+          "conflicts": {},
+          "llm_matches_truth": 39,
+          "llm_defers_with_true_fault": 6,
+          "matcher_matches_truth": 40,
+          "issue_types": {
+            "schema": 20,
+            "unknown_evidence": 1
+          },
+          "truncated_replies": 0,
+          "input_tokens": 176900,
+          "output_tokens": 69304,
+          "mean_latency_seconds": 78.94658158043482
+        },
+        "with_reference": {
+          "cases": 46,
+          "completed": 46,
+          "invalid_output": 0,
+          "api_error": 0,
+          "valid_on_first_attempt": 44,
+          "agrees_with_matcher": 46,
+          "conflicts": {},
+          "llm_matches_truth": 46,
+          "llm_defers_with_true_fault": 0,
+          "matcher_matches_truth": 46,
+          "issue_types": {
+            "schema": 6
+          },
+          "truncated_replies": 0,
+          "input_tokens": 170809,
+          "output_tokens": 57131,
+          "mean_latency_seconds": 64.53688680217378
+        }
+      },
+      "by_health": {
+        "healthy": {
+          "cases": 52,
+          "completed": 51,
+          "invalid_output": 1,
+          "api_error": 0,
+          "valid_on_first_attempt": 46,
+          "agrees_with_matcher": 51,
+          "conflicts": {},
+          "llm_matches_truth": 51,
+          "llm_defers_with_true_fault": 0,
+          "matcher_matches_truth": 52,
+          "issue_types": {
+            "schema": 26,
+            "unknown_evidence": 1
+          },
+          "truncated_replies": 0,
+          "input_tokens": 207481,
+          "output_tokens": 86972,
+          "mean_latency_seconds": 87.66076913846149
+        },
+        "faulty": {
+          "cases": 40,
+          "completed": 40,
+          "invalid_output": 0,
+          "api_error": 0,
+          "valid_on_first_attempt": 40,
+          "agrees_with_matcher": 40,
+          "conflicts": {},
+          "llm_matches_truth": 34,
+          "llm_defers_with_true_fault": 6,
+          "matcher_matches_truth": 34,
+          "issue_types": {},
+          "truncated_replies": 0,
+          "input_tokens": 140228,
+          "output_tokens": 39463,
+          "mean_latency_seconds": 51.04698875999996
+        }
+      },
+      "cases": [
+        {
+          "case_id": "run-20261007T062923611734Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "invalid_output",
+          "llm": null,
+          "conflict_kind": null,
+          "valid_on_first_attempt": false
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:stale_head:reference_free",
+          "truth": "stale_optimizer_binding",
+          "matcher": "stale_optimizer_binding",
+          "llm_status": "completed",
+          "llm": "stale_optimizer_binding",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:stale_head:with_reference",
+          "truth": "stale_optimizer_binding",
+          "matcher": "stale_optimizer_binding",
+          "llm_status": "completed",
+          "llm": "stale_optimizer_binding",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:frozen_head:reference_free",
+          "truth": "frozen_head",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:frozen_head:with_reference",
+          "truth": "frozen_head",
+          "matcher": "frozen_head",
+          "llm_status": "completed",
+          "llm": "frozen_head",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:frozen_head_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T062923611734Z:frozen_head_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": false
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:stale_head:reference_free",
+          "truth": "stale_optimizer_binding",
+          "matcher": "stale_optimizer_binding",
+          "llm_status": "completed",
+          "llm": "stale_optimizer_binding",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:stale_head:with_reference",
+          "truth": "stale_optimizer_binding",
+          "matcher": "stale_optimizer_binding",
+          "llm_status": "completed",
+          "llm": "stale_optimizer_binding",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:frozen_head:reference_free",
+          "truth": "frozen_head",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:frozen_head:with_reference",
+          "truth": "frozen_head",
+          "matcher": "frozen_head",
+          "llm_status": "completed",
+          "llm": "frozen_head",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:frozen_head_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T064319356166Z:frozen_head_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:high_learning_rate:reference_free",
+          "truth": "high_learning_rate",
+          "matcher": "high_learning_rate",
+          "llm_status": "completed",
+          "llm": "high_learning_rate",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:high_learning_rate:with_reference",
+          "truth": "high_learning_rate",
+          "matcher": "high_learning_rate",
+          "llm_status": "completed",
+          "llm": "high_learning_rate",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:high_learning_rate_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:high_learning_rate_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:missing_optimizer_step:reference_free",
+          "truth": "missing_optimizer_step",
+          "matcher": "missing_optimizer_step",
+          "llm_status": "completed",
+          "llm": "missing_optimizer_step",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:missing_optimizer_step:with_reference",
+          "truth": "missing_optimizer_step",
+          "matcher": "missing_optimizer_step",
+          "llm_status": "completed",
+          "llm": "missing_optimizer_step",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:missing_optimizer_step_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T164347633639Z:missing_optimizer_step_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": false
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": false
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:high_learning_rate:reference_free",
+          "truth": "high_learning_rate",
+          "matcher": "high_learning_rate",
+          "llm_status": "completed",
+          "llm": "high_learning_rate",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:high_learning_rate:with_reference",
+          "truth": "high_learning_rate",
+          "matcher": "high_learning_rate",
+          "llm_status": "completed",
+          "llm": "high_learning_rate",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:high_learning_rate_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:high_learning_rate_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:missing_optimizer_step:reference_free",
+          "truth": "missing_optimizer_step",
+          "matcher": "missing_optimizer_step",
+          "llm_status": "completed",
+          "llm": "missing_optimizer_step",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:missing_optimizer_step:with_reference",
+          "truth": "missing_optimizer_step",
+          "matcher": "missing_optimizer_step",
+          "llm_status": "completed",
+          "llm": "missing_optimizer_step",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:missing_optimizer_step_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": false
+        },
+        {
+          "case_id": "run-20261007T170847253267Z:missing_optimizer_step_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:train_eval_normalization_mismatch:reference_free",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:train_eval_normalization_mismatch:with_reference",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:train_eval_normalization_mismatch_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:train_eval_normalization_mismatch_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:imagenet_head_kept:reference_free",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:imagenet_head_kept:with_reference",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:imagenet_head_kept_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:imagenet_head_kept_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:frozen_patch_embedding:reference_free",
+          "truth": "frozen_backbone_module",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:frozen_patch_embedding:with_reference",
+          "truth": "frozen_backbone_module",
+          "matcher": "frozen_backbone_module",
+          "llm_status": "completed",
+          "llm": "frozen_backbone_module",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:frozen_patch_embedding_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T224104476477Z:frozen_patch_embedding_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:train_eval_normalization_mismatch:reference_free",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:train_eval_normalization_mismatch:with_reference",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:train_eval_normalization_mismatch_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:train_eval_normalization_mismatch_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:imagenet_head_kept:reference_free",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:imagenet_head_kept:with_reference",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:imagenet_head_kept_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:imagenet_head_kept_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:frozen_patch_embedding:reference_free",
+          "truth": "frozen_backbone_module",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:frozen_patch_embedding:with_reference",
+          "truth": "frozen_backbone_module",
+          "matcher": "frozen_backbone_module",
+          "llm_status": "completed",
+          "llm": "frozen_backbone_module",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:frozen_patch_embedding_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261007T231759576896Z:frozen_patch_embedding_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:train_eval_normalization_mismatch:reference_free",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:train_eval_normalization_mismatch:with_reference",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:train_eval_normalization_mismatch_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:train_eval_normalization_mismatch_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:imagenet_head_kept:reference_free",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:imagenet_head_kept:with_reference",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:imagenet_head_kept_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": false
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:imagenet_head_kept_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:frozen_patch_embedding:reference_free",
+          "truth": "frozen_backbone_module",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:frozen_patch_embedding:with_reference",
+          "truth": "frozen_backbone_module",
+          "matcher": "frozen_backbone_module",
+          "llm_status": "completed",
+          "llm": "frozen_backbone_module",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:frozen_patch_embedding_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T001516880242Z:frozen_patch_embedding_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:train_eval_normalization_mismatch:reference_free",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:train_eval_normalization_mismatch:with_reference",
+          "truth": "train_eval_normalization_mismatch",
+          "matcher": "train_eval_normalization_mismatch",
+          "llm_status": "completed",
+          "llm": "train_eval_normalization_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:train_eval_normalization_mismatch_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:train_eval_normalization_mismatch_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:imagenet_head_kept:reference_free",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:imagenet_head_kept:with_reference",
+          "truth": "classifier_size_mismatch",
+          "matcher": "classifier_size_mismatch",
+          "llm_status": "completed",
+          "llm": "classifier_size_mismatch",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:imagenet_head_kept_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:imagenet_head_kept_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:frozen_patch_embedding:reference_free",
+          "truth": "frozen_backbone_module",
+          "matcher": "pending_reference",
+          "llm_status": "completed",
+          "llm": "pending_reference",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:frozen_patch_embedding:with_reference",
+          "truth": "frozen_backbone_module",
+          "matcher": "frozen_backbone_module",
+          "llm_status": "completed",
+          "llm": "frozen_backbone_module",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:frozen_patch_embedding_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T005316403335Z:frozen_patch_embedding_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        }
+      ],
+      "reports": [
+        {
+          "path": "artifacts\\frozen_head_training\\run-20261007T062923611734Z\\frozen_head_training_report.json",
+          "sha256": "090b2774293688e825badcbf69033f49d13c1d63d11f084c12ef93cbc478709f"
+        },
+        {
+          "path": "artifacts\\frozen_head_training\\run-20261007T064319356166Z\\frozen_head_training_report.json",
+          "sha256": "6edd02f84130f22d067033dffbfa9324c1ff320fa4cf35ce88450e2540febf44"
+        },
+        {
+          "path": "artifacts\\config_fault_training\\run-20261007T164347633639Z\\config_fault_training_report.json",
+          "sha256": "83b7fbc71419eeecba9569f7b718b750a250b10c52311889ea1bf93812148a7c"
+        },
+        {
+          "path": "artifacts\\config_fault_training\\run-20261007T170847253267Z\\config_fault_training_report.json",
+          "sha256": "3138d977a0604c1185ecf8b6e1f5110e173e7a2c692a8149a0f26c9170d6caab"
+        },
+        {
+          "path": "artifacts\\vit_fault_training\\run-20261007T224104476477Z\\vit_fault_report.json",
+          "sha256": "934625f1da7171760ead58df02840e84079dfdd792ab1e09b8a4f400b6174f92"
+        },
+        {
+          "path": "artifacts\\vit_fault_training\\run-20261007T231759576896Z\\vit_fault_report.json",
+          "sha256": "6fa5c0b0a45b2ecdbd7a08f901612ad541979b8d06c56273849105e39feb588e"
+        },
+        {
+          "path": "artifacts\\vit_fault_training\\run-20261008T001516880242Z\\vit_fault_report.json",
+          "sha256": "fe953eebf6960a7b8aea1c8f0272984cb47a848fbb0692384dca2dff8685739e"
+        },
+        {
+          "path": "artifacts\\vit_fault_training\\run-20261008T005316403335Z\\vit_fault_report.json",
+          "sha256": "44cba8a143b566bfc8e300c6d744e273090ec8566d55b8ac1e2648a04dfd4726"
+        }
+      ]
+    }
+  ]
+}

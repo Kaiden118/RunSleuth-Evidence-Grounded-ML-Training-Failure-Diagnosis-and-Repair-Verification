@@ -149,5 +149,70 @@ class VariantRunnerTests(CamelyonHarness):
         self.assertEqual(failed["status"], "failed")
 
 
+def final_metrics(accuracy, loss):
+    return {
+        "final_metrics": {
+            f"{domain}_validation_{name}": value
+            for domain in ("id", "ood")
+            for name, value in (("accuracy", accuracy), ("loss", loss))
+        }
+    }
+
+
+class RepairGateTests(unittest.TestCase):
+    # A silent fault: the faulty run beats clean and the repair restores clean exactly.
+    variants = {
+        "clean": final_metrics(0.90, 0.30),
+        "faulty": final_metrics(0.93, 0.25),
+        "repaired": final_metrics(0.90, 0.30),
+    }
+
+    def gate(self, variants=None, reference="clean", faulty="faulty"):
+        return variant_runner.verify_repair(
+            self.variants if variants is None else variants,
+            "repaired",
+            reference=reference,
+            faulty=faulty,
+        )
+
+    def test_reference_gates_and_the_faulty_run_is_informational(self):
+        gate = self.gate()
+        self.assertEqual(gate["gate"]["version"], 2)
+        self.assertEqual(
+            (gate["comparators"], gate["informational_comparators"]), (["clean"], ["faulty"])
+        )
+        self.assertTrue(gate["performance_nonregression"])
+        # Gate v1 rejected this repair: it trails the faulty run by 3 points.
+        self.assertFalse(all(check["passed"] for check in gate["informational_checks"]))
+        self.assertTrue(gate["faulty_passes_gate_vs_reference"])
+        self.assertEqual(
+            gate["performance_checks"],
+            variant_runner.performance_checks(self.variants, "repaired", ("clean",)),
+        )
+
+    def test_regression_against_the_reference_still_rejects(self):
+        gate = self.gate({**self.variants, "repaired": final_metrics(0.85, 0.30)})
+        self.assertFalse(gate["performance_nonregression"])
+        failed = {check["metric"] for check in gate["performance_checks"] if not check["passed"]}
+        self.assertEqual(failed, {"accuracy_drop"})
+
+    def test_a_harmful_fault_does_not_pass_the_gate_itself(self):
+        gate = self.gate({**self.variants, "faulty": final_metrics(0.70, 0.60)})
+        self.assertTrue(gate["performance_nonregression"])
+        self.assertFalse(gate["faulty_passes_gate_vs_reference"])
+
+    def test_without_a_reference_the_faulty_run_gates(self):
+        gate = self.gate(reference=None)
+        self.assertEqual((gate["comparators"], gate["informational_comparators"]), (["faulty"], []))
+        self.assertFalse(gate["performance_nonregression"])
+        self.assertEqual(gate["informational_checks"], [])
+        self.assertIsNone(gate["faulty_passes_gate_vs_reference"])
+
+    def test_no_valid_comparator_fails_instead_of_passing_on_zero_checks(self):
+        gate = self.gate(reference=None, faulty=None)
+        self.assertEqual((gate["comparators"], gate["performance_checks"]), ([], []))
+        self.assertFalse(gate["performance_nonregression"])
+
+
 if __name__ == "__main__":
     unittest.main()

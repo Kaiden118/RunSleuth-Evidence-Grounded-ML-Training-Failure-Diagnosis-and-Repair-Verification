@@ -12,8 +12,8 @@ gradient clipping 1.0, constant learning rate):
   ImageNet head; training on 0/1 labels runs without any error.
 - frozen_patch_embedding: the patch embedding projection is accidentally frozen.
 
-Each fault has a repaired variant, verified by bounded retraining under the
-unchanged development performance policy. Input statistics are recorded on the
+Each fault has a repaired variant, verified by bounded retraining under development
+gate v2 (camelyon_variant_runner.REPAIR_GATE). Input statistics are recorded on the
 exact tensors the model receives. Training is made deterministic (deterministic
 algorithms, eager attention, a fixed cuBLAS workspace set before CUDA starts) so
 identical configurations reproduce bitwise; resizing and normalization run on the
@@ -33,15 +33,14 @@ from time import perf_counter
 from runsleuth.camelyon_data import IMAGENET_MEAN, IMAGENET_STD
 from runsleuth.camelyon_optimizer_probe import check_matching_data, load_reference, read_json
 from runsleuth.camelyon_optimizer_training import (
-    REPAIR_POLICY,
     _complete_coverage,
     _valid_domain_metrics,
     write_json,
 )
 from runsleuth.camelyon_variant_runner import (
     metric_differences,
-    performance_checks,
     snapshot_sources_with,
+    verify_repair,
 )
 from runsleuth.optimizer_probe import state_dict_sha256
 from runsleuth.signature_matching import input_shift
@@ -436,19 +435,20 @@ def assess_vit_faults(variants: dict, plan: dict, epochs: int) -> dict:
             **repair_checks[fault],
             "repaired_learns_with_a_step_per_forward": _learns(repaired),
         }
-        comparators = ("clean", fault) if _completed(faulty, epochs) else ("clean",)
-        performance = performance_checks(variants, repaired_name, comparators)
+        gate = verify_repair(
+            variants,
+            repaired_name,
+            reference="clean",
+            faulty=fault if _completed(faulty, epochs) else None,
+        )
         structure_verified = all(structural.values())
-        passed = all(check["passed"] for check in performance)
+        passed = structure_verified and gate["performance_nonregression"]
         verification[fault] = {
             "candidate": repaired_name,
-            "decision": "accepted" if structure_verified and passed else "rejected",
+            "decision": "accepted" if passed else "rejected",
             "structural_checks": structural,
             "structure_verified": structure_verified,
-            "policy": dict(REPAIR_POLICY),
-            "comparators": list(comparators),
-            "performance_checks": performance,
-            "performance_nonregression": passed,
+            **gate,
             "scope": "development policy; no statistical or performance-recovery claim",
         }
     observations = {

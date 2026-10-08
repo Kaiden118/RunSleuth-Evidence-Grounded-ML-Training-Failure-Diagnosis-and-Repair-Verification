@@ -62,6 +62,8 @@ class RunMonitor:
         self.report_path = self.run_dir / "run_report.json"
         self._epoch = 0
         self._closed = False
+        self._inputs: dict[str, dict[str, Any]] = {}
+        head_weight = dict(model.named_parameters()).get(f"{head}.weight")
         self.report: dict[str, Any] = {
             "schema_version": 1,
             "task": "runsleuth_monitored_run",
@@ -72,10 +74,41 @@ class RunMonitor:
             "completed_epochs": 0,
             "trainability": parameter_trainability(model, self.head_prefix),
             "optimizer_audit": asdict(audit_optimizer_parameters(model, optimizer)),
+            "head_output_units": None if head_weight is None else int(head_weight.shape[0]),
             "parameter_group_epochs": [],
             "final_metrics": {},
+            "input_statistics": {},
+            "label_classes": {},
         }
         self._write()
+
+    def observe_batch(self, split: str, inputs: torch.Tensor, labels=None) -> None:
+        """Accumulate per-channel input statistics and seen label classes for a split.
+
+        Call it from a data pipeline (for example a collator) with the exact tensor
+        the model will receive; channels are dimension 1.
+        """
+        values = (
+            inputs.detach().to(dtype=torch.float64).transpose(0, 1).reshape(inputs.shape[1], -1)
+        )
+        if split not in self._inputs:
+            zeros = torch.zeros(values.shape[0], dtype=torch.float64)
+            self._inputs[split] = {"sum": zeros, "sumsq": zeros.clone(), "count": 0}
+        stats = self._inputs[split]
+        stats["sum"] += values.sum(dim=1).cpu()
+        stats["sumsq"] += values.square().sum(dim=1).cpu()
+        stats["count"] += values.shape[1]
+        mean = stats["sum"] / stats["count"]
+        variance = (stats["sumsq"] / stats["count"] - mean.square()).clamp_min(0)
+        self.report["input_statistics"][split] = {
+            "channel_mean": mean.tolist(),
+            "channel_std": variance.sqrt().tolist(),
+            "values_per_channel": stats["count"],
+        }
+        if labels is not None:
+            seen = set(self.report["label_classes"].get(split, []))
+            seen.update(int(label) for label in torch.as_tensor(labels).flatten().tolist())
+            self.report["label_classes"][split] = sorted(seen)
 
     def _write(self) -> None:
         self.report_path.write_text(

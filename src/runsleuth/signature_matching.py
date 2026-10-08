@@ -38,6 +38,12 @@ GROUND_TRUTH = {
     "high_learning_rate_repaired": "no_known_fault",
     "missing_optimizer_step": "missing_optimizer_step",
     "missing_optimizer_step_repaired": "no_known_fault",
+    "train_eval_normalization_mismatch": "train_eval_normalization_mismatch",
+    "train_eval_normalization_mismatch_repaired": "no_known_fault",
+    "imagenet_head_kept": "classifier_size_mismatch",
+    "imagenet_head_kept_repaired": "no_known_fault",
+    "frozen_patch_embedding": "frozen_backbone_module",
+    "frozen_patch_embedding_repaired": "no_known_fault",
 }
 
 
@@ -172,11 +178,26 @@ def extract_evidence(
         evidence[f"{group}_min_update_norm"] = min(updates) if updates else None
         evidence[f"{group}_max_update_norm"] = max(updates) if updates else None
         evidence[f"{group}_inferred_first_step_lr"] = _inferred_first_step_lr(run, group)
+    shift = input_shift(run)
+    evidence["input_mean_shift_train_vs_eval"] = shift and shift["standardized_mean_shift"]
+    evidence["input_std_ratio_train_vs_eval"] = shift and shift["std_ratio"]
+    classes = run.get("label_classes") or {}
+    observed = len(set().union(*classes.values())) if classes else None
+    head_units = run.get("head_output_units")
+    evidence["head_output_units"] = head_units
+    evidence["observed_label_classes"] = observed
+    evidence["head_outputs_beyond_label_classes"] = (
+        None if head_units is None or observed is None else head_units - observed
+    )
     evidence["reference_head_min_trainable_fraction"] = None
+    evidence["reference_backbone_min_trainable_fraction"] = None
     evidence["backbone_inferred_lr_ratio_to_reference"] = None
     if reference is not None:
         base = extract_evidence(reference, None, optimizer_name)
         evidence["reference_head_min_trainable_fraction"] = base["head_min_trainable_fraction"]
+        evidence["reference_backbone_min_trainable_fraction"] = base[
+            "backbone_min_trainable_fraction"
+        ]
         current, known = (
             evidence["backbone_inferred_first_step_lr"],
             base["backbone_inferred_first_step_lr"],

@@ -92,11 +92,16 @@ def _compact_verdicts(result: dict) -> list[dict]:
     keys = ("evidence", "op", "expected", "observed", "result", "status")
 
     def compact(conditions):
-        return [
-            {key: condition.get(key) for key in keys}
-            for condition in conditions
-            if "evidence" in condition
-        ]
+        flat = []
+        for condition in conditions:
+            if "any_of" in condition:  # an alternative group holds if any member holds
+                flat += [
+                    {**{key: part.get(key) for key in keys}, "any_of_group": True}
+                    for part in condition["any_of"]
+                ]
+            else:
+                flat.append({key: condition.get(key) for key in keys})
+        return flat
 
     return [
         {
@@ -233,11 +238,14 @@ def summary_text(result: dict) -> str:
     if chosen:
         lines.append("Evidence:")
         for condition in chosen["requires"]:
-            mark = {True: "+", False: "x", None: "?"}[condition["result"]]
-            lines.append(
-                f"  {mark} {condition['evidence']} = {condition['observed']} "
-                f"({condition['op']} {condition['expected']})"
-            )
+            parts = condition.get("any_of", [condition])
+            for part in parts:
+                mark = {True: "+", False: "x", None: "?"}[part["result"]]
+                alternative = " (any one suffices)" if len(parts) > 1 else ""
+                lines.append(
+                    f"  {mark} {part['evidence']} = {part['observed']} "
+                    f"({part['op']} {part['expected']}){alternative}"
+                )
         lines.append(f"Repair: {chosen['repair']['description']}")
     others = [
         f"{item['id']}: {item['verdict']}"

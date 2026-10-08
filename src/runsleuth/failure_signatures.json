@@ -9,6 +9,14 @@
     "min_learning_rate_ratio_to_reference": {
       "value": 10,
       "source": "Order-of-magnitude rule for a learning rate far above a known-good reference. Not calibrated on RunSleuth runs."
+    },
+    "max_same_distribution_std_ratio": {
+      "value": 1.5,
+      "source": "Heuristic stated before the ViT runs: inputs of splits drawn from one distribution and passed through one pipeline should have per-channel standard deviations within 1.5x. Not calibrated on RunSleuth runs."
+    },
+    "max_same_distribution_mean_shift": {
+      "value": 0.5,
+      "source": "Heuristic stated before the ViT runs: per-channel input means of same-distribution splits should differ by less than half a training standard deviation. Not calibrated on RunSleuth runs."
     }
   },
   "signatures": [
@@ -18,15 +26,44 @@
       "scope": "group_local",
       "description": "The optimizer still holds replaced head parameters: the current head receives gradients but is never updated, while the backbone trains.",
       "requires": [
-        {"evidence": "head_min_gradient_fraction", "op": "==", "value": 1, "meaning": "every current head tensor has a gradient at every step"},
-        {"evidence": "head_max_update_norm", "op": "==", "value": 0, "meaning": "the head is never updated"},
-        {"evidence": "audit_missing_head_tensors", "op": ">", "value": 0, "meaning": "current head tensors are absent from the optimizer"},
-        {"evidence": "backbone_min_update_norm", "op": ">", "value": 0, "meaning": "the backbone updates in every epoch"}
+        {
+          "evidence": "head_min_gradient_fraction",
+          "op": "==",
+          "value": 1,
+          "meaning": "every current head tensor has a gradient at every step"
+        },
+        {
+          "evidence": "head_max_update_norm",
+          "op": "==",
+          "value": 0,
+          "meaning": "the head is never updated"
+        },
+        {
+          "evidence": "audit_missing_head_tensors",
+          "op": ">",
+          "value": 0,
+          "meaning": "current head tensors are absent from the optimizer"
+        },
+        {
+          "evidence": "backbone_min_update_norm",
+          "op": ">",
+          "value": 0,
+          "meaning": "the backbone updates in every epoch"
+        }
       ],
       "contradicts": [
-        {"evidence": "head_min_trainable_fraction", "op": "<", "value": 1, "meaning": "a head tensor is not trainable"}
+        {
+          "evidence": "head_min_trainable_fraction",
+          "op": "<",
+          "value": 1,
+          "meaning": "a head tensor is not trainable"
+        }
       ],
-      "repair": {"action": "rebuild_optimizer", "timing": "before_first_optimizer_step", "description": "Construct the optimizer from model.parameters() after the head has been replaced."}
+      "repair": {
+        "action": "rebuild_optimizer",
+        "timing": "before_first_optimizer_step",
+        "description": "Construct the optimizer from model.parameters() after the head has been replaced."
+      }
     },
     {
       "id": "frozen_head",
@@ -34,17 +71,57 @@
       "scope": "group_local",
       "description": "The classification head has requires_grad=False although full-model training is intended: it receives no gradients and never changes while the backbone trains.",
       "requires": [
-        {"evidence": "head_max_trainable_fraction", "op": "==", "value": 0, "meaning": "no head tensor is trainable"},
-        {"evidence": "head_max_gradient_fraction", "op": "==", "value": 0, "meaning": "no head tensor ever has a gradient"},
-        {"evidence": "head_max_update_norm", "op": "==", "value": 0, "meaning": "the head is never updated"},
-        {"evidence": "backbone_min_update_norm", "op": ">", "value": 0, "meaning": "the backbone updates in every epoch"},
-        {"evidence": "reference_head_min_trainable_fraction", "op": "==", "value": 1, "needs_reference": true, "meaning": "the healthy reference trains its head, so freezing is unintended"}
+        {
+          "evidence": "head_max_trainable_fraction",
+          "op": "==",
+          "value": 0,
+          "meaning": "no head tensor is trainable"
+        },
+        {
+          "evidence": "head_max_gradient_fraction",
+          "op": "==",
+          "value": 0,
+          "meaning": "no head tensor ever has a gradient"
+        },
+        {
+          "evidence": "head_max_update_norm",
+          "op": "==",
+          "value": 0,
+          "meaning": "the head is never updated"
+        },
+        {
+          "evidence": "backbone_min_update_norm",
+          "op": ">",
+          "value": 0,
+          "meaning": "the backbone updates in every epoch"
+        },
+        {
+          "evidence": "reference_head_min_trainable_fraction",
+          "op": "==",
+          "value": 1,
+          "needs_reference": true,
+          "meaning": "the healthy reference trains its head, so freezing is unintended"
+        }
       ],
       "contradicts": [
-        {"evidence": "head_max_gradient_fraction", "op": ">", "value": 0, "meaning": "a head tensor receives gradients"},
-        {"evidence": "audit_missing_trainable_tensors", "op": ">", "value": 0, "meaning": "trainable tensors are missing from the optimizer"}
+        {
+          "evidence": "head_max_gradient_fraction",
+          "op": ">",
+          "value": 0,
+          "meaning": "a head tensor receives gradients"
+        },
+        {
+          "evidence": "audit_missing_trainable_tensors",
+          "op": ">",
+          "value": 0,
+          "meaning": "trainable tensors are missing from the optimizer"
+        }
       ],
-      "repair": {"action": "restore_head_requires_grad", "timing": "before_first_optimizer_step", "description": "Set requires_grad=True on the head; the optimizer already contains its tensors."}
+      "repair": {
+        "action": "restore_head_requires_grad",
+        "timing": "before_first_optimizer_step",
+        "description": "Set requires_grad=True on the head; the optimizer already contains its tensors."
+      }
     },
     {
       "id": "high_learning_rate",
@@ -52,14 +129,41 @@
       "scope": "global",
       "description": "The learning rate is far too high for fine-tuning. For Adam-family optimizers the first update moves each element by about the learning rate, so the effective learning rate is inferred from telemetry rather than read from the config.",
       "requires": [
-        {"evidence": "optimizer_family", "op": "==", "value": "adam", "meaning": "the first-step inference assumes an Adam-family optimizer"},
-        {"evidence": "backbone_inferred_first_step_lr", "op": ">", "value": "$max_adamw_finetune_learning_rate", "meaning": "the inferred first-step learning rate exceeds the fine-tuning range"},
-        {"evidence": "backbone_inferred_lr_ratio_to_reference", "op": ">=", "value": "$min_learning_rate_ratio_to_reference", "needs_reference": true, "missing_reference": "ignore", "meaning": "the inferred learning rate is at least ten times the reference's"}
+        {
+          "evidence": "optimizer_family",
+          "op": "==",
+          "value": "adam",
+          "meaning": "the first-step inference assumes an Adam-family optimizer"
+        },
+        {
+          "evidence": "backbone_inferred_first_step_lr",
+          "op": ">",
+          "value": "$max_adamw_finetune_learning_rate",
+          "meaning": "the inferred first-step learning rate exceeds the fine-tuning range"
+        },
+        {
+          "evidence": "backbone_inferred_lr_ratio_to_reference",
+          "op": ">=",
+          "value": "$min_learning_rate_ratio_to_reference",
+          "needs_reference": true,
+          "missing_reference": "ignore",
+          "meaning": "the inferred learning rate is at least ten times the reference's"
+        }
       ],
       "contradicts": [
-        {"evidence": "max_optimizer_steps_per_forward", "op": "==", "value": 0, "meaning": "no optimizer step ever runs"}
+        {
+          "evidence": "max_optimizer_steps_per_forward",
+          "op": "==",
+          "value": 0,
+          "meaning": "no optimizer step ever runs"
+        }
       ],
-      "repair": {"action": "restore_config_field", "field": "learning_rate", "timing": "before_training", "description": "Restore the reference learning rate; without a reference, lower it into the fine-tuning range."}
+      "repair": {
+        "action": "restore_config_field",
+        "field": "learning_rate",
+        "timing": "before_training",
+        "description": "Restore the reference learning rate; without a reference, lower it into the fine-tuning range."
+      }
     },
     {
       "id": "missing_optimizer_step",
@@ -67,14 +171,147 @@
       "scope": "global",
       "description": "Forward and backward passes run but optimizer.step() is never called: gradients exist and no parameter changes.",
       "requires": [
-        {"evidence": "max_optimizer_steps_per_forward", "op": "==", "value": 0, "meaning": "training forwards run without any optimizer step"},
-        {"evidence": "final_mean_gradient_norm", "op": ">", "value": 0, "meaning": "backward still produces gradients"},
-        {"evidence": "final_mean_update_norm", "op": "==", "value": 0, "meaning": "no parameter changes"}
+        {
+          "evidence": "max_optimizer_steps_per_forward",
+          "op": "==",
+          "value": 0,
+          "meaning": "training forwards run without any optimizer step"
+        },
+        {
+          "evidence": "final_mean_gradient_norm",
+          "op": ">",
+          "value": 0,
+          "meaning": "backward still produces gradients"
+        },
+        {
+          "evidence": "final_mean_update_norm",
+          "op": "==",
+          "value": 0,
+          "meaning": "no parameter changes"
+        }
       ],
       "contradicts": [
-        {"evidence": "final_mean_update_norm", "op": ">", "value": 0, "meaning": "parameters change"}
+        {
+          "evidence": "final_mean_update_norm",
+          "op": ">",
+          "value": 0,
+          "meaning": "parameters change"
+        }
       ],
-      "repair": {"action": "restore_config_field", "field": "optimizer_step_enabled", "timing": "before_training", "description": "Call optimizer.step() after backward in every training iteration."}
+      "repair": {
+        "action": "restore_config_field",
+        "field": "optimizer_step_enabled",
+        "timing": "before_training",
+        "description": "Call optimizer.step() after backward in every training iteration."
+      }
+    },
+    {
+      "id": "train_eval_normalization_mismatch",
+      "subsystem": "data",
+      "scope": "global",
+      "description": "Training and evaluation preprocess inputs differently, so the model is evaluated on inputs whose statistics differ from those it was trained on, although the splits come from the same distribution.",
+      "requires": [
+        {
+          "any_of": [
+            {
+              "evidence": "input_std_ratio_train_vs_eval",
+              "op": ">=",
+              "value": "$max_same_distribution_std_ratio",
+              "meaning": "per-channel input spread differs between training and a same-distribution evaluation split"
+            },
+            {
+              "evidence": "input_mean_shift_train_vs_eval",
+              "op": ">=",
+              "value": "$max_same_distribution_mean_shift",
+              "meaning": "per-channel input means differ between training and a same-distribution evaluation split"
+            }
+          ]
+        }
+      ],
+      "contradicts": [],
+      "repair": {
+        "action": "align_eval_normalization_with_training",
+        "timing": "before_evaluation",
+        "description": "Use one preprocessing pipeline, including normalization mean and std, for training and evaluation."
+      }
+    },
+    {
+      "id": "classifier_size_mismatch",
+      "subsystem": "model",
+      "scope": "global",
+      "description": "The classification head has more outputs than the task has label classes, for example a pretrained 1000-class ImageNet head kept for a 2-class task; training still runs.",
+      "requires": [
+        {
+          "evidence": "observed_label_classes",
+          "op": ">=",
+          "value": 2,
+          "meaning": "the training labels contain at least two classes"
+        },
+        {
+          "evidence": "head_outputs_beyond_label_classes",
+          "op": ">",
+          "value": 0,
+          "meaning": "the head has outputs that no training label uses"
+        }
+      ],
+      "contradicts": [],
+      "repair": {
+        "action": "reload_with_num_labels",
+        "timing": "before_training",
+        "description": "Load the model with num_labels set to the task's class count so a correctly sized head is created."
+      }
+    },
+    {
+      "id": "frozen_backbone_module",
+      "subsystem": "model",
+      "scope": "group_local",
+      "description": "Part of the backbone has requires_grad=False although full fine-tuning is intended: those tensors receive no gradients while the rest of the backbone and the head train.",
+      "requires": [
+        {
+          "evidence": "backbone_max_trainable_fraction",
+          "op": "<",
+          "value": 1,
+          "meaning": "some backbone tensors are never trainable"
+        },
+        {
+          "evidence": "backbone_max_gradient_fraction",
+          "op": "<",
+          "value": 1,
+          "meaning": "some backbone tensors never receive gradients"
+        },
+        {
+          "evidence": "backbone_min_update_norm",
+          "op": ">",
+          "value": 0,
+          "meaning": "the rest of the backbone updates"
+        },
+        {
+          "evidence": "head_min_update_norm",
+          "op": ">",
+          "value": 0,
+          "meaning": "the head updates"
+        },
+        {
+          "evidence": "reference_backbone_min_trainable_fraction",
+          "op": "==",
+          "value": 1,
+          "needs_reference": true,
+          "meaning": "the healthy reference trains its whole backbone, so freezing is unintended"
+        }
+      ],
+      "contradicts": [
+        {
+          "evidence": "head_min_trainable_fraction",
+          "op": "<",
+          "value": 1,
+          "meaning": "the head is frozen too (see frozen_head)"
+        }
+      ],
+      "repair": {
+        "action": "restore_requires_grad",
+        "timing": "before_first_optimizer_step",
+        "description": "Set requires_grad=True on the frozen backbone module before training."
+      }
     }
   ]
 }

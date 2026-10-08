@@ -89,6 +89,9 @@ class SignatureMatchingTests(unittest.TestCase):
                 "frozen_head",
                 "high_learning_rate",
                 "missing_optimizer_step",
+                "train_eval_normalization_mismatch",
+                "classifier_size_mismatch",
+                "frozen_backbone_module",
             ],
         )
         broken = (
@@ -208,6 +211,52 @@ class SignatureMatchingTests(unittest.TestCase):
             paths[0].write_text(json.dumps(report), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "not completed"):
                 matching.evaluate_reports(paths, matching.load_library())
+
+    def test_hugging_face_faults_match_only_their_signatures(self):
+        def statistics(std):
+            return {"channel_mean": [0.0] * 3, "channel_std": [std] * 3, "values_per_channel": 10}
+
+        def vit_run(**changes):
+            report = copy.deepcopy(SCENARIOS["clean"])
+            report.update(
+                head_prefix="classifier.",
+                head_output_units=2,
+                label_classes={"train": [0, 1], "id_eval": [0, 1]},
+                input_statistics={"train": statistics(0.8), "id_eval": statistics(0.8)},
+            )
+            report.update(changes)
+            return report
+
+        clean = vit_run()
+        frozen_backbone = vit_run()
+        for row in frozen_backbone["parameter_group_epochs"]:
+            row["backbone"] = group(trainable=1, gradient=1, first=1e-4 * 100, elements=10_000)
+        cases = {
+            "clean": (clean, "no_known_fault", "no_known_fault"),
+            "normalization": (
+                vit_run(input_statistics={"train": statistics(0.35), "id_eval": statistics(0.8)}),
+                "train_eval_normalization_mismatch",
+                "train_eval_normalization_mismatch",
+            ),
+            "head": (
+                vit_run(head_output_units=1000),
+                "classifier_size_mismatch",
+                "classifier_size_mismatch",
+            ),
+            "frozen_backbone": (frozen_backbone, "pending_reference", "frozen_backbone_module"),
+        }
+        for name, (report, alone, with_reference) in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(diagnose(report)["diagnosis"], alone)
+                self.assertEqual(diagnose(report, clean)["diagnosis"], with_reference)
+        ratio = matching.extract_evidence(cases["normalization"][0])[
+            "input_std_ratio_train_vs_eval"
+        ]
+        self.assertAlmostEqual(ratio, 0.8 / 0.35)
+        for report in SCENARIOS.values():
+            evidence = matching.extract_evidence(report, None, "AdamW")
+            self.assertIsNone(evidence["input_std_ratio_train_vs_eval"])
+            self.assertIsNone(evidence["head_outputs_beyond_label_classes"])
 
     def test_cli_diagnoses_one_run(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -118,6 +118,29 @@ class DiagnoseRunTests(unittest.TestCase):
                 self.assertEqual(result["conflict"], conflict)
                 self.assertEqual(result.get("conflict_kind"), kind)
 
+    def test_alternative_conditions_are_shown_and_sent_to_the_llm(self):
+        def statistics(std):
+            return {"channel_mean": [0.0] * 3, "channel_std": [std] * 3, "values_per_channel": 10}
+
+        shifted = {
+            **SCENARIOS["clean"],
+            "input_statistics": {"train": statistics(0.35), "id_eval": statistics(0.8)},
+        }
+        client = FakeClient(["not json", "still not json"])
+        result = module.diagnose_run(shifted, client=client, model="fake-model")
+        self.assertEqual(result["final_diagnosis"], "train_eval_normalization_mismatch")
+        text = module.summary_text(result)
+        self.assertIn("+ input_std_ratio_train_vs_eval", text)
+        self.assertIn("(any one suffices)", text)
+        payload = json.loads(client.requests[0]["messages"][1]["content"])
+        verdicts = {item["id"]: item for item in payload["matcher_verdicts"]}
+        sent = verdicts["train_eval_normalization_mismatch"]["requires"]
+        self.assertEqual(
+            {item["evidence"] for item in sent},
+            {"input_std_ratio_train_vs_eval", "input_mean_shift_train_vs_eval"},
+        )
+        self.assertTrue(all(item["any_of_group"] for item in sent))
+
     def test_wrong_citation_is_retried_with_the_issues(self):
         result, client = self.review([reply(value=0.5), reply()])
         self.assertEqual(result["llm"]["status"], "completed")

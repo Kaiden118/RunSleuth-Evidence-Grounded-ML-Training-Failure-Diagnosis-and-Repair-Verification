@@ -1,6 +1,7 @@
 """Offline tests for run diagnosis: matcher first, checked LLM review second (fake client)."""
 
 import contextlib
+import importlib.util
 import io
 import json
 import sys
@@ -148,6 +149,13 @@ class DiagnoseRunTests(unittest.TestCase):
         self.assertEqual(result["llm"]["attempts"][0]["issues"][0]["type"], "wrong_value")
         self.assertIn("wrong_value", client.requests[1]["messages"][-1]["content"])
 
+    def test_inline_reasoning_before_the_json_is_ignored_and_kept_in_the_record(self):
+        result, client = self.review(["<think>\nThe rate looks high.\n</think>\n" + reply()])
+        self.assertEqual(result["llm"]["status"], "completed")
+        self.assertEqual(result["llm"]["model_calls"], 1)
+        self.assertTrue(result["llm"]["attempts"][0]["raw_text"].startswith("<think>"))
+        self.assertEqual(client.requests[0]["max_tokens"], module.MAX_OUTPUT_TOKENS)
+
     def test_disagreement_is_flagged_and_the_matcher_stays_final(self):
         result, _ = self.review([reply("missing_optimizer_step", disagreement="I think so.")])
         self.assertTrue(result["conflict"])
@@ -192,6 +200,27 @@ class DiagnoseRunTests(unittest.TestCase):
             (report,) = Path(directory).glob("diagnosis-*.json")
             saved = json.loads(report.read_text(encoding="utf-8"))
         self.assertEqual(saved["final_diagnosis"], "high_learning_rate")
+
+    @unittest.skipIf(importlib.util.find_spec("openai") is None, "Install the llm extra")
+    def test_cli_reviews_with_the_chosen_provider(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run_path = Path(directory) / "run_report.json"
+            run_path.write_text(json.dumps(SCENARIOS["high_learning_rate"]), encoding="utf-8")
+            arguments = ["diagnose", "--run", str(run_path), "--optimizer", "AdamW"]
+            arguments += ["--provider", "ollama", "--output-dir", directory]
+            with (
+                patch.object(sys, "argv", arguments),
+                patch(
+                    "runsleuth.llm_client.create_llm_client",
+                    return_value=(FakeClient([reply()]), "qwen3:8b"),
+                ) as create,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                module.main()
+            (report,) = Path(directory).glob("diagnosis-*.json")
+            saved = json.loads(report.read_text(encoding="utf-8"))
+        create.assert_called_once_with("ollama")
+        self.assertEqual((saved["llm"]["status"], saved["llm"]["model"]), ("completed", "qwen3:8b"))
 
     def test_cli_without_llm_writes_a_report_and_prints_a_summary(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -21,8 +22,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from runsleuth import signature_matching as matching
 
 MAX_MODEL_CALLS = 2
-MAX_OUTPUT_TOKENS = 1500
+# Thinking models (Gemini 3, Qwen3) spend output tokens on reasoning before the JSON.
+MAX_OUTPUT_TOKENS = 4000
 CITATION_REL_TOLERANCE = 0.01
+# Some local servers return a thinking model's reasoning inline before the answer.
+REASONING_BLOCK = re.compile(r"\A\s*<think>.*?</think>\s*", re.DOTALL)
 SYSTEM_PROMPT = """You are RunSleuth's diagnosis reviewer for PyTorch training runs.
 You receive evidence extracted from training telemetry, a library of known failure
 signatures, and a deterministic matcher's verdict for every signature condition.
@@ -156,14 +160,21 @@ def request_llm_diagnosis(client, model: str, matcher: dict, library: dict) -> d
                 max_tokens=MAX_OUTPUT_TOKENS,
             )
         except Exception as error:  # network, quota or provider errors end the review
-            record.update(status="api_error", error={"type": type(error).__name__})
+            # The HTTP status separates a quota limit (429) from an overloaded server (503).
+            status_code = getattr(error, "status_code", None)
+            record.update(
+                status="api_error",
+                error={"type": type(error).__name__, "status_code": status_code},
+            )
             return record
         usage = getattr(response, "usage", None)
         record["input_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
         record["output_tokens"] += getattr(usage, "completion_tokens", 0) or 0
         choice = response.choices[0]
         raw = choice.message.content or ""
-        parsed, issues = validate_llm_diagnosis(raw, matcher["evidence"], allowed)
+        parsed, issues = validate_llm_diagnosis(
+            REASONING_BLOCK.sub("", raw), matcher["evidence"], allowed
+        )
         record["attempts"].append(
             {"finish_reason": choice.finish_reason, "raw_text": raw, "issues": issues}
         )
@@ -269,6 +280,12 @@ def main() -> None:
     parser.add_argument("--reference", type=Path, help="run_report.json of a healthy run")
     parser.add_argument("--no-llm", action="store_true", help="Deterministic matching only")
     parser.add_argument(
+        "--provider",
+        choices=("gemini", "ollama"),
+        default="gemini",
+        help="LLM for the review: Gemini, or a local Ollama model (OLLAMA_MODEL)",
+    )
+    parser.add_argument(
         "--optimizer",
         help="Optimizer class name (default: the report, then the experiment's environment.json)",
     )
@@ -285,7 +302,7 @@ def main() -> None:
         from runsleuth.llm_client import create_llm_client
 
         try:
-            client, model = create_llm_client()
+            client, model = create_llm_client(args.provider)
         except RuntimeError as error:
             raise SystemExit(f"{error}; or rerun with --no-llm") from error
     result = diagnose_run(run, reference, client=client, model=model, optimizer_name=optimizer_name)

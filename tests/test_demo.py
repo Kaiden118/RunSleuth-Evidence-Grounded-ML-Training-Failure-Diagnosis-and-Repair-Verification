@@ -1,7 +1,9 @@
 """CPU tests of the end-to-end demo: train, diagnose, repair from the diagnosis, verify."""
 
+import importlib.util
 import json
 import random
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -124,6 +126,23 @@ class DemoTests(CamelyonHarness):
             with self.assertRaisesRegex(ValueError, "Unknown fault"):
                 demo.run_demo(self.reference, None, self.output, fault="typo")
         load.assert_not_called()
+
+
+@unittest.skipIf(importlib.util.find_spec("openai") is None, "Install the llm extra")
+class DemoCommandLineTests(unittest.TestCase):
+    def test_the_chosen_provider_reviews_the_demo(self):
+        arguments = ["demo", "--baseline", "baseline", "--provider", "ollama"]
+        with (
+            patch.object(sys, "argv", arguments),
+            patch(
+                "runsleuth.llm_client.create_llm_client", return_value=("client", "qwen3:8b")
+            ) as create,
+            patch.object(demo, "run_demo") as run,
+        ):
+            demo.main()
+        create.assert_called_once_with("ollama")
+        options = run.call_args.kwargs
+        self.assertEqual((options["client"], options["model_name"]), ("client", "qwen3:8b"))
 
 
 if __name__ == "__main__":

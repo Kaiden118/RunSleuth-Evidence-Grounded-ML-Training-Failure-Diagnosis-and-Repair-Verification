@@ -262,6 +262,12 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, choices=(1, 2, 3), default=3)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"))
     parser.add_argument("--no-llm", action="store_true")
+    parser.add_argument(
+        "--provider",
+        choices=("gemini", "ollama"),
+        default="gemini",
+        help="LLM for the review: Gemini, or a local Ollama model (OLLAMA_MODEL)",
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/demo"))
     args = parser.parse_args()
     client = model_name = None
@@ -269,7 +275,7 @@ def main() -> None:
         from runsleuth.llm_client import create_llm_client
 
         try:
-            client, model_name = create_llm_client()
+            client, model_name = create_llm_client(args.provider)
         except RuntimeError as error:
             raise SystemExit(f"{error}; or rerun with --no-llm") from error
     run_demo(

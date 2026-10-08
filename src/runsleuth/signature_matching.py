@@ -298,28 +298,41 @@ def _experiment_optimizer(report_path: Path) -> str | None:
     return json.loads(environment.read_text(encoding="utf-8")).get("optimizer")
 
 
-def evaluate_reports(report_paths: list[Path], library: dict) -> dict:
-    """Diagnose every labeled variant with and without its experiment's clean run."""
-    cases = []
+def labeled_runs(report_paths: list[Path]):
+    """Yield every labeled variant of completed experiment reports with its clean run."""
     for path in report_paths:
         report = json.loads(path.read_text(encoding="utf-8"))
         if report.get("status") != "completed":
             raise ValueError(f"Experiment report is not completed: {path}")
         optimizer_name = _experiment_optimizer(path)
-        reference = report["variants"]["clean"]
         for name, run in report["variants"].items():
             if name not in GROUND_TRUTH:
                 raise ValueError(f"No ground-truth label for variant {name!r} in {path}")
-            outcome = {"report": str(path), "seed": report.get("seed"), "variant": name}
-            outcome["truth"] = GROUND_TRUTH[name]
-            for mode, base in (("reference_free", None), ("with_reference", reference)):
-                result = diagnose(extract_evidence(run, base, optimizer_name), library)
-                outcome[mode] = {
-                    "diagnosis": result["diagnosis"],
-                    "supported": result["supported"],
-                    "pending_reference": result["pending_reference"],
-                }
-            cases.append(outcome)
+            yield {
+                "report": path,
+                "seed": report.get("seed"),
+                "variant": name,
+                "truth": GROUND_TRUTH[name],
+                "run": run,
+                "reference": report["variants"]["clean"],
+                "optimizer": optimizer_name,
+            }
+
+
+def evaluate_reports(report_paths: list[Path], library: dict) -> dict:
+    """Diagnose every labeled variant with and without its experiment's clean run."""
+    cases = []
+    for item in labeled_runs(report_paths):
+        outcome = {key: item[key] for key in ("seed", "variant", "truth")}
+        outcome = {"report": str(item["report"]), **outcome}
+        for mode, base in (("reference_free", None), ("with_reference", item["reference"])):
+            result = diagnose(extract_evidence(item["run"], base, item["optimizer"]), library)
+            outcome[mode] = {
+                "diagnosis": result["diagnosis"],
+                "supported": result["supported"],
+                "pending_reference": result["pending_reference"],
+            }
+        cases.append(outcome)
     summary = {}
     for mode in ("reference_free", "with_reference"):
         confusion: dict[str, dict[str, int]] = {}

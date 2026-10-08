@@ -102,7 +102,7 @@ To add the LLM review, set your key and drop `--no-llm`:
 
 ```bat
 set "GEMINI_API_KEY=your-api-key"
-set "GEMINI_MODEL=gemini-3.5-flash-lite"
+set "GEMINI_MODEL=gemini-3.8-flash"
 ```
 
 ### 3. Diagnose your own training

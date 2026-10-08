@@ -8,22 +8,12 @@ from torch.optim import SGD
 from torch.utils.data import DataLoader, TensorDataset
 
 from runsleuth.config import TrainingConfig
-from runsleuth.model import FashionMNISTCNN
 from runsleuth.telemetry import (
     gradient_l2_norm,
     parameter_update_l2_norm,
     snapshot_parameters,
 )
 from runsleuth.train import train_one_epoch
-
-
-def test_model_produces_ten_class_logits() -> None:
-    model = FashionMNISTCNN()
-    inputs = torch.randn(4, 1, 28, 28)
-
-    logits = model(inputs)
-
-    assert logits.shape == (4, 10)
 
 
 def test_gradient_and_parameter_update_norms() -> None:

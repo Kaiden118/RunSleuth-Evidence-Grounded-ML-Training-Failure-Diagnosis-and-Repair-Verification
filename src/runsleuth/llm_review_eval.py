@@ -13,6 +13,7 @@ per case at provider defaults, so repeated runs can differ.
 """
 
 import argparse
+import hashlib
 import json
 import re
 import time
@@ -21,7 +22,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from runsleuth.camelyon_optimizer_probe import file_sha256
-from runsleuth.diagnose_run import MAX_MODEL_CALLS, MAX_OUTPUT_TOKENS, diagnose_run
+from runsleuth.diagnose_run import (
+    MAX_MODEL_CALLS,
+    MAX_OUTPUT_TOKENS,
+    PROMPT_VERSION,
+    RESPONSE_FORMATS,
+    diagnose_run,
+    system_prompt,
+)
 from runsleuth.signature_matching import labeled_runs
 
 MODES = ("reference_free", "with_reference")
@@ -30,7 +38,8 @@ MAX_CONSECUTIVE_API_ERRORS = 3
 
 
 def run_directory(output_dir: Path, provider: str, model: str) -> Path:
-    return output_dir / f"{provider}-{re.sub(r'[^A-Za-z0-9._-]+', '-', model)}"
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", model)
+    return output_dir / f"{provider}-{slug}-prompt-v{PROMPT_VERSION}"
 
 
 def _cases(report_paths: list[Path]):
@@ -91,6 +100,7 @@ def run_reviews(
     limit: int | None = None,
     pause: float = 0.0,
     error_wait: float = 0.0,
+    response_format: str = "json_schema",
     sleep=time.sleep,
 ) -> Path:
     """Review every pending case; returns the run directory.
@@ -105,6 +115,9 @@ def run_reviews(
         "model": model,
         "max_model_calls": MAX_MODEL_CALLS,
         "max_output_tokens": MAX_OUTPUT_TOKENS,
+        "prompt_version": PROMPT_VERSION,
+        "system_prompt_sha256": hashlib.sha256(system_prompt().encode()).hexdigest(),
+        "response_format": response_format,
         "reports": [{"path": str(path), "sha256": file_sha256(path)} for path in report_paths],
     }
     settings_path = directory / "run.json"
@@ -129,7 +142,12 @@ def run_reviews(
             reference = item["reference"] if mode == "with_reference" else None
             started = time.perf_counter()
             result = diagnose_run(
-                item["run"], reference, client=client, model=model, optimizer_name=item["optimizer"]
+                item["run"],
+                reference,
+                client=client,
+                model=model,
+                optimizer_name=item["optimizer"],
+                response_format=response_format,
             )
             record = _record(case_id, mode, item, result, time.perf_counter() - started)
             stream.write(json.dumps(record, allow_nan=False) + "\n")
@@ -202,12 +220,26 @@ def _statistics(records: list[dict]) -> dict:
 
 def summarize(directory: Path) -> dict:
     """Statistics of one run directory, overall, by reference mode and by health."""
-    settings = json.loads((directory / "run.json").read_text(encoding="utf-8"))
+    # Runs before prompt versioning used prompt 1 with JSON-object replies.
+    settings = {
+        "prompt_version": 1,
+        "response_format": "json_object",
+        **json.loads((directory / "run.json").read_text(encoding="utf-8")),
+    }
     expected = [case_id for case_id, _, _ in _cases([Path(r["path"]) for r in settings["reports"]])]
     latest = _latest(directory)
     records = [latest[case_id] for case_id in expected if case_id in latest]
     return {
-        **{key: settings[key] for key in ("provider", "model", "max_output_tokens")},
+        **{
+            key: settings.get(key)
+            for key in (
+                "provider",
+                "model",
+                "prompt_version",
+                "response_format",
+                "max_output_tokens",
+            )
+        },
         "expected_cases": len(expected),
         "complete": len(records) == len(expected)
         and all(record["llm_status"] in FINAL_STATUSES for record in records),
@@ -257,7 +289,8 @@ def summary_table(summaries: list[dict]) -> str:
         conflicts = overall["conflicts"]
         latency = overall["mean_latency_seconds"]
         lines.append(
-            f"{summary['model']:<28}{overall['completed']:>5}/{summary['expected_cases']:<4}"
+            f"{summary['model'] + ' p' + str(summary['prompt_version']):<28}"
+            f"{overall['completed']:>5}/{summary['expected_cases']:<4}"
             f"{rate(overall, 'valid_on_first_attempt'):>9}{rate(overall, 'agrees_with_matcher'):>8}"
             f"{conflicts.get('assumed_reference_condition', 0):>9}"
             f"{conflicts.get('different_diagnosis', 0):>9}{overall['llm_matches_truth']:>7}"
@@ -287,6 +320,12 @@ def main() -> None:
     run.add_argument(
         "--error-wait", type=float, default=0.0, help="Seconds to wait after an API error"
     )
+    run.add_argument(
+        "--response-format",
+        choices=RESPONSE_FORMATS,
+        default="json_schema",
+        help="json_object for a provider that rejects the reply schema",
+    )
     summary = commands.add_parser("summarize", help="Compare finished run directories")
     summary.add_argument("directories", type=Path, nargs="+")
     summary.add_argument("--output", type=Path)
@@ -305,6 +344,7 @@ def main() -> None:
             limit=args.limit,
             pause=args.pause,
             error_wait=args.error_wait,
+            response_format=args.response_format,
         )
         print(summary_table([summarize(directory)]))
         print(f"run_directory={directory}")

@@ -22,6 +22,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from runsleuth import signature_matching as matching
 
 MAX_MODEL_CALLS = 2
+# Version 2 clarifies skipped and holding reference conditions after the first model
+# comparison, and constrains replies with a JSON Schema.
+PROMPT_VERSION = 2
+RESPONSE_FORMATS = ("json_schema", "json_object")
 # Thinking models (Gemini 3, Qwen3) spend output tokens on reasoning before the JSON.
 MAX_OUTPUT_TOKENS = 4000
 CITATION_REL_TOLERANCE = 0.01
@@ -36,6 +40,12 @@ supported when every requires condition is true and no contradicts condition is
 true. A contradicts condition with result false means the contradicting fact is
 absent; it does not count against the signature. A result of null means the value
 was unavailable (status missing, needs_reference or skipped_without_reference).
+A condition with status skipped_without_reference is optional: without a reference
+run the signature is decided by its other conditions, so it never makes a
+signature pending.
+When a healthy reference run is supplied, it shows what the setup intends: a
+reference condition that holds is evidence of a fault, so do not explain it away
+as an intended design choice.
 Choose one diagnosis: a signature id, "no_known_fault", "insufficient_evidence", or
 "pending_reference". Answer "pending_reference" when a signature is supported except
 for conditions with status needs_reference: only a healthy reference run can establish
@@ -118,8 +128,49 @@ def _compact_verdicts(result: dict) -> list[dict]:
     ]
 
 
-def request_llm_diagnosis(client, model: str, matcher: dict, library: dict) -> dict:
+def system_prompt() -> str:
+    return SYSTEM_PROMPT + "\nJSON Schema:\n" + json.dumps(LLMDiagnosis.model_json_schema())
+
+
+def response_schema(evidence: dict, allowed: set[str]) -> dict:
+    """Constrain decoding to known diagnosis ids and evidence names; values are checked after.
+
+    Lengths stay in LLMDiagnosis only, since providers support different schema subsets.
+    """
+    citation = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "enum": sorted(evidence)},
+            "value": {
+                "anyOf": [{"type": kind} for kind in ("number", "boolean", "string", "null")]
+            },
+            "role": {"type": "string", "enum": ["supports", "contradicts"]},
+        },
+        "required": ["name", "value", "role"],
+        "additionalProperties": False,
+    }
+    properties = {
+        "diagnosis": {"type": "string", "enum": sorted(allowed)},
+        "explanation": {"type": "string"},
+        "citations": {"type": "array", "items": citation, "minItems": 1, "maxItems": 8},
+        "repair": {"type": "string"},
+        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+        "disagreement_with_matcher": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+def request_llm_diagnosis(
+    client, model: str, matcher: dict, library: dict, *, response_format: str = "json_schema"
+) -> dict:
     """At most MAX_MODEL_CALLS requests; returns a JSON-safe record of every attempt."""
+    if response_format not in RESPONSE_FORMATS:
+        raise ValueError(f"response_format must be one of {RESPONSE_FORMATS}")
     allowed = {signature["id"] for signature in library["signatures"]} | {
         "no_known_fault",
         "insufficient_evidence",
@@ -129,7 +180,19 @@ def request_llm_diagnosis(client, model: str, matcher: dict, library: dict) -> d
         {key: signature[key] for key in ("id", "subsystem", "scope", "description", "repair")}
         for signature in library["signatures"]
     ]
-    system = SYSTEM_PROMPT + "\nJSON Schema:\n" + json.dumps(LLMDiagnosis.model_json_schema())
+    system = system_prompt()
+    request_format = (
+        {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "runsleuth_diagnosis",
+                "strict": True,
+                "schema": response_schema(matcher["evidence"], allowed),
+            },
+        }
+        if response_format == "json_schema"
+        else {"type": "json_object"}
+    )
     payload = {
         "evidence": matcher["evidence"],
         "signatures": signatures,
@@ -142,7 +205,9 @@ def request_llm_diagnosis(client, model: str, matcher: dict, library: dict) -> d
     ]
     record = {
         "model": model,
+        "prompt_version": PROMPT_VERSION,
         "system_prompt_sha256": hashlib.sha256(system.encode()).hexdigest(),
+        "response_format": response_format,
         "status": "running",
         "model_calls": 0,
         "input_tokens": 0,
@@ -156,7 +221,7 @@ def request_llm_diagnosis(client, model: str, matcher: dict, library: dict) -> d
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                response_format={"type": "json_object"},
+                response_format=request_format,
                 max_tokens=MAX_OUTPUT_TOKENS,
             )
         except Exception as error:  # network, quota or provider errors end the review
@@ -201,6 +266,7 @@ def diagnose_run(
     client=None,
     model: str | None = None,
     optimizer_name: str | None = None,
+    response_format: str = "json_schema",
 ) -> dict:
     """Deterministic diagnosis plus, when a client is given, a checked LLM review."""
     library = matching.load_library()
@@ -215,7 +281,7 @@ def diagnose_run(
     }
     if client is None:
         return result
-    review = request_llm_diagnosis(client, model, matcher, library)
+    review = request_llm_diagnosis(client, model, matcher, library, response_format=response_format)
     result["llm"] = review
     if review["status"] != "completed":
         result["llm_note"] = f"LLM review {review['status']}; the matcher's diagnosis stands"

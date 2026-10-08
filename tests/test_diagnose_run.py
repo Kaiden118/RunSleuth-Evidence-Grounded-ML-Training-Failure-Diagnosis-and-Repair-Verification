@@ -71,10 +71,46 @@ class DiagnoseRunTests(unittest.TestCase):
         self.assertFalse(result["conflict"])
         self.assertEqual(result["decided_by"], "signature_matcher_and_llm")
         self.assertEqual((result["llm"]["model_calls"], result["llm"]["input_tokens"]), (1, 100))
-        self.assertEqual(client.requests[0]["response_format"], {"type": "json_object"})
+        self.assertEqual(
+            (result["llm"]["prompt_version"], result["llm"]["response_format"]), (2, "json_schema")
+        )
         payload = json.loads(client.requests[0]["messages"][1]["content"])
         self.assertEqual(payload["matcher_diagnosis"], "high_learning_rate")
         json.dumps(result, allow_nan=False)
+
+    def test_reply_schema_allows_only_known_diagnoses_and_evidence_names(self):
+        _, client = self.review([reply()])
+        request_format = client.requests[0]["response_format"]
+        self.assertEqual(request_format["type"], "json_schema")
+        schema = request_format["json_schema"]["schema"]
+        self.assertFalse(schema["additionalProperties"])
+        self.assertIn("pending_reference", schema["properties"]["diagnosis"]["enum"])
+        self.assertIn("high_learning_rate", schema["properties"]["diagnosis"]["enum"])
+        names = schema["properties"]["citations"]["items"]["properties"]["name"]["enum"]
+        evidence = json.loads(client.requests[0]["messages"][1]["content"])["evidence"]
+        self.assertEqual(names, sorted(evidence))
+        # Values cannot be pinned by a schema, so citations are still checked afterwards.
+        _, issues = module.validate_llm_diagnosis(
+            reply(value=0.5), evidence, {"high_learning_rate"}
+        )
+        self.assertEqual(issues[0]["type"], "wrong_value")
+
+        client = FakeClient([reply()])
+        result = module.diagnose_run(
+            self.high_run, client=client, model="fake-model", response_format="json_object"
+        )
+        self.assertEqual(client.requests[0]["response_format"], {"type": "json_object"})
+        self.assertEqual(result["llm"]["response_format"], "json_object")
+        with self.assertRaisesRegex(ValueError, "response_format"):
+            module.diagnose_run(self.high_run, client=client, model="m", response_format="xml")
+
+    def test_prompt_v2_explains_skipped_and_holding_reference_conditions(self):
+        # Gemini held a high learning rate pending a reference its signature skips without
+        # one, and called a frozen patch embedding that the reference trains intentional.
+        system = module.system_prompt()
+        self.assertIn("skipped_without_reference is optional", system)
+        self.assertIn("never makes a\nsignature pending", system)
+        self.assertIn("do not explain it away", system)
 
     def test_payload_keeps_requires_and_contradicts_apart(self):
         # A real review misread a false contradicting condition as a failed requirement

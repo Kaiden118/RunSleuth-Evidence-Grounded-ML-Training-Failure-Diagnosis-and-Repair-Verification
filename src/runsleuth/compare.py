@@ -53,13 +53,9 @@ def summarize_run(run_directory: Path) -> RunSummary:
         final_validation_accuracy=final_epoch.validation_accuracy,
         final_validation_loss=final_epoch.validation_loss,
         first_epoch_gradient_norm=first_epoch.mean_gradient_norm,
-        first_epoch_parameter_update_norm=(
-            first_epoch.mean_parameter_update_norm
-        ),
+        first_epoch_parameter_update_norm=(first_epoch.mean_parameter_update_norm),
         final_epoch_gradient_norm=final_epoch.mean_gradient_norm,
-        final_epoch_parameter_update_norm=(
-            final_epoch.mean_parameter_update_norm
-        ),
+        final_epoch_parameter_update_norm=(final_epoch.mean_parameter_update_norm),
     )
 
 
@@ -82,8 +78,7 @@ def compare_runs(
         clean=clean,
         candidate=candidate,
         validation_accuracy_drop=(
-            clean.final_validation_accuracy
-            - candidate.final_validation_accuracy
+            clean.final_validation_accuracy - candidate.final_validation_accuracy
         ),
         validation_loss_ratio=ratio(
             candidate.final_validation_loss,

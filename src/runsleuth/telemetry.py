@@ -24,10 +24,7 @@ class EpochMetrics:
 
 def snapshot_parameters(model: nn.Module) -> ParameterSnapshot:
     """Copy model parameters immediately before an optimizer step."""
-    return {
-        name: parameter.detach().clone()
-        for name, parameter in model.named_parameters()
-    }
+    return {name: parameter.detach().clone() for name, parameter in model.named_parameters()}
 
 
 def gradient_l2_norm(model: nn.Module) -> float:

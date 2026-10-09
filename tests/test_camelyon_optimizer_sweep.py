@@ -7,27 +7,162 @@ import json
 import shutil
 import sys
 import unittest
+from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import patch
 
-import test_optimizer_agent_repair as handoff_fixtures
 import test_optimizer_evidence as evidence_fixtures
 
 from runsleuth import camelyon_optimizer_sweep as sweep
-from runsleuth.camelyon_optimizer_training import REPAIR_POLICY
+from runsleuth.camelyon_optimizer_training import REPAIR_POLICY, assess_rebind_training
+
+
+def read_json(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+class RebindArtifacts:
+    """A recorded baseline and stale-binding pair on disk, from the evidence fixtures."""
+
+    def __init__(self, test: unittest.TestCase):
+        fixture = evidence_fixtures.OptimizerEvidenceTests()
+        fixture.setUp()
+        test.addCleanup(fixture.doCleanups)
+        self.root = fixture.root
+        # The sweep only executes from the workspace root.
+        test.enterContext(patch.object(Path, "cwd", return_value=self.root))
+        self.candidate = fixture.directory
+        self.reference = self.root / "clean"
+        shutil.copytree(self.candidate, self.reference)
+        report = read_json(self.reference / "run_report.json")
+        report["variant"] = "clean"
+        report["optimizer_audit"].update(missing_trainable_names=[], foreign_parameter_tensors=0)
+        for row in report["parameter_group_epochs"]:
+            row["head"]["mean_parameter_update_l2_norm"] = 0.001
+        evidence_fixtures.write_rows(
+            self.reference / "parameter_group_metrics.jsonl", report["parameter_group_epochs"]
+        )
+        evidence_fixtures.write_json(self.reference / "run_report.json", report)
+        self.baseline = self.root / "baseline"
+        self.baseline.mkdir()
+        for name in ("config.json", "data_manifest.json"):
+            shutil.copyfile(self.reference / name, self.baseline / name)
+        (self.baseline / "initial_state_dict.pt").write_bytes(b"tensor-loader test fixture")
+        evidence_fixtures.write_json(
+            self.baseline / "run_report.json",
+            {
+                "status": "completed",
+                "error": None,
+                "completed_epochs": 2,
+                "task": "camelyon17_resnet18_development_baseline",
+                "initial_checkpoint_sha256": evidence_fixtures.digest(
+                    self.baseline / "initial_state_dict.pt"
+                ),
+                "data_manifest_sha256": evidence_fixtures.digest(
+                    self.baseline / "data_manifest.json"
+                ),
+            },
+        )
+
+    def training_result(self, output_dir, *, reject=False):
+        """A completed stale-binding training report, rejected by the gate on request."""
+        directory = output_dir / "pair-fixture"
+        directory.mkdir(parents=True)
+        variants = {}
+        for name in ("clean", "stale_head", "stale_head_repaired"):
+            source = self.candidate if name == "stale_head" else self.reference
+            child = directory / name
+            shutil.copytree(source, child)
+            config = read_json(child / "config.json")
+            config.update(run_name=name, output_dir=str(directory))
+            evidence_fixtures.write_json(child / "config.json", config)
+            variant = read_json(child / "run_report.json")
+            variant.update(
+                variant=name,
+                run_directory=str(child),
+                final_optimizer_audit=deepcopy(variant["optimizer_audit"]),
+                initialization_metrics={
+                    f"{domain}_validation_{metric}": 0.5
+                    for domain in ("id", "ood")
+                    for metric in ("accuracy", "loss")
+                },
+            )
+            if name == "stale_head_repaired":
+                variant["repair"] = {
+                    "action": "rebuild_optimizer",
+                    "timing": "before_first_optimizer_step",
+                    "optimizer_state_entries_before": 0,
+                    "model_state_sha256_before": "a" * 64,
+                    "model_state_sha256_after": "a" * 64,
+                    "optimizer_audit_before": deepcopy(variants["stale_head"]["optimizer_audit"]),
+                }
+                if reject:
+                    domains = [
+                        json.loads(line)
+                        for line in (child / "domain_metrics.jsonl").read_text().splitlines()
+                    ]
+                    domains[-1]["ood_validation_accuracy"] = 0.7
+                    evidence_fixtures.write_rows(child / "domain_metrics.jsonl", domains)
+                    variant["final_metrics"]["ood_validation_accuracy"] = 0.7
+            evidence_fixtures.write_json(child / "run_report.json", variant)
+            variants[name] = variant
+        verification = assess_rebind_training(variants, "a" * 64, 2)
+        policy_path = directory / "repair_verification_policy.json"
+        evidence_fixtures.write_json(
+            policy_path,
+            {
+                "policy": dict(REPAIR_POLICY),
+                "scope": "development experiment; not a held-out benchmark",
+                "epochs_per_variant": 2,
+                "comparators": ["clean", "stale_head"],
+                "domains": ["id", "ood"],
+                "checkpoint_selection": "fixed_final_epoch",
+                "ood_used_for_repair_acceptance": True,
+                "ood_used_for_checkpoint_selection": False,
+            },
+        )
+        report = {
+            "schema_version": 1,
+            "status": "completed",
+            "error": None,
+            "task": "camelyon17_optimizer_rebind_verification",
+            "reference_run": str(self.baseline),
+            "epochs_per_variant": 2,
+            "training_mode": "from_reference_initial_state",
+            "checkpoint_selection": "fixed_final_epoch",
+            "test_evaluated": False,
+            "repair_acceptance_requested": True,
+            "repair_acceptance_evaluated": True,
+            "training_epoch_upper_bound": 6,
+            "reference_initial_state_sha256": "a" * 64,
+            "reference_config_sha256": evidence_fixtures.digest(self.baseline / "config.json"),
+            "reference_initial_checkpoint_sha256": evidence_fixtures.digest(
+                self.baseline / "initial_state_dict.pt"
+            ),
+            "reference_manifest_sha256": evidence_fixtures.digest(
+                self.baseline / "data_manifest.json"
+            ),
+            "controls": {"performance_threshold": dict(REPAIR_POLICY)},
+            "variants": variants,
+            "repair_verification": verification,
+            "repair_verification_policy": {
+                "path": str(policy_path),
+                "sha256": evidence_fixtures.digest(policy_path),
+            },
+        }
+        path = directory / "optimizer_training_report.json"
+        evidence_fixtures.write_json(path, report)
+        return path
 
 
 class CamelyonOptimizerSweepTests(unittest.TestCase):
     def setUp(self):
-        # Reuse artifact factories without inheriting another suite's test methods.
-        self.fixture = handoff_fixtures.OptimizerAgentRepairTests()
-        self.fixture.setUp()
-        self.addCleanup(self.fixture.doCleanups)
+        self.fixture = RebindArtifacts(self)
         self.root = self.fixture.root
         self.source = self.fixture.baseline
         report_path = self.source / "run_report.json"
-        report = handoff_fixtures.read_json(report_path)
+        report = read_json(report_path)
         report["test_evaluated"] = False
         evidence_fixtures.write_json(report_path, report)
         self.outcomes = {}
@@ -42,7 +177,7 @@ class CamelyonOptimizerSweepTests(unittest.TestCase):
 
     def run_sweep(self, **overrides):
         path = sweep.run_optimizer_sweep(self.source, **{**self.options, **overrides})
-        return path, handoff_fixtures.read_json(path)
+        return path, read_json(path)
 
     def make_baseline(self, config):
         output = Path(config.output_dir) / "baseline-fixture"
@@ -50,7 +185,7 @@ class CamelyonOptimizerSweepTests(unittest.TestCase):
         config.save(output / "config.json")
         for name in ("data_manifest.json", "initial_state_dict.pt"):
             shutil.copyfile(self.source / name, output / name)
-        report = handoff_fixtures.read_json(self.source / "run_report.json")
+        report = read_json(self.source / "run_report.json")
         report.update(
             completed_epochs=config.epochs,
             initial_checkpoint_sha256=evidence_fixtures.digest(output / "initial_state_dict.pt"),
@@ -62,7 +197,7 @@ class CamelyonOptimizerSweepTests(unittest.TestCase):
     def make_training(self, reference_run, output_dir, epochs=3, *, verify_rebind=False):
         self.assertEqual(epochs, 2)
         self.assertTrue(verify_rebind)
-        config = handoff_fixtures.read_json(reference_run / "config.json")
+        config = read_json(reference_run / "config.json")
         self.fixture.baseline = reference_run
         for directory in (self.fixture.reference, self.fixture.candidate):
             evidence_fixtures.write_json(directory / "config.json", config)
@@ -98,7 +233,7 @@ class CamelyonOptimizerSweepTests(unittest.TestCase):
             with self.subTest(execute=execute), self.assertRaises((ValueError, TypeError)):
                 self.run_sweep(execute=execute)
         config_path = self.source / "config.json"
-        config = handoff_fixtures.read_json(config_path)
+        config = read_json(config_path)
         config["device"] = "auto"
         evidence_fixtures.write_json(config_path, config)
         with self.assertRaisesRegex(ValueError, "explicit cpu or cuda"):
@@ -128,7 +263,7 @@ class CamelyonOptimizerSweepTests(unittest.TestCase):
         self.assertEqual(
             {call.args[0].run_name for call in self.baseline_mock.call_args_list}, {"baseline"}
         )
-        source_config = handoff_fixtures.read_json(self.source / "config.json")
+        source_config = read_json(self.source / "config.json")
         for call in self.baseline_mock.call_args_list:
             actual = asdict(call.args[0])
             for key, value in source_config.items():
@@ -160,7 +295,7 @@ class CamelyonOptimizerSweepTests(unittest.TestCase):
                 evidence_fixtures.write_json(path / "config.json", values)
             else:
                 manifest_path = path / "data_manifest.json"
-                manifest = handoff_fixtures.read_json(manifest_path)
+                manifest = read_json(manifest_path)
                 selected = manifest["splits"]["train"]
                 selected["selected_sample_ids"][0] = 99
                 selected["selected_sample_ids_sha256"] = hashlib.sha256(
@@ -168,7 +303,7 @@ class CamelyonOptimizerSweepTests(unittest.TestCase):
                 ).hexdigest()
                 evidence_fixtures.write_json(manifest_path, manifest)
                 report_path = path / "run_report.json"
-                report = handoff_fixtures.read_json(report_path)
+                report = read_json(report_path)
                 report["data_manifest_sha256"] = evidence_fixtures.digest(manifest_path)
                 evidence_fixtures.write_json(report_path, report)
             return path
@@ -203,7 +338,7 @@ class CamelyonOptimizerSweepTests(unittest.TestCase):
     def test_tampered_acceptance_is_recomputed_from_real_training_artifacts(self):
         def tampered_training(*args, **kwargs):
             path = self.make_training(*args, **kwargs)
-            report = handoff_fixtures.read_json(path)
+            report = read_json(path)
             report["repair_verification"]["decision"] = "accepted"
             evidence_fixtures.write_json(path, report)
             return path
@@ -232,7 +367,7 @@ class CamelyonOptimizerSweepTests(unittest.TestCase):
             seed_dir = Path(config.output_dir).parent
             summary_paths = list(seed_dir.parent.glob("*summary.json"))
             self.assertEqual(len(summary_paths), 1)
-            result = handoff_fixtures.read_json(summary_paths[0])
+            result = read_json(summary_paths[0])
             case = next(c for c in result["cases"] if c["seed"] == config.seed)
             self.assertEqual(case["status"], "running")
             self.assertTrue((self.root / result["plan"]["path"]).is_file())

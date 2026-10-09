@@ -1,10 +1,8 @@
 """Shared bounded-training loop and development gate for Camelyon17 fault experiments.
 
-camelyon_optimizer_training.py is a recorded fixture for the source-localization
-experiments, which parse its optimizer dispatch, so it is imported but never
-modified. run_training_variant mirrors its _run_variant and performance_checks
-mirrors its gate; tests require identical results on shared variants and identical
-gate outputs. Experiments plug in their own optimizer factory and loop options.
+run_training_variant mirrors the stale-binding experiment's _run_variant in
+camelyon_optimizer_training.py and performance_checks mirrors its gate; tests
+require identical results on shared variants and identical gate outputs. Experiments plug in their own optimizer factory and loop options.
 verify_repair applies development gate v2 on top of performance_checks.
 """
 

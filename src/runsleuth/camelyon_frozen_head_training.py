@@ -6,7 +6,7 @@ gate v2 (camelyon_variant_runner.REPAIR_GATE), and bitwise checkpoint comparison
 for the observed predictions.
 
 The training loop and development gate come from camelyon_variant_runner, which
-mirrors the stale-binding experiment without modifying its recorded fixture.
+mirrors the stale-binding experiment.
 """
 
 import argparse

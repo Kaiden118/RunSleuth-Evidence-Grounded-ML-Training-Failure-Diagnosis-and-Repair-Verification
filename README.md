@@ -29,50 +29,73 @@ membership and input statistics.
 ## Results
 
 Camelyon17-WILDS (20K training patches; in-distribution and unseen-hospital
-validation), ResNet18 and DeiT-small, seeds 7 and 2026, author-injected faults.
+validation), ResNet18 and DeiT-small, author-injected faults. Development used
+seeds 7 and 2026. Two held-out seeds were then drawn at random after the
+signatures, LLM prompt and repair gate were frozen
+([draw](evaluations/heldout_seeds.json)). Cells read development · held-out.
 
 | Fault | Decisive evidence | Silent in metrics* | Repair accepted |
 |---|---|---:|---:|
-| Stale optimizer binding | Head gets gradients but never updates | 1/2 | 2/2 |
-| Frozen classifier head | Head untrainable; the reference trains it | 1/2 | 2/2 |
-| Learning rate 100x too high | Effective rate inferred from AdamW's first update | 0/2 | 2/2 |
-| Missing `optimizer.step()` | Forwards without optimizer steps | 0/2 | 2/2 |
-| Train/eval normalization mismatch | Training and evaluation input statistics disagree | 0/2 | 2/2 |
-| ImageNet head kept for 2 labels | 1000 head outputs for 2 classes | 1/2 | 2/2 |
-| Frozen patch embedding | Part of the backbone untrainable | 2/2 | 2/2 |
+| Stale optimizer binding | Head gets gradients but never updates | 1/2 · 2/2 | 2/2 · 2/2 |
+| Frozen classifier head | Head untrainable; the reference trains it | 1/2 · 2/2 | 2/2 · 2/2 |
+| Learning rate 100x too high | Effective rate inferred from AdamW's first update | 0/2 · 0/2 | 2/2 · 2/2 |
+| Missing `optimizer.step()` | Forwards without optimizer steps | 0/2 · 0/2 | 2/2 · 2/2 |
+| Train/eval normalization mismatch | Training and evaluation input statistics disagree | 0/2 · 0/2 | 2/2 · 1/2† |
+| ImageNet head kept for 2 labels | 1000 head outputs for 2 classes | 1/2 · 0/2 | 2/2 · 2/2 |
+| Frozen patch embedding | Part of the backbone untrainable | 2/2 · 1/2 | 2/2 · 2/2 |
 
-- **Diagnosis:** 46/46 runs correct with a healthy reference and 40/46 without
-  (the other 6 are correctly deferred to a reference), with no false positives
-  on 26 healthy runs ([record](evaluations/results/signature-matching-20261008.json)).
+- **Diagnosis:** with a healthy reference, 46/46 development and 32/32 held-out
+  runs correct; without one, 40/46 and 28/32, the rest correctly deferred to a
+  reference. No false positives on 26 + 18 healthy runs
+  ([development](evaluations/results/signature-matching-20261008.json),
+  [held-out](evaluations/results/signature-matching-heldout-seeds-85302029-1948666596.json)).
 - \*The faulty run stayed within the no-regression thresholds (1 point accuracy,
   10% loss) of the healthy run, so a check on validation metrics alone would not
-  flag it.
+  flag it: 10 of 28 faulty runs.
 - **Repair gate:** a repair must not regress against the healthy run. The first
-  gate also compared against the faulty run and rejected the last two repairs on
-  both seeds, although they restored the clean model bitwise. The gate was revised
-  after seeing this and re-scored on the same runs
-  ([record](evaluations/results/repair-gate-v2-rescore.json)).
-- The DeiT checkpoint's Hugging Face image processor contradicts its model card
-  on normalization; RunSleuth's input statistics catch the resulting mismatch.
+  gate also compared against the faulty run and rejected the ImageNet-head and
+  patch-embedding repairs on both development seeds, although they restored the
+  clean model bitwise. It was revised after seeing this
+  ([re-scored](evaluations/results/repair-gate-v2-rescore.json)), then applied
+  unchanged to the held-out seeds
+  ([held-out](evaluations/results/repairs-heldout-seeds-85302029-1948666596.json)).
+- †The DeiT checkpoint's image processor normalizes with 0.5, contradicting the
+  ImageNet values in its model card; RunSleuth's input statistics catch the
+  resulting mismatch. The repair aligns evaluation with the processor, which
+  trained worse than ImageNet normalization on one held-out seed (2.8 points lower
+  out-of-distribution accuracy), so the gate rejected it. The development seeds had
+  favored 0.5 (+2.9 and +2.6 points); across four seeds neither is consistently
+  better.
 
-**LLM review.** Both reviewers saw the same evidence for the 46 runs, with and
-without a reference: 92 reviews each, one sampled reply per review
-([record](evaluations/results/llm-review-eval.json)).
+**LLM review.** Each reviewer saw the matcher's evidence for every run, with and
+without a reference, one sampled reply per review. Prompt 1 was evaluated on the
+development runs. Prompt 2, written after its errors and frozen before the
+held-out draw, was evaluated on the held-out runs
+([development](evaluations/results/llm-review-eval.json),
+[held-out](evaluations/results/llm-review-eval-heldout.json)).
 
-| Reviewer | Valid reply on first try | Agrees with matcher | Mean latency |
-|---|---:|---:|---:|
-| Gemini 3.5 Flash-Lite (API) | 92/92 | 89/92 | 6 s |
-| Qwen3 8B (local, Ollama) | 86/92 | 91/91† | 72 s |
+| Reviewer | Runs, prompt | Valid reply on first try | Agrees with matcher | Mean latency |
+|---|---|---:|---:|---:|
+| Gemini 3.5 Flash-Lite (API) | development, 1 | 92/92 | 89/92 | 6 s |
+| Gemini 3.5 Flash-Lite (API) | held-out, 2 | 64/64 | 63/64 | 2 s |
+| Qwen3 8B (local, Ollama) | development, 1 | 86/92 | 91/91‡ | 72 s |
+| Qwen3 8B (local, Ollama) | held-out, 2 | 51/64 | 52/52‡ | 73 s |
 
-- Gemini's three disagreements were all on faulty runs and all wrong: twice it
-  held a high learning rate pending a reference the signature does not need,
-  and once it called a frozen patch embedding normal partial fine-tuning. The
-  matcher stays final, so each was only flagged for review.
-- Citation checks caught Qwen citing evidence that does not exist; its retry
-  fixed it. †One Qwen review never followed the reply schema, so the matcher's
-  diagnosis stood alone.
+- Gemini's three development disagreements were all on faulty runs and all wrong:
+  twice it held a high learning rate pending a reference the signature does not
+  need, and once it called a frozen patch embedding normal partial fine-tuning.
+  Prompt 2 states both rules. Neither error recurred on held-out runs; Gemini's one
+  disagreement there named a frozen head that only a reference run can confirm.
+- Citation checks caught Qwen citing evidence that does not exist (prompt 1) and,
+  on held-out runs, 12 replies with a wrong learning rate. Ollama's
+  schema-constrained decoding rejects the leading zero in the exponent Python
+  writes (`e-05`), so Qwen's exact copy was cut to `e-0`.
+- ‡Of completed reviews. Reviews that never passed the checks (1 and 12, all on
+  healthy runs) left the matcher's diagnosis standing. The matcher stays final,
+  so no disagreement or failed review changed a diagnosis.
 
-Results cover two seeds and development thresholds, not a statistical benchmark.
+Results cover four seeds, two of them held out, with development thresholds; they
+are not a statistical benchmark.
 
 ## Getting Started
 
@@ -80,6 +103,8 @@ Results cover two seeds and development thresholds, not a statistical benchmark.
 
 - Python 3.11 and an NVIDIA GPU with 8 GB of memory (tested on an RTX 5060 Ti)
 - About 20 GB of disk space for the cached Camelyon17 data
+- On Windows, a clone path under about 120 characters (run files must stay below
+  the 260-character limit) or long paths enabled
 - Commands below use Windows CMD
 
 ### Installation
@@ -175,7 +200,7 @@ each experiment on a seed baseline:
 ```bat
 python -m runsleuth.camelyon_optimizer_sweep --reference-run "%BASELINE%" --execute
 python -c "from transformers import AutoModelForImageClassification as M; M.from_pretrained('facebook/deit-small-patch16-224')"
-set "SEED=artifacts/optimizer_sweeps/<sweep>/seed-7/baseline/<seed-7-baseline>"
+set "SEED=artifacts/optimizer_sweeps/<sweep>/s1/baseline/<baseline-run>"
 python -m runsleuth.camelyon_frozen_head_training --reference-run "%SEED%"
 python -m runsleuth.camelyon_config_faults --reference-run "%SEED%"
 python -m runsleuth.camelyon_vit --reference-run "%SEED%"
@@ -192,7 +217,15 @@ Compare LLM reviewers on the same cases. Runs resume where they stopped; add
 
 ```bat
 python -m runsleuth.llm_review_eval run --provider ollama --model qwen3:8b --from-record evaluations/results/signature-matching-20261008.json
-python -m runsleuth.llm_review_eval summarize artifacts/llm_review_eval/ollama-qwen3-8b ...
+python -m runsleuth.llm_review_eval summarize artifacts/llm_review_eval/ollama-qwen3-8b-prompt-v2 ...
+```
+
+Draw held-out seeds once and commit the seeds file, then train and evaluate them
+in one resumable command:
+
+```bat
+python -m runsleuth.heldout draw --count 2
+python -m runsleuth.heldout run --reference-run "%BASELINE%"
 ```
 
 ### Tests

@@ -1,0 +1,219 @@
+{
+  "scope": "held-out seeds [1439400887, 1219121115], drawn after the signatures, LLM prompt and repair gate were frozen; author-injected faults, development thresholds, not a statistical benchmark",
+  "summary": {
+    "reference_free": {
+      "exact_matches": 6,
+      "pending_reference_with_true_fault": 4,
+      "cases": 10,
+      "healthy_false_positives": 0,
+      "healthy_cases": 6,
+      "confusion": {
+        "no_known_fault": {
+          "no_known_fault": 6
+        },
+        "train_in_eval_mode": {
+          "pending_reference": 2
+        },
+        "scheduler_stepped_per_batch": {
+          "pending_reference": 2
+        }
+      }
+    },
+    "with_reference": {
+      "exact_matches": 10,
+      "pending_reference_with_true_fault": 0,
+      "cases": 10,
+      "healthy_false_positives": 0,
+      "healthy_cases": 6,
+      "confusion": {
+        "no_known_fault": {
+          "no_known_fault": 6
+        },
+        "train_in_eval_mode": {
+          "train_in_eval_mode": 2
+        },
+        "scheduler_stepped_per_batch": {
+          "scheduler_stepped_per_batch": 2
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "report": "artifacts\\loop_fault_training\\run-20261009T045237090942Z\\loop_fault_training_report.json",
+      "seed": 1439400887,
+      "variant": "clean",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\loop_fault_training\\run-20261009T045237090942Z\\loop_fault_training_report.json",
+      "seed": 1439400887,
+      "variant": "train_in_eval_mode",
+      "truth": "train_in_eval_mode",
+      "reference_free": {
+        "diagnosis": "pending_reference",
+        "supported": [],
+        "pending_reference": [
+          "train_in_eval_mode"
+        ]
+      },
+      "with_reference": {
+        "diagnosis": "train_in_eval_mode",
+        "supported": [
+          "train_in_eval_mode"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\loop_fault_training\\run-20261009T045237090942Z\\loop_fault_training_report.json",
+      "seed": 1439400887,
+      "variant": "train_in_eval_mode_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\loop_fault_training\\run-20261009T045237090942Z\\loop_fault_training_report.json",
+      "seed": 1439400887,
+      "variant": "scheduler_stepped_per_batch",
+      "truth": "scheduler_stepped_per_batch",
+      "reference_free": {
+        "diagnosis": "pending_reference",
+        "supported": [],
+        "pending_reference": [
+          "scheduler_stepped_per_batch"
+        ]
+      },
+      "with_reference": {
+        "diagnosis": "scheduler_stepped_per_batch",
+        "supported": [
+          "scheduler_stepped_per_batch"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\loop_fault_training\\run-20261009T045237090942Z\\loop_fault_training_report.json",
+      "seed": 1439400887,
+      "variant": "scheduler_stepped_per_batch_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\loop_fault_training\\run-20261009T052307711344Z\\loop_fault_training_report.json",
+      "seed": 1219121115,
+      "variant": "clean",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\loop_fault_training\\run-20261009T052307711344Z\\loop_fault_training_report.json",
+      "seed": 1219121115,
+      "variant": "train_in_eval_mode",
+      "truth": "train_in_eval_mode",
+      "reference_free": {
+        "diagnosis": "pending_reference",
+        "supported": [],
+        "pending_reference": [
+          "train_in_eval_mode"
+        ]
+      },
+      "with_reference": {
+        "diagnosis": "train_in_eval_mode",
+        "supported": [
+          "train_in_eval_mode"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\loop_fault_training\\run-20261009T052307711344Z\\loop_fault_training_report.json",
+      "seed": 1219121115,
+      "variant": "train_in_eval_mode_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\loop_fault_training\\run-20261009T052307711344Z\\loop_fault_training_report.json",
+      "seed": 1219121115,
+      "variant": "scheduler_stepped_per_batch",
+      "truth": "scheduler_stepped_per_batch",
+      "reference_free": {
+        "diagnosis": "pending_reference",
+        "supported": [],
+        "pending_reference": [
+          "scheduler_stepped_per_batch"
+        ]
+      },
+      "with_reference": {
+        "diagnosis": "scheduler_stepped_per_batch",
+        "supported": [
+          "scheduler_stepped_per_batch"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\loop_fault_training\\run-20261009T052307711344Z\\loop_fault_training_report.json",
+      "seed": 1219121115,
+      "variant": "scheduler_stepped_per_batch_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    }
+  ]
+}

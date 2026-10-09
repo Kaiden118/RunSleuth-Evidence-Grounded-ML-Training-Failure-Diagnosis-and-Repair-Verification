@@ -31,35 +31,42 @@ membership and input statistics.
 
 Camelyon17-WILDS (20K training patches; in-distribution and unseen-hospital
 validation), ResNet18 and DeiT-small, author-injected faults. Development used
-seeds 7 and 2026. Two held-out seeds were then drawn at random after the
-signatures, LLM prompt and repair gate were frozen
-([draw](evaluations/heldout_seeds.json)). Cells read development · held-out.
+seeds 7 and 2026. Held-out seeds were then drawn at random after the signatures,
+LLM prompt and repair gate were frozen ([first draw](evaluations/heldout_seeds.json),
+[second draw](evaluations/heldout_seeds_m5.json)). The two training-loop faults
+came later; their signatures were frozen before any of their runs, so seeds 7 and
+2026 test them too. Cells read development · held-out.
 
 | Fault | Decisive evidence | Silent in metrics* | Repair accepted |
 |---|---|---:|---:|
-| Stale optimizer binding | Head gets gradients but never updates | 1/2 · 2/2 | 2/2 · 2/2 |
+| Stale optimizer binding | Head gets gradients but never updates | 1/2 · 3/4 | 2/2 · 4/4 |
 | Frozen classifier head | Head untrainable; the reference trains it | 1/2 · 2/2 | 2/2 · 2/2 |
 | Learning rate 100x too high | Effective rate inferred from AdamW's first update | 0/2 · 0/2 | 2/2 · 2/2 |
 | Missing `optimizer.step()` | Forwards without optimizer steps | 0/2 · 0/2 | 2/2 · 2/2 |
 | Train/eval normalization mismatch | Training and evaluation input statistics disagree | 0/2 · 0/2 | 2/2 · 1/2† |
 | ImageNet head kept for 2 labels | 1000 head outputs for 2 classes | 1/2 · 0/2 | 2/2 · 2/2 |
 | Frozen patch embedding | Part of the backbone untrainable | 2/2 · 1/2 | 2/2 · 2/2 |
+| Training in eval mode (no `model.train()`) | Optimizer steps train on eval-mode forwards; BatchNorm statistics never change | 0/2 · 0/2 | 2/2 · 2/2 |
+| Per-epoch LR schedule stepped every batch | The rate falls and rises again within an epoch, 104 times | 0/2 · 0/2 | 2/2 · 2/2 |
 
-- **Diagnosis:** with a healthy reference, 46/46 development and 32/32 held-out
-  runs correct; without one, 40/46 and 28/32, the rest correctly deferred to a
-  reference. No false positives on 26 + 18 healthy runs
-  ([development](evaluations/results/signature-matching-20261008.json),
-  [held-out](evaluations/results/signature-matching-heldout-seeds-85302029-1948666596.json)).
+- **Diagnosis:** with a healthy reference, 56/56 development and 42/42 held-out
+  runs correct; without one, 46/56 and 34/42, the rest correctly deferred to a
+  reference. No false positives on 32 + 24 healthy runs (development:
+  [first faults](evaluations/results/signature-matching-20261008.json),
+  [loop faults](evaluations/results/signature-matching-loop-faults-seeds-7-2026.json);
+  held-out: [first draw](evaluations/results/signature-matching-heldout-seeds-85302029-1948666596.json),
+  [second draw](evaluations/results/signature-matching-heldout-seeds-1439400887-1219121115.json)).
 - \*The faulty run stayed within the no-regression thresholds (1 point accuracy,
   10% loss) of the healthy run, so a check on validation metrics alone would not
-  flag it: 10 of 28 faulty runs.
+  flag it: 11 of 38 faulty runs.
 - **Repair gate:** a repair must not regress against the healthy run. The first
   gate also compared against the faulty run and rejected the ImageNet-head and
   patch-embedding repairs on both development seeds, although they restored the
   clean model bitwise. It was revised after seeing this
   ([re-scored](evaluations/results/repair-gate-v2-rescore.json)), then applied
   unchanged to the held-out seeds
-  ([held-out](evaluations/results/repairs-heldout-seeds-85302029-1948666596.json)).
+  ([first draw](evaluations/results/repairs-heldout-seeds-85302029-1948666596.json),
+  [second draw](evaluations/results/repairs-heldout-seeds-1439400887-1219121115.json)).
 - †The DeiT checkpoint's image processor normalizes with 0.5, contradicting the
   ImageNet values in its model card; RunSleuth's input statistics catch the
   resulting mismatch. The repair aligns evaluation with the processor, which

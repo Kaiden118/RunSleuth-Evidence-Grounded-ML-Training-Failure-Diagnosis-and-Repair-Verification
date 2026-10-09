@@ -1,0 +1,147 @@
+{
+  "variant": "clean",
+  "status": "completed",
+  "completed_epochs": 3,
+  "task": "camelyon17_frozen_head_training_variant",
+  "error": null,
+  "run_directory": "artifacts\\frozen_head_training\\run-20261008T213753095258Z\\clean",
+  "optimizer_step_enabled": true,
+  "parameter_group_epochs": [
+    {
+      "epoch": 1,
+      "optimizer_steps": 625,
+      "training_forwards": 625,
+      "head": {
+        "mean_gradient_l2_norm": 1.2849758881211282,
+        "mean_parameter_update_l2_norm": 0.0005095242717303336,
+        "mean_parameter_l2_norm": 0.8174081349372864,
+        "mean_update_to_weight_ratio": 0.0006228504664130473,
+        "first_step_parameter_update_l2_norm": 0.003203135682269931,
+        "parameter_elements": 1026,
+        "parameter_tensors": 2,
+        "min_trainable_tensors": 2,
+        "max_trainable_tensors": 2,
+        "min_tensors_with_gradient": 2,
+        "max_tensors_with_gradient": 2
+      },
+      "backbone": {
+        "mean_gradient_l2_norm": 4.072593276882172,
+        "mean_parameter_update_l2_norm": 0.05900429005026817,
+        "mean_parameter_l2_norm": 85.27542740478516,
+        "mean_update_to_weight_ratio": 0.0006920208813179922,
+        "first_step_parameter_update_l2_norm": 0.33418697118759155,
+        "parameter_elements": 11176512,
+        "parameter_tensors": 60,
+        "min_trainable_tensors": 60,
+        "max_trainable_tensors": 60,
+        "min_tensors_with_gradient": 60,
+        "max_tensors_with_gradient": 60
+      }
+    },
+    {
+      "epoch": 2,
+      "optimizer_steps": 625,
+      "training_forwards": 625,
+      "head": {
+        "mean_gradient_l2_norm": 0.49316757163405417,
+        "mean_parameter_update_l2_norm": 0.0003544065143447369,
+        "mean_parameter_l2_norm": 0.8202676573753357,
+        "mean_update_to_weight_ratio": 0.0004319914234336431,
+        "first_step_parameter_update_l2_norm": 0.0003004478639923036,
+        "parameter_elements": 1026,
+        "parameter_tensors": 2,
+        "min_trainable_tensors": 2,
+        "max_trainable_tensors": 2,
+        "min_tensors_with_gradient": 2,
+        "max_tensors_with_gradient": 2
+      },
+      "backbone": {
+        "mean_gradient_l2_norm": 2.258194385665655,
+        "mean_parameter_update_l2_norm": 0.04843743881881237,
+        "mean_parameter_l2_norm": 85.45952061767578,
+        "mean_update_to_weight_ratio": 0.000566756571074609,
+        "first_step_parameter_update_l2_norm": 0.04972776398062706,
+        "parameter_elements": 11176512,
+        "parameter_tensors": 60,
+        "min_trainable_tensors": 60,
+        "max_trainable_tensors": 60,
+        "min_tensors_with_gradient": 60,
+        "max_tensors_with_gradient": 60
+      }
+    },
+    {
+      "epoch": 3,
+      "optimizer_steps": 625,
+      "training_forwards": 625,
+      "head": {
+        "mean_gradient_l2_norm": 0.22898045683652163,
+        "mean_parameter_update_l2_norm": 0.0002762135326396674,
+        "mean_parameter_l2_norm": 0.8342415371894837,
+        "mean_update_to_weight_ratio": 0.0003309189322501553,
+        "first_step_parameter_update_l2_norm": 0.0002681806217879057,
+        "parameter_elements": 1026,
+        "parameter_tensors": 2,
+        "min_trainable_tensors": 2,
+        "max_trainable_tensors": 2,
+        "min_tensors_with_gradient": 2,
+        "max_tensors_with_gradient": 2
+      },
+      "backbone": {
+        "mean_gradient_l2_norm": 1.4215535017549992,
+        "mean_parameter_update_l2_norm": 0.04199963661432266,
+        "mean_parameter_l2_norm": 85.6185941040039,
+        "mean_update_to_weight_ratio": 0.0004904891383554803,
+        "first_step_parameter_update_l2_norm": 0.03431659936904907,
+        "parameter_elements": 11176512,
+        "parameter_tensors": 60,
+        "min_trainable_tensors": 60,
+        "max_trainable_tensors": 60,
+        "min_tensors_with_gradient": 60,
+        "max_tensors_with_gradient": 60
+      }
+    }
+  ],
+  "test_evaluated": false,
+  "data_manifest_sha256": "1f57024f0a81bba2962e1863da018b64bb91d564a0ccffcca71ad6ad3545f08f",
+  "initial_state_sha256": "775ee9ea32d5e66d439514c88146c0eaa443600d6fb4b0b8ff3abc3652a84ebc",
+  "optimizer_audit": {
+    "model_parameter_tensors": 62,
+    "trainable_parameter_tensors": 62,
+    "optimizer_unique_parameter_tensors": 62,
+    "missing_trainable_names": [],
+    "foreign_parameter_tensors": 0,
+    "duplicate_parameter_occurrences": 0
+  },
+  "initialization_metrics": {
+    "id_validation_loss": 0.9064605880737304,
+    "id_validation_accuracy": 0.4954,
+    "ood_validation_loss": 1.2665978569507599,
+    "ood_validation_accuracy": 0.4972
+  },
+  "final_metrics": {
+    "epoch": 3,
+    "train_loss": 0.02242878415572923,
+    "train_accuracy": 0.9929,
+    "validation_loss": 0.06939009736026637,
+    "validation_accuracy": 0.979,
+    "mean_gradient_norm": 1.441356392840212,
+    "mean_parameter_update_norm": 0.04200062039044385,
+    "id_validation_loss": 0.06939009736026637,
+    "id_validation_accuracy": 0.979,
+    "ood_validation_loss": 0.48457319540312166,
+    "ood_validation_accuracy": 0.9052,
+    "epoch_seconds": 56.95772519999991,
+    "peak_cuda_memory_mb": 414.78759765625
+  },
+  "final_optimizer_audit": {
+    "model_parameter_tensors": 62,
+    "trainable_parameter_tensors": 62,
+    "optimizer_unique_parameter_tensors": 62,
+    "missing_trainable_names": [],
+    "foreign_parameter_tensors": 0,
+    "duplicate_parameter_occurrences": 0
+  },
+  "model_checkpoint": "artifacts\\frozen_head_training\\run-20261008T213753095258Z\\clean\\model_state_dict.pt",
+  "checkpoint_sha256": "b5bd90c7280ba2b4f66c50a75678857bf72b8c5acd1760fd4e997e245dbffdde",
+  "elapsed_seconds": 242.29161120000026
+}

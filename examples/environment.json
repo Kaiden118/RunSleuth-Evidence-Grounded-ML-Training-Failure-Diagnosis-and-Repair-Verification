@@ -1,0 +1,24 @@
+{
+  "python": "3.11.16",
+  "torch": "2.13.0+cu130",
+  "cuda_runtime": "13.0",
+  "device_name": "NVIDIA GeForce RTX 5060 Ti",
+  "precision": "float32",
+  "optimizer": "AdamW",
+  "source_sha256": {
+    "camelyon_optimizer_training.py": "b58dfff145bef6e3a6086dd81529f366543c492d5bf2707e9483e420fe408c97",
+    "parameter_group_monitor.py": "5b227e03f3eb166c6820701c952f640c34bba3424b1a16e0fec70646ad471bab",
+    "camelyon_optimizer_probe.py": "fb511ed41c1d7803fe831e9b05b51e5528b2aff8ac5ab91ed8cbb0304cc6d33c",
+    "optimizer_probe.py": "b27eba3fce1826a3c9f4e49ad575d3e117123846574f82deec4766eac9ada85f",
+    "optimizer_audit.py": "6959cd2b4aac36c7d87550910de0b7f14c4a48b372b9ea3ce031988bbbbffece",
+    "camelyon.py": "40a5d4c07b35b04ebb4e8739c548c8bc331708de3d26ad48870888a6da3fd3a9",
+    "camelyon_config.py": "bd4fa79055a7c5eb2995dc61f5a3dd69c377687ad71681de17c577ba22e3ade6",
+    "camelyon_data.py": "13bffcf1ecdc1335a1338d8338d29617013fef2e20c52fbd22d213c28a8a642b",
+    "camelyon_mirror.py": "23e141e8c9e5a0122134c0f1699104a3bcc3186ddef1994227ab54a202adadd3",
+    "train.py": "e61d3eb8eb4392bd584160d0ecec8365521190583521784c588b803a078051c9",
+    "telemetry.py": "701ccc4aabc4b3249d746257179aff846972d0bc1e10b8b5eaf2f6c9f9986fd0",
+    "camelyon_frozen_head_training.py": "d15dbf71c89261cbdfc0785ca4e3eaa591a9c5a2125218017ba4f15852554339",
+    "camelyon_variant_runner.py": "639b5dd55480d17031ee68bedeb43e6f4db71e8718f6c714b67876dc0039c3cd",
+    "frozen_head_probe.py": "b17ee3ae663172ee821bd1ab5abac8a05f2cc7ccc8975dbeee2c0eed2e56a475"
+  }
+}

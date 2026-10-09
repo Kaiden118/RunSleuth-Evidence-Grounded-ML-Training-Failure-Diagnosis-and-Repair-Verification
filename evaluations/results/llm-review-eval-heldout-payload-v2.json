@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "task": "llm_review_evaluation",
+  "scope": "development evaluation on author-injected faults; one sampled reply per case at provider defaults",
+  "runs": [
+    {
+      "provider": "ollama",
+      "model": "qwen3:8b",
+      "prompt_version": 2,
+      "payload_version": 2,
+      "response_format": "json_schema",
+      "max_output_tokens": 4000,
+      "expected_cases": 12,
+      "complete": true,
+      "overall": {
+        "cases": 12,
+        "completed": 12,
+        "invalid_output": 0,
+        "api_error": 0,
+        "valid_on_first_attempt": 11,
+        "agrees_with_matcher": 12,
+        "conflicts": {},
+        "llm_matches_truth": 12,
+        "llm_defers_with_true_fault": 0,
+        "matcher_matches_truth": 12,
+        "issue_types": {
+          "schema": 1
+        },
+        "truncated_replies": 0,
+        "input_tokens": 47470,
+        "output_tokens": 20210,
+        "mean_latency_seconds": 87.29480724166781
+      },
+      "by_mode": {
+        "reference_free": {
+          "cases": 7,
+          "completed": 7,
+          "invalid_output": 0,
+          "api_error": 0,
+          "valid_on_first_attempt": 7,
+          "agrees_with_matcher": 7,
+          "conflicts": {},
+          "llm_matches_truth": 7,
+          "llm_defers_with_true_fault": 0,
+          "matcher_matches_truth": 7,
+          "issue_types": {},
+          "truncated_replies": 0,
+          "input_tokens": 25290,
+          "output_tokens": 12153,
+          "mean_latency_seconds": 90.7559258428581
+        },
+        "with_reference": {
+          "cases": 5,
+          "completed": 5,
+          "invalid_output": 0,
+          "api_error": 0,
+          "valid_on_first_attempt": 4,
+          "agrees_with_matcher": 5,
+          "conflicts": {},
+          "llm_matches_truth": 5,
+          "llm_defers_with_true_fault": 0,
+          "matcher_matches_truth": 5,
+          "issue_types": {
+            "schema": 1
+          },
+          "truncated_replies": 0,
+          "input_tokens": 22180,
+          "output_tokens": 8057,
+          "mean_latency_seconds": 82.44924120000141
+        }
+      },
+      "by_health": {
+        "healthy": {
+          "cases": 12,
+          "completed": 12,
+          "invalid_output": 0,
+          "api_error": 0,
+          "valid_on_first_attempt": 11,
+          "agrees_with_matcher": 12,
+          "conflicts": {},
+          "llm_matches_truth": 12,
+          "llm_defers_with_true_fault": 0,
+          "matcher_matches_truth": 12,
+          "issue_types": {
+            "schema": 1
+          },
+          "truncated_replies": 0,
+          "input_tokens": 47470,
+          "output_tokens": 20210,
+          "mean_latency_seconds": 87.29480724166781
+        },
+        "faulty": {
+          "cases": 0,
+          "completed": 0,
+          "invalid_output": 0,
+          "api_error": 0,
+          "valid_on_first_attempt": 0,
+          "agrees_with_matcher": 0,
+          "conflicts": {},
+          "llm_matches_truth": 0,
+          "llm_defers_with_true_fault": 0,
+          "matcher_matches_truth": 0,
+          "issue_types": {},
+          "truncated_replies": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "mean_latency_seconds": null
+        }
+      },
+      "cases": [
+        {
+          "case_id": "run-20261008T213753095258Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T213753095258Z:clean:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T220030786155Z:high_learning_rate_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T220030786155Z:missing_optimizer_step_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T223054943318Z:imagenet_head_kept_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T223054943318Z:frozen_patch_embedding_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T223054943318Z:frozen_patch_embedding_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": false
+        },
+        {
+          "case_id": "run-20261008T231257898816Z:frozen_head_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T232851609020Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T235010128165Z:clean:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T235010128165Z:train_eval_normalization_mismatch_repaired:reference_free",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        },
+        {
+          "case_id": "run-20261008T235010128165Z:imagenet_head_kept_repaired:with_reference",
+          "truth": "no_known_fault",
+          "matcher": "no_known_fault",
+          "llm_status": "completed",
+          "llm": "no_known_fault",
+          "conflict_kind": null,
+          "valid_on_first_attempt": true
+        }
+      ],
+      "reports": [
+        {
+          "path": "artifacts\\frozen_head_training\\run-20261008T213753095258Z\\frozen_head_training_report.json",
+          "sha256": "6b4fbce11a610b376c81a8ce9d2870472392b2e5c206a53fdae2f4e186820d61"
+        },
+        {
+          "path": "artifacts\\config_fault_training\\run-20261008T220030786155Z\\config_fault_training_report.json",
+          "sha256": "07fcfa9b391408926536e05ed8acb93189990646fc36052eff8378fae438e480"
+        },
+        {
+          "path": "artifacts\\vit_fault_training\\run-20261008T223054943318Z\\vit_fault_report.json",
+          "sha256": "b4aac0b3b60913b92c0acc9ac013975d4902ff5cb4b50d99e1ba85c78b91e7de"
+        },
+        {
+          "path": "artifacts\\frozen_head_training\\run-20261008T231257898816Z\\frozen_head_training_report.json",
+          "sha256": "607a3c39f3dee2238f43b35d16da8b1ee222b48523bc25141b3fa9386a3a5eb5"
+        },
+        {
+          "path": "artifacts\\config_fault_training\\run-20261008T232851609020Z\\config_fault_training_report.json",
+          "sha256": "68295e96b105fe1ff3d7fa0348ee7b971b2c040e6774a2da40df7ca1e037d5b5"
+        },
+        {
+          "path": "artifacts\\vit_fault_training\\run-20261008T235010128165Z\\vit_fault_report.json",
+          "sha256": "48b7535d5798db6fedac322e0e1351e064e9cce769c5422d3b73ea3a20d01648"
+        }
+      ]
+    }
+  ]
+}

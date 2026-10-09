@@ -253,8 +253,8 @@ def run_demo(
     return path
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def main(argv: list[str] | None = None, prog: str | None = None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__.splitlines()[0])
     parser.add_argument("--baseline", type=Path, required=True, help="Completed seed baseline run")
     parser.add_argument("--reference", type=Path, help="Healthy run_report.json of the same seed")
     parser.add_argument("--fault", choices=(*FAULTS, "random"), default="random")
@@ -269,7 +269,7 @@ def main() -> None:
         help="LLM for the review: Gemini, or a local Ollama model (OLLAMA_MODEL)",
     )
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/demo"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     client = model_name = None
     if not args.no_llm:
         from runsleuth.llm_client import create_llm_client

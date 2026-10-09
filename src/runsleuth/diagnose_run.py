@@ -352,8 +352,17 @@ def summary_text(result: dict) -> str:
     return "\n".join(lines)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def run_optimizer(run: dict, run_path: Path, explicit: str | None = None) -> str | None:
+    """The optimizer class: given, in the report, then the experiment's environment.json."""
+    name = explicit or run.get("optimizer")
+    environment = run_path.resolve().parent.parent / "environment.json"
+    if name is None and environment.is_file():
+        name = json.loads(environment.read_text(encoding="utf-8")).get("optimizer")
+    return name
+
+
+def main(argv: list[str] | None = None, prog: str | None = None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__.splitlines()[0])
     parser.add_argument("--run", type=Path, required=True, help="run_report.json to diagnose")
     parser.add_argument("--reference", type=Path, help="run_report.json of a healthy run")
     parser.add_argument("--no-llm", action="store_true", help="Deterministic matching only")
@@ -368,13 +377,10 @@ def main() -> None:
         help="Optimizer class name (default: the report, then the experiment's environment.json)",
     )
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/diagnoses"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     run = json.loads(args.run.read_text(encoding="utf-8"))
     reference = json.loads(args.reference.read_text(encoding="utf-8")) if args.reference else None
-    optimizer_name = args.optimizer or run.get("optimizer")
-    environment = args.run.resolve().parent.parent / "environment.json"
-    if optimizer_name is None and environment.is_file():
-        optimizer_name = json.loads(environment.read_text(encoding="utf-8")).get("optimizer")
+    optimizer_name = run_optimizer(run, args.run, args.optimizer)
     client = model = None
     if not args.no_llm:
         from runsleuth.llm_client import create_llm_client

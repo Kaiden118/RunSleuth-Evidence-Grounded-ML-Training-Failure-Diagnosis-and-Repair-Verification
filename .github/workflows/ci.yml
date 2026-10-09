@@ -73,9 +73,14 @@ jobs:
           load: true
           cache-from: type=gha
 
-      - name: Diagnose the example run inside the image
+      - name: Diagnose and verify the example runs inside the image
         run: |
-          docker run --rm -v "$PWD/examples:/work/examples:ro" runsleuth \
+          docker run --rm -v "$PWD/examples:/work/examples:ro" runsleuth diagnose \
             --run examples/frozen_head/run_report.json \
             --reference examples/clean/run_report.json --no-llm | tee diagnosis.txt
           grep -q "Diagnosis: frozen_head" diagnosis.txt
+          docker run --rm -v "$PWD/examples:/work/examples:ro" runsleuth verify \
+            --candidate examples/frozen_head_repaired/run_report.json \
+            --reference examples/clean/run_report.json \
+            --faulty examples/frozen_head/run_report.json | tee verification.txt
+          grep -q "Decision: accepted" verification.txt

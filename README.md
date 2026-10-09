@@ -127,19 +127,22 @@ Choose the PyTorch index that matches your CUDA version on
 
 ### Try it on an example
 
-No data or training needed: diagnose the [example](examples), a held-out run whose
+No data or training needed. The [examples](examples) are a held-out run whose
 classifier head was frozen while its validation metrics stayed within the
-no-regression thresholds of its clean reference:
+no-regression thresholds of its clean reference, and the same run repaired.
+Installing the package adds the `runsleuth` command; diagnose the faulty run,
+then verify the repair (verify exits with status 1 when it rejects one):
 
 ```bat
-python -m runsleuth.diagnose_run --run examples/frozen_head/run_report.json --reference examples/clean/run_report.json --no-llm
+runsleuth diagnose --run examples/frozen_head/run_report.json --reference examples/clean/run_report.json --no-llm
+runsleuth verify --candidate examples/frozen_head_repaired/run_report.json --reference examples/clean/run_report.json --faulty examples/frozen_head/run_report.json
 ```
 
 Or with Docker, without installing Python or PyTorch:
 
 ```bat
 docker build --target runtime -t runsleuth .
-docker run --rm -v "%cd%/examples:/work/examples:ro" runsleuth --run examples/frozen_head/run_report.json --reference examples/clean/run_report.json --no-llm
+docker run --rm -v "%cd%/examples:/work/examples:ro" runsleuth diagnose --run examples/frozen_head/run_report.json --reference examples/clean/run_report.json --no-llm
 ```
 
 ### 1. Prepare the data and a baseline
@@ -200,18 +203,23 @@ monitor = RunMonitor(model, optimizer, "runs/my-run", head="fc")
 for epoch in range(epochs):
     with monitor.epoch():
         ...  # your training loop, unchanged
-    monitor.log(id_validation_accuracy=accuracy)
+    monitor.log(id_validation_accuracy=accuracy, id_validation_loss=loss)
 monitor.close()
 ```
 
 With the Hugging Face `Trainer`, pass
 `callbacks=[RunSleuthCallback("runs/my-run", head="classifier")]` from
 `runsleuth.hf_callback` instead. Then diagnose the run, optionally against a
-healthy run of the same setup:
+healthy run of the same setup, apply the suggested repair, and verify the
+retrained run:
 
 ```bat
-python -m runsleuth.diagnose_run --run runs/my-run/run_report.json --reference runs/healthy/run_report.json --no-llm
+runsleuth diagnose --run runs/my-run/run_report.json --reference runs/healthy/run_report.json --no-llm
+runsleuth verify --candidate runs/my-run-fixed/run_report.json --reference runs/healthy/run_report.json --faulty runs/my-run/run_report.json
 ```
+
+Verify compares every validation split both runs logged as
+`<split>_validation_accuracy` and `<split>_validation_loss`.
 
 ### 4. Reproduce the experiments
 

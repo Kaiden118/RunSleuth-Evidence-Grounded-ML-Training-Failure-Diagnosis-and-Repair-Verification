@@ -18,7 +18,6 @@ from runsleuth.camelyon_optimizer_probe import check_matching_data, file_sha256
 from runsleuth.camelyon_optimizer_training import (
     REPAIR_POLICY,
     _finite_number,
-    _valid_domain_metrics,
     append_json,
     snapshot_sources,
     write_json,
@@ -29,6 +28,9 @@ from runsleuth.camelyon_optimizer_training import (
 # trained as well as or better than clean. How the faulty run trains measures the
 # fault, not the repair, so v2 gates on the healthy reference and records the faulty
 # comparison. Revised after seeing those rejections; development policy only.
+# The experiments validate on an in-distribution and an out-of-distribution split;
+# other runs may log any <split>_validation_accuracy and _loss.
+DOMAINS = ("id", "ood")
 REPAIR_GATE = {
     "version": 2,
     "gating_comparator": "healthy reference of the same setup; the faulty run without one",
@@ -199,14 +201,29 @@ def run_training_variant(
     return report
 
 
-def performance_checks(variants: dict, candidate: str, comparators: tuple[str, ...]) -> list:
+def _valid_metrics(metrics: dict, domains: tuple[str, ...]) -> bool:
+    """The stale-binding experiment's _valid_domain_metrics for any validation splits."""
+    return all(
+        _finite_number(metrics.get(f"{domain}_validation_{metric}"))
+        and 0 <= metrics[f"{domain}_validation_{metric}"]
+        and (metric != "accuracy" or metrics[f"{domain}_validation_{metric}"] <= 1)
+        for domain in domains
+        for metric in ("accuracy", "loss")
+    )
+
+
+def performance_checks(
+    variants: dict, candidate: str, comparators: tuple[str, ...], domains=DOMAINS
+) -> list:
     """Mirror the stale-binding experiment's development gate for one candidate."""
     performance = []
     repaired_metrics = variants[candidate]["final_metrics"]
     for comparator in comparators:
         reference_metrics = variants[comparator]["final_metrics"]
-        valid = _valid_domain_metrics(repaired_metrics) and _valid_domain_metrics(reference_metrics)
-        for domain in ("id", "ood"):
+        valid = _valid_metrics(repaired_metrics, domains) and _valid_metrics(
+            reference_metrics, domains
+        )
+        for domain in domains:
             for metric in ("accuracy", "loss"):
                 actual = repaired_metrics[f"{domain}_validation_{metric}"]
                 reference = reference_metrics[f"{domain}_validation_{metric}"]
@@ -239,7 +256,12 @@ def performance_checks(variants: dict, candidate: str, comparators: tuple[str, .
 
 
 def verify_repair(
-    variants: dict, candidate: str, *, reference: str | None, faulty: str | None
+    variants: dict,
+    candidate: str,
+    *,
+    reference: str | None,
+    faulty: str | None,
+    domains: tuple[str, ...] = DOMAINS,
 ) -> dict:
     """Gate v2 for one candidate; callers pass only comparators with valid final metrics.
 
@@ -249,13 +271,13 @@ def verify_repair(
     """
     gating = reference or faulty
     informational = faulty if reference else None
-    checks = performance_checks(variants, candidate, (gating,) if gating else ())
+    checks = performance_checks(variants, candidate, (gating,) if gating else (), domains)
     # True when the faulty run itself passes the gate: the fault left no regression
     # that validation metrics alone could catch.
     faulty_passes = None
     if reference and faulty:
         faulty_passes = all(
-            check["passed"] for check in performance_checks(variants, faulty, (reference,))
+            check["passed"] for check in performance_checks(variants, faulty, (reference,), domains)
         )
     return {
         "gate": dict(REPAIR_GATE),
@@ -265,7 +287,7 @@ def verify_repair(
         "performance_nonregression": bool(checks) and all(check["passed"] for check in checks),
         "informational_comparators": [informational] if informational else [],
         "informational_checks": performance_checks(
-            variants, candidate, (informational,) if informational else ()
+            variants, candidate, (informational,) if informational else (), domains
         ),
         "faulty_passes_gate_vs_reference": faulty_passes,
     }

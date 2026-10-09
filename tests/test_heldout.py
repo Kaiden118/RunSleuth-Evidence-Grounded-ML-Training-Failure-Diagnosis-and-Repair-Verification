@@ -150,6 +150,7 @@ class HeldoutTests(unittest.TestCase):
         self.assertEqual(record["code_commit"], "abc123")
         self.assertEqual(record["frozen"], module.frozen_components())
         self.assertEqual(record["frozen"]["llm_prompt_version"], 2)
+        self.assertEqual(record["frozen"]["llm_payload_version"], 2)
         self.assertEqual(json.loads(self.seeds_path.read_text("utf-8")), record)
         with self.assertRaises(FileExistsError):
             self.draw()

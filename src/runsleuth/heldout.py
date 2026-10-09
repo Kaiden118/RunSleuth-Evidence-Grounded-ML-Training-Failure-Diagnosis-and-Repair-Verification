@@ -63,12 +63,13 @@ def frozen_components() -> dict:
     """What decides the held-out results; none of it may change after the draw."""
     from runsleuth.camelyon_optimizer_training import REPAIR_POLICY
     from runsleuth.camelyon_variant_runner import REPAIR_GATE
-    from runsleuth.diagnose_run import PROMPT_VERSION, system_prompt
+    from runsleuth.diagnose_run import PAYLOAD_VERSION, PROMPT_VERSION, system_prompt
     from runsleuth.signature_matching import LIBRARY_PATH
 
     return {
         "failure_signatures_sha256": file_sha256(LIBRARY_PATH),
         "llm_prompt_version": PROMPT_VERSION,
+        "llm_payload_version": PAYLOAD_VERSION,
         "llm_system_prompt_sha256": hashlib.sha256(system_prompt().encode()).hexdigest(),
         "repair_gate": dict(REPAIR_GATE),
         "repair_policy": dict(REPAIR_POLICY),

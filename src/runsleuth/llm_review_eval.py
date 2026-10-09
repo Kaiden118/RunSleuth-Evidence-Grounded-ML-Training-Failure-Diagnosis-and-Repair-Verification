@@ -25,6 +25,7 @@ from runsleuth.camelyon_optimizer_probe import file_sha256
 from runsleuth.diagnose_run import (
     MAX_MODEL_CALLS,
     MAX_OUTPUT_TOKENS,
+    PAYLOAD_VERSION,
     PROMPT_VERSION,
     RESPONSE_FORMATS,
     diagnose_run,
@@ -101,13 +102,21 @@ def run_reviews(
     pause: float = 0.0,
     error_wait: float = 0.0,
     response_format: str = "json_schema",
+    only_cases: set[str] | None = None,
     sleep=time.sleep,
 ) -> Path:
     """Review every pending case; returns the run directory.
 
     pause separates cases; error_wait follows an API error, so a briefly overloaded
-    server can recover before the next case.
+    server can recover before the next case. only_cases limits the run to those
+    case ids, for example the failed reviews of an earlier run.
     """
+    cases = list(_cases(report_paths))
+    if only_cases is not None:
+        unknown = only_cases - {case_id for case_id, _, _ in cases}
+        if not only_cases or unknown:
+            raise ValueError(f"Choose known case ids; unknown: {sorted(unknown)}")
+        cases = [case for case in cases if case[0] in only_cases]
     directory = run_directory(output_dir, provider, model)
     directory.mkdir(parents=True, exist_ok=True)
     settings = {
@@ -116,10 +125,13 @@ def run_reviews(
         "max_model_calls": MAX_MODEL_CALLS,
         "max_output_tokens": MAX_OUTPUT_TOKENS,
         "prompt_version": PROMPT_VERSION,
+        "payload_version": PAYLOAD_VERSION,
         "system_prompt_sha256": hashlib.sha256(system_prompt().encode()).hexdigest(),
         "response_format": response_format,
         "reports": [{"path": str(path), "sha256": file_sha256(path)} for path in report_paths],
     }
+    if only_cases is not None:
+        settings["case_ids"] = sorted(only_cases)
     settings_path = directory / "run.json"
     if not settings_path.is_file():
         settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
@@ -130,7 +142,7 @@ def run_reviews(
         for case_id, record in _latest(directory).items()
         if record["llm_status"] in FINAL_STATUSES
     }
-    pending = [case for case in _cases(report_paths) if case[0] not in done]
+    pending = [case for case in cases if case[0] not in done]
     total = len(done) + len(pending)
     if limit is not None:
         pending = pending[:limit]
@@ -220,13 +232,16 @@ def _statistics(records: list[dict]) -> dict:
 
 def summarize(directory: Path) -> dict:
     """Statistics of one run directory, overall, by reference mode and by health."""
-    # Runs before prompt versioning used prompt 1 with JSON-object replies.
+    # Runs before versioning used prompt 1, JSON-object replies and payload 1.
     settings = {
         "prompt_version": 1,
+        "payload_version": 1,
         "response_format": "json_object",
         **json.loads((directory / "run.json").read_text(encoding="utf-8")),
     }
     expected = [case_id for case_id, _, _ in _cases([Path(r["path"]) for r in settings["reports"]])]
+    if "case_ids" in settings:
+        expected = [case_id for case_id in expected if case_id in settings["case_ids"]]
     latest = _latest(directory)
     records = [latest[case_id] for case_id in expected if case_id in latest]
     return {
@@ -236,6 +251,7 @@ def summarize(directory: Path) -> dict:
                 "provider",
                 "model",
                 "prompt_version",
+                "payload_version",
                 "response_format",
                 "max_output_tokens",
             )
@@ -326,6 +342,11 @@ def main() -> None:
         default="json_schema",
         help="json_object for a provider that rejects the reply schema",
     )
+    run.add_argument(
+        "--only-invalid-from",
+        type=Path,
+        help="Review only the cases that ended invalid in this earlier run directory",
+    )
     summary = commands.add_parser("summarize", help="Compare finished run directories")
     summary.add_argument("directories", type=Path, nargs="+")
     summary.add_argument("--output", type=Path)
@@ -335,6 +356,15 @@ def main() -> None:
             client, model = create_llm_client(args.provider, args.model)
         except RuntimeError as error:
             raise SystemExit(str(error)) from error
+        only_cases = None
+        if args.only_invalid_from:
+            only_cases = {
+                case_id
+                for case_id, record in _latest(args.only_invalid_from).items()
+                if record["llm_status"] == "invalid_output"
+            }
+            if not only_cases:
+                raise SystemExit(f"No invalid reviews in {args.only_invalid_from}")
         directory = run_reviews(
             args.reports or record_reports(args.from_record),
             client,
@@ -345,6 +375,7 @@ def main() -> None:
             pause=args.pause,
             error_wait=args.error_wait,
             response_format=args.response_format,
+            only_cases=only_cases,
         )
         print(summary_table([summarize(directory)]))
         print(f"run_directory={directory}")

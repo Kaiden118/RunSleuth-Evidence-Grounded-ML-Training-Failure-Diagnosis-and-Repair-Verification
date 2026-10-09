@@ -24,7 +24,8 @@ class ServiceUnavailable(RuntimeError):
 class EchoClient:
     """Answers with the matcher's diagnosis, or a fixed one, citing one exact evidence value."""
 
-    def __init__(self, diagnosis=None, *, error=False, bad_first_reply=False):
+    def __init__(self, diagnosis=None, *, error=False, bad_first_reply=False, bad=False):
+        self.bad = bad
         self.diagnosis = diagnosis
         self.error = error
         self.bad_first_reply = bad_first_reply
@@ -51,7 +52,7 @@ class EchoClient:
                 "disagreement_with_matcher": None,
             }
         )
-        if self.bad_first_reply and len(self.requests) == 1:
+        if self.bad or (self.bad_first_reply and len(self.requests) == 1):
             reply = "not json"
         return SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content=reply), finish_reason="stop")],
@@ -94,7 +95,8 @@ class ReviewEvaluationTests(unittest.TestCase):
         self.assertTrue(summary["complete"])
         self.assertEqual(directory.name, "ollama-fake-model-prompt-v2")
         self.assertEqual(
-            (summary["prompt_version"], summary["response_format"]), (2, "json_schema")
+            (summary["prompt_version"], summary["payload_version"], summary["response_format"]),
+            (2, 2, "json_schema"),
         )
         overall = summary["overall"]
         self.assertEqual((overall["cases"], overall["completed"]), (12, 12))
@@ -158,16 +160,42 @@ class ReviewEvaluationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "other settings or reports"):
                     self.run_reviews(EchoClient(), **change)
 
+    def test_only_the_failed_reviews_of_an_earlier_run_are_reviewed_again(self):
+        earlier = self.run_reviews(EchoClient(bad=True), limit=2)
+        self.assertEqual(module.summarize(earlier)["overall"]["invalid_output"], 2)
+        arguments = ["eval", "run", "--reports", *map(str, self.reports), "--provider", "ollama"]
+        arguments += ["--model", "fake-model", "--output-dir", str(self.root / "again")]
+        arguments += ["--only-invalid-from", str(earlier)]
+        client = EchoClient()
+        with (
+            patch.object(sys, "argv", arguments),
+            patch("runsleuth.llm_client.create_llm_client", return_value=(client, "fake-model")),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            module.main()
+        self.assertEqual(len(client.requests), 2)
+        again = module.summarize(module.run_directory(self.root / "again", "ollama", "fake-model"))
+        self.assertTrue(again["complete"])
+        self.assertEqual((again["expected_cases"], again["overall"]["completed"]), (2, 2))
+        self.assertEqual(
+            [case["case_id"] for case in again["cases"]],
+            ["run-a:clean:reference_free", "run-a:clean:with_reference"],
+        )
+        for only_cases in (set(), {"run-z:clean:reference_free"}):
+            with self.subTest(only_cases=only_cases), self.assertRaises(ValueError):
+                self.run_reviews(EchoClient(), only_cases=only_cases)
+
     def test_runs_before_prompt_versioning_summarize_as_prompt_1(self):
         directory = self.run_reviews(EchoClient(), response_format="json_object", limit=1)
         settings = json.loads((directory / "run.json").read_text(encoding="utf-8"))
         self.assertEqual(settings["response_format"], "json_object")
-        for key in ("prompt_version", "system_prompt_sha256", "response_format"):
+        for key in ("prompt_version", "payload_version", "system_prompt_sha256", "response_format"):
             settings.pop(key)
         (directory / "run.json").write_text(json.dumps(settings), encoding="utf-8")
         summary = module.summarize(directory)
         self.assertEqual(
-            (summary["prompt_version"], summary["response_format"]), (1, "json_object")
+            (summary["prompt_version"], summary["payload_version"], summary["response_format"]),
+            (1, 1, "json_object"),
         )
         self.assertIn("fake-model p1", module.summary_table([summary]))
 

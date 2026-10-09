@@ -89,7 +89,10 @@ held-out draw, was evaluated on the held-out runs
 - Citation checks caught Qwen citing evidence that does not exist (prompt 1) and,
   on held-out runs, 12 replies with a wrong learning rate. Ollama's
   schema-constrained decoding rejects the leading zero in the exponent Python
-  writes (`e-05`), so Qwen's exact copy was cut to `e-0`.
+  writes (`e-05`), so Qwen's exact copy was cut to `e-0`. Writing exponents
+  without that zero fixed it: re-reviewed afterwards, all 12 passed the checks,
+  11 on the first try ([record](evaluations/results/llm-review-eval-heldout-payload-v2.json)).
+  That confirms the cause on cases already seen; it is not a held-out result.
 - ‡Of completed reviews. Reviews that never passed the checks (1 and 12, all on
   healthy runs) left the matcher's diagnosis standing. The matcher stays final,
   so no disagreement or failed review changed a diagnosis.

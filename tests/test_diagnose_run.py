@@ -4,6 +4,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from test_signature_matching import SCENARIOS
+from test_signature_matching import run as make_run
 
 from runsleuth import diagnose_run as module
 
@@ -184,6 +186,24 @@ class DiagnoseRunTests(unittest.TestCase):
         self.assertEqual(result["llm"]["model_calls"], 2)
         self.assertEqual(result["llm"]["attempts"][0]["issues"][0]["type"], "wrong_value")
         self.assertIn("wrong_value", client.requests[1]["messages"][-1]["content"])
+
+    def test_payload_exponents_are_grammar_safe_and_values_unchanged(self):
+        # Ollama's schema grammar forbids exponent leading zeros, so Qwen's exact copy of
+        # a held-out learning rate written 9.99e-05 was cut to 9.99e-0.
+        small = {**make_run(lr=5e-5), "optimizer": "AdamW"}
+        client = FakeClient(["not json", "not json"])
+        result = module.diagnose_run(small, client=client, model="fake-model")
+        content = client.requests[0]["messages"][1]["content"]
+        self.assertIn("5e-5", content)
+        self.assertIsNone(re.search(r"[0-9][eE][+-]?0[0-9]", content))
+        evidence = json.loads(json.dumps(result["matcher"]["evidence"]))
+        self.assertEqual(json.loads(content)["evidence"], evidence)
+        self.assertEqual(result["llm"]["payload_version"], 2)
+        # Strings, keys included, are left as they are.
+        self.assertEqual(
+            module._dumps({"name 1e-05": [1e-05, 'a "2e-05"']}),
+            '{"name 1e-05": [1e-5, "a \\"2e-05\\""]}',
+        )
 
     def test_inline_reasoning_before_the_json_is_ignored_and_kept_in_the_record(self):
         result, client = self.review(["<think>\nThe rate looks high.\n</think>\n" + reply()])

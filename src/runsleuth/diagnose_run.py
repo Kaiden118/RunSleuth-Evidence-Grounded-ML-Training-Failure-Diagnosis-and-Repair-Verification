@@ -25,6 +25,12 @@ MAX_MODEL_CALLS = 2
 # Version 2 clarifies skipped and holding reference conditions after the first model
 # comparison, and constrains replies with a JSON Schema.
 PROMPT_VERSION = 2
+# Payload 2 writes exponents without leading zeros (5e-5, not Python's 5e-05).
+# llama.cpp's JSON grammar, which Ollama uses for schema-constrained replies,
+# forbids them, so a model copying 5e-05 exactly was cut to 5e-0.
+PAYLOAD_VERSION = 2
+# A JSON string is matched whole, so only number tokens lose their exponent zeros.
+EXPONENT_ZEROS = re.compile(r'"(?:\\.|[^"\\])*"|(?<=[0-9])([eE][+-]?)0+(?=[0-9])')
 RESPONSE_FORMATS = ("json_schema", "json_object")
 # Thinking models (Gemini 3, Qwen3) spend output tokens on reasoning before the JSON.
 MAX_OUTPUT_TOKENS = 4000
@@ -128,6 +134,11 @@ def _compact_verdicts(result: dict) -> list[dict]:
     ]
 
 
+def _dumps(value) -> str:
+    """JSON with grammar-safe exponents; every number keeps its value."""
+    return EXPONENT_ZEROS.sub(lambda match: match[1] or match[0], json.dumps(value))
+
+
 def system_prompt() -> str:
     return SYSTEM_PROMPT + "\nJSON Schema:\n" + json.dumps(LLMDiagnosis.model_json_schema())
 
@@ -201,11 +212,12 @@ def request_llm_diagnosis(
     }
     messages = [
         {"role": "system", "content": system},
-        {"role": "user", "content": json.dumps(payload)},
+        {"role": "user", "content": _dumps(payload)},
     ]
     record = {
         "model": model,
         "prompt_version": PROMPT_VERSION,
+        "payload_version": PAYLOAD_VERSION,
         "system_prompt_sha256": hashlib.sha256(system.encode()).hexdigest(),
         "response_format": response_format,
         "status": "running",

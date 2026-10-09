@@ -1,19 +1,15 @@
-import json
-from pathlib import Path
-
 import pytest
 import torch
 from torch import nn
 from torch.optim import SGD
 from torch.utils.data import DataLoader, TensorDataset
 
-from runsleuth.config import TrainingConfig
-from runsleuth.telemetry import (
+from runsleuth.train import (
     gradient_l2_norm,
     parameter_update_l2_norm,
     snapshot_parameters,
+    train_one_epoch,
 )
-from runsleuth.train import train_one_epoch
 
 
 def test_gradient_and_parameter_update_norms() -> None:
@@ -36,18 +32,6 @@ def test_gradient_and_parameter_update_norms() -> None:
     optimizer.step()
 
     assert parameter_update_l2_norm(model, before_step) == pytest.approx(1.0)
-
-
-def test_training_config_is_saved_as_json(tmp_path: Path) -> None:
-    config = TrainingConfig(run_name="test-run")
-    config_path = tmp_path / "config.json"
-
-    config.save(config_path)
-
-    saved_config = json.loads(config_path.read_text(encoding="utf-8"))
-    assert saved_config["run_name"] == "test-run"
-    assert saved_config["learning_rate"] == 0.001
-    assert saved_config["epochs"] == 3
 
 
 @pytest.mark.parametrize("step_enabled", [True, False])

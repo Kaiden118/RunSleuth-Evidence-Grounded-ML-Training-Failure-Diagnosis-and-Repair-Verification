@@ -1,10 +1,8 @@
 """Shared bounded-training loop and development gate for Camelyon17 fault experiments.
 
-camelyon_optimizer_training.py is a recorded fixture for the source-localization
-experiments, which parse its optimizer dispatch, so it is imported but never
-modified. run_training_variant mirrors its _run_variant and performance_checks
-mirrors its gate; tests require identical results on shared variants and identical
-gate outputs. Experiments plug in their own optimizer factory and loop options.
+run_training_variant mirrors the stale-binding experiment's _run_variant in
+camelyon_optimizer_training.py and performance_checks mirrors its gate; tests
+require identical results on shared variants and identical gate outputs. Experiments plug in their own optimizer factory and loop options.
 verify_repair applies development gate v2 on top of performance_checks.
 """
 
@@ -91,11 +89,9 @@ def run_training_variant(
         build_camelyon_model,
     )
     from runsleuth.camelyon_data import build_camelyon_data
-    from runsleuth.optimizer_audit import audit_optimizer_parameters
     from runsleuth.optimizer_probe import state_dict_sha256
-    from runsleuth.parameter_group_monitor import ParameterGroupMonitor
-    from runsleuth.telemetry import EpochMetrics, append_epoch_metrics
-    from runsleuth.train import seed_everything, train_one_epoch
+    from runsleuth.parameter_group_monitor import ParameterGroupMonitor, audit_optimizer_parameters
+    from runsleuth.train import EpochMetrics, append_epoch_metrics, seed_everything, train_one_epoch
 
     directory.mkdir()
     config.save(directory / "config.json")

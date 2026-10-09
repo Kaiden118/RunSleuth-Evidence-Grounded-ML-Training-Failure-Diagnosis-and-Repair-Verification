@@ -18,14 +18,13 @@ from dataclasses import asdict
 import torch
 from torch import nn
 
-from runsleuth.optimizer_audit import audit_optimizer_parameters
 from runsleuth.optimizer_probe import (
     _l2_norm,
     _parameter_groups,
     make_probe_optimizer,
     state_dict_sha256,
 )
-from runsleuth.parameter_group_monitor import parameter_trainability
+from runsleuth.parameter_group_monitor import audit_optimizer_parameters, parameter_trainability
 
 VARIANTS = (
     "clean",

@@ -4,7 +4,7 @@ import json
 import unittest
 from dataclasses import FrozenInstanceError
 
-from runsleuth.optimizer_audit import OptimizerAudit, audit_optimizer_parameters
+from runsleuth.parameter_group_monitor import OptimizerAudit, audit_optimizer_parameters
 
 
 class FakeParameter:

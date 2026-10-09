@@ -201,13 +201,11 @@ def run_probe(
         source_directory.mkdir()
         report["source_sha256"] = {}
         for name in (
-            "optimizer_audit.py",
             "optimizer_probe.py",
             "camelyon_optimizer_probe.py",
             "camelyon.py",
             "camelyon_config.py",
             "camelyon_data.py",
-            "camelyon_mirror.py",
             "train.py",
         ):
             destination = source_directory / name

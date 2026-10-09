@@ -20,8 +20,14 @@ from torchvision.models import ResNet18_Weights, resnet18
 
 from runsleuth.camelyon_config import CamelyonConfig
 from runsleuth.camelyon_data import build_camelyon_data
-from runsleuth.telemetry import EpochMetrics, append_epoch_metrics
-from runsleuth.train import evaluate, resolve_device, seed_everything, train_one_epoch
+from runsleuth.train import (
+    EpochMetrics,
+    append_epoch_metrics,
+    evaluate,
+    resolve_device,
+    seed_everything,
+    train_one_epoch,
+)
 
 
 def build_camelyon_model(*, pretrained: bool = True) -> nn.Module:
@@ -60,9 +66,7 @@ def _snapshot_sources(directory: Path) -> dict[str, str]:
         "camelyon.py",
         "camelyon_config.py",
         "camelyon_data.py",
-        "camelyon_mirror.py",
         "train.py",
-        "telemetry.py",
     ):
         source = Path(__file__).parent / name
         shutil.copyfile(source, destination / name)

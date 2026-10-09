@@ -4,23 +4,132 @@ import argparse
 import json
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from runsleuth.camelyon_config import CamelyonConfig
 from runsleuth.camelyon_optimizer_probe import file_sha256, load_reference
 from runsleuth.camelyon_optimizer_training import (
     REPAIR_POLICY,
+    assess_rebind_training,
     compare_performance,
     run_optimizer_training,
 )
-from runsleuth.optimizer_agent_repair import (
-    VARIANTS,
-    _initial_state_hash,
-    _read,
-    _scoped,
-    _verify_training_result,
+from runsleuth.optimizer_evidence import (
+    MAX_FILE_BYTES,
+    _data_identity,
+    _parse,
+    _same,
+    inspect_optimizer_run,
 )
-from runsleuth.optimizer_evidence import _data_identity, _same
+
+VARIANTS = ("clean", "stale_head", "stale_head_repaired")
+
+
+def _scoped(root: Path, path: Path, *, file: bool = False) -> Path:
+    if PureWindowsPath(str(path)).drive and not path.is_absolute():
+        raise ValueError("Foreign or drive-relative Windows paths are not supported")
+    resolved = (path if path.is_absolute() else root / path).resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError("Path must stay inside the workspace boundary")
+    if file and not resolved.is_file():
+        raise ValueError(f"Required file is missing: {path}")
+    return resolved
+
+
+def _read(path: Path) -> dict:
+    with path.open("rb") as stream:
+        payload = stream.read(MAX_FILE_BYTES + 1)
+    if len(payload) > MAX_FILE_BYTES:
+        raise ValueError("JSON artifact exceeds the input size limit")
+    result = _parse(payload.decode("utf-8-sig"))
+    json.dumps(result, allow_nan=False)  # Also rejects overflow such as 1e999.
+    return result
+
+
+def _initial_state_hash(checkpoint: Path) -> str:
+    import torch
+
+    from runsleuth.optimizer_probe import state_dict_sha256
+
+    return state_dict_sha256(torch.load(checkpoint, map_location="cpu", weights_only=True))
+
+
+def _verify_training_result(path: Path, training_root: Path, plan: dict, root: Path) -> dict:
+    path = _scoped(training_root.resolve(), path, file=True)
+    if path.name != "optimizer_training_report.json":
+        raise ValueError("Unexpected training report filename")
+    report = _read(path)
+    expected = {
+        "schema_version": 1,
+        "task": "camelyon17_optimizer_rebind_verification",
+        "status": "completed",
+        "error": None,
+        "epochs_per_variant": plan["budget"]["epochs_per_variant"],
+        "training_epoch_upper_bound": plan["budget"]["training_epoch_upper_bound"],
+        "training_mode": "from_reference_initial_state",
+        "checkpoint_selection": "fixed_final_epoch",
+        "test_evaluated": False,
+        "repair_acceptance_requested": True,
+        "repair_acceptance_evaluated": True,
+        "reference_initial_state_sha256": plan["baseline"]["initial_state_sha256"],
+    }
+    for key, value in expected.items():
+        if key not in report:
+            raise ValueError(f"Training report is missing {key}")
+        _same(report[key], value, key)
+    _same(
+        _scoped(root, Path(report["reference_run"])).as_posix(),
+        (root / plan["inputs"]["baseline_run"]).as_posix(),
+        "Training baseline",
+    )
+    for report_key, filename in (
+        ("reference_config_sha256", "config.json"),
+        ("reference_initial_checkpoint_sha256", "initial_state_dict.pt"),
+        ("reference_manifest_sha256", "data_manifest.json"),
+    ):
+        _same(report.get(report_key), plan["baseline"]["files_sha256"][filename], report_key)
+    _same(
+        report.get("controls", {}).get("performance_threshold"), plan["policy"], "Training policy"
+    )
+    policy_record = report["repair_verification_policy"]
+    policy_path = _scoped(training_root.resolve(), Path(policy_record["path"]), file=True)
+    _same(file_sha256(policy_path), policy_record["sha256"], "Saved policy digest")
+    policy = _read(policy_path)
+    _same(policy.get("policy"), plan["policy"], "Saved policy")
+    _same(policy.get("epochs_per_variant"), expected["epochs_per_variant"], "Saved policy budget")
+    if not isinstance(report.get("variants"), dict) or set(report["variants"]) != set(VARIANTS):
+        raise ValueError("Training must contain exactly the three planned variants")
+    expected_config = {
+        **plan["baseline"]["scientific_config"],
+        "epochs": expected["epochs_per_variant"],
+    }
+    for name in VARIANTS:
+        directory = _scoped(training_root.resolve(), path.parent / name)
+        child_path = _scoped(training_root.resolve(), directory / "run_report.json", file=True)
+        child = _read(child_path)
+        _same(child, report["variants"][name], f"Recorded {name} report")
+        _same(child.get("variant"), name, "Training variant")
+        recorded_directory = _scoped(training_root.resolve(), Path(child["run_directory"]))
+        _same(recorded_directory.as_posix(), directory.as_posix(), "Variant output directory")
+        evidence = inspect_optimizer_run(
+            directory,
+            require_file=lambda item: _scoped(training_root.resolve(), item, file=True),
+        )
+        _same(evidence["config"], expected_config, f"{name} scientific configuration")
+        _same(
+            evidence["initial_state_sha256"],
+            plan["baseline"]["initial_state_sha256"],
+            f"{name} initialization",
+        )
+        _same(evidence["data_identity"], plan["baseline"]["data_identity"], f"{name} selected data")
+    verification = assess_rebind_training(
+        report["variants"],
+        expected["reference_initial_state_sha256"],
+        expected["epochs_per_variant"],
+    )
+    _same(verification, report.get("repair_verification"), "Recomputed repair verification")
+    _same(verification["policy"], plan["policy"], "Verification policy")
+    return verification
 
 
 def _scientific(config: CamelyonConfig) -> dict:
@@ -186,7 +295,7 @@ def run_optimizer_sweep(
     source_names = (
         "camelyon_optimizer_sweep.py",
         "camelyon_optimizer_training.py",
-        "optimizer_agent_repair.py",
+        "optimizer_evidence.py",
     )
     plan = {
         "schema_version": 1,

@@ -63,13 +63,10 @@ def snapshot_sources(directory: Path) -> dict[str, str]:
         "parameter_group_monitor.py",
         "camelyon_optimizer_probe.py",
         "optimizer_probe.py",
-        "optimizer_audit.py",
         "camelyon.py",
         "camelyon_config.py",
         "camelyon_data.py",
-        "camelyon_mirror.py",
         "train.py",
-        "telemetry.py",
     ):
         shutil.copyfile(Path(__file__).parent / name, destination / name)
         hashes[name] = file_sha256(destination / name)
@@ -280,15 +277,13 @@ def _run_variant(variant, config, reference_manifest, state, expected_hash, dire
         build_camelyon_model,
     )
     from runsleuth.camelyon_data import build_camelyon_data
-    from runsleuth.optimizer_audit import audit_optimizer_parameters
     from runsleuth.optimizer_probe import (
         make_probe_optimizer,
         make_repaired_probe_optimizer,
         state_dict_sha256,
     )
-    from runsleuth.parameter_group_monitor import ParameterGroupMonitor
-    from runsleuth.telemetry import EpochMetrics, append_epoch_metrics
-    from runsleuth.train import seed_everything, train_one_epoch
+    from runsleuth.parameter_group_monitor import ParameterGroupMonitor, audit_optimizer_parameters
+    from runsleuth.train import EpochMetrics, append_epoch_metrics, seed_everything, train_one_epoch
 
     directory.mkdir()
     config.save(directory / "config.json")

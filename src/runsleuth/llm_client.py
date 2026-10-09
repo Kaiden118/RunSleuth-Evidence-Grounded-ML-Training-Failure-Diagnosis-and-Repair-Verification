@@ -4,8 +4,6 @@ import os
 
 from openai import OpenAI
 
-from runsleuth.diagnostic_tools import DiagnosticTools
-
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 PROVIDERS = ("gemini", "ollama")
@@ -30,29 +28,3 @@ def create_llm_client(provider: str = "gemini", model: str | None = None) -> tup
         base_url = os.environ.get("OLLAMA_BASE_URL", "").strip() or OLLAMA_BASE_URL
         return OpenAI(api_key="ollama", base_url=base_url, timeout=600.0, max_retries=0), model
     raise ValueError(f"Unknown provider {provider!r}; expected one of {PROVIDERS}")
-
-
-def build_openai_tools(diagnostic_tools: DiagnosticTools) -> list[dict[str, object]]:
-    """Describe our flat path arguments; local validation remains authoritative."""
-    tools = []
-    for definition in diagnostic_tools.definitions():
-        schema = definition["parameters"]
-        parameters = {
-            "type": "object",
-            "properties": {
-                name: {key: value for key, value in field.items() if key in ("type", "description")}
-                for name, field in schema["properties"].items()
-            },
-            "required": schema["required"],
-        }
-        tools.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": definition["name"],
-                    "description": definition["description"],
-                    "parameters": parameters,
-                },
-            }
-        )
-    return tools

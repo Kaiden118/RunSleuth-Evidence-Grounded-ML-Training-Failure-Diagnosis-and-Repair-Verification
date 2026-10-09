@@ -41,3 +41,41 @@ jobs:
 
       - name: Test
         run: python -m pytest
+
+  docker:
+    name: Docker image (build, test, diagnose an example)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          tags: runsleuth-test
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run the tests inside the image
+        run: docker run --rm runsleuth-test
+
+      - name: Build the runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          tags: runsleuth
+          load: true
+          cache-from: type=gha
+
+      - name: Diagnose the example run inside the image
+        run: |
+          docker run --rm -v "$PWD/examples:/work/examples:ro" runsleuth \
+            --run examples/frozen_head/run_report.json \
+            --reference examples/clean/run_report.json --no-llm | tee diagnosis.txt
+          grep -q "Diagnosis: frozen_head" diagnosis.txt

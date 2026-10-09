@@ -125,6 +125,23 @@ pip install -e ".[dev,llm,hf,camelyon]"
 Choose the PyTorch index that matches your CUDA version on
 [pytorch.org](https://pytorch.org/get-started/locally/).
 
+### Try it on an example
+
+No data or training needed: diagnose the [example](examples), a held-out run whose
+classifier head was frozen while its validation metrics stayed within the
+no-regression thresholds of its clean reference:
+
+```bat
+python -m runsleuth.diagnose_run --run examples/frozen_head/run_report.json --reference examples/clean/run_report.json --no-llm
+```
+
+Or with Docker, without installing Python or PyTorch:
+
+```bat
+docker build --target runtime -t runsleuth .
+docker run --rm -v "%cd%/examples:/work/examples:ro" runsleuth --run examples/frozen_head/run_report.json --reference examples/clean/run_report.json --no-llm
+```
+
 ### 1. Prepare the data and a baseline
 
 Set `data_dir` in [`configs/camelyon17_clean.json`](configs/camelyon17_clean.json)
@@ -240,6 +257,8 @@ python -m pytest
 
 [GitHub Actions](.github/workflows/ci.yml) runs the linter and every test on CPU for
 each push; the tests use tiny models and fake data, so they need no GPU or dataset.
+It also builds the [Docker image](Dockerfile), runs the tests inside it and
+diagnoses the example there. `docker build --target test` builds the test image.
 
 ## License
 

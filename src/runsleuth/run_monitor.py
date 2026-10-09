@@ -7,9 +7,11 @@
                 optimizer.zero_grad()
                 loss_fn(model(inputs), targets).backward()
                 optimizer.step()
-        monitor.log(train_loss=..., validation_accuracy=...)
+        monitor.log(id_validation_accuracy=..., id_validation_loss=...)
     monitor.close()
 
+Log validation metrics as <split>_validation_accuracy and _loss so that
+runsleuth verify can compare a repaired run with a healthy one.
 The monitor writes run_report.json after every epoch in the format the
 Camelyon17 runners use, so signature_matching can diagnose the run. It observes
 training forwards and optimizer steps through hooks and never changes

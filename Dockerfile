@@ -2,7 +2,7 @@
 # Two targets on CPU PyTorch:
 #   runtime  diagnoses a run report:
 #     docker build --target runtime -t runsleuth .
-#     docker run --rm -v "$PWD/examples:/work/examples:ro" runsleuth \
+#     docker run --rm -v "$PWD/examples:/work/examples:ro" runsleuth diagnose \
 #       --run examples/frozen_head/run_report.json \
 #       --reference examples/clean/run_report.json --no-llm
 #   test     runs the whole test suite:
@@ -24,7 +24,7 @@ RUN pip install ".[llm]"
 RUN useradd --create-home runsleuth && mkdir /work && chown runsleuth /work
 USER runsleuth
 WORKDIR /work
-ENTRYPOINT ["python", "-m", "runsleuth.diagnose_run"]
+ENTRYPOINT ["runsleuth"]
 CMD ["--help"]
 
 FROM base AS test

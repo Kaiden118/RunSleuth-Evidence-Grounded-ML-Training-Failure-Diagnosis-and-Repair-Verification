@@ -25,12 +25,10 @@ SOURCE_FILES = (
     "frozen_head_probe.py",
     "camelyon_optimizer_probe.py",
     "optimizer_probe.py",
-    "optimizer_audit.py",
     "parameter_group_monitor.py",
     "camelyon.py",
     "camelyon_config.py",
     "camelyon_data.py",
-    "camelyon_mirror.py",
     "train.py",
 )
 

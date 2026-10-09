@@ -4,12 +4,12 @@ from torch import nn
 from torch.optim import SGD
 from torch.utils.data import DataLoader, TensorDataset
 
-from runsleuth.telemetry import (
+from runsleuth.train import (
     gradient_l2_norm,
     parameter_update_l2_norm,
     snapshot_parameters,
+    train_one_epoch,
 )
-from runsleuth.train import train_one_epoch
 
 
 def test_gradient_and_parameter_update_norms() -> None:

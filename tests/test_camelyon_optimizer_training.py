@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from runsleuth import camelyon_optimizer_training as experiment
 from runsleuth.camelyon_config import CamelyonConfig
-from runsleuth.optimizer_audit import OptimizerAudit
+from runsleuth.parameter_group_monitor import OptimizerAudit
 
 TORCH_AVAILABLE = bool(
     importlib.util.find_spec("torch") and importlib.util.find_spec("torchvision")

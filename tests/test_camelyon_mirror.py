@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from runsleuth import camelyon_mirror as mirror
+from runsleuth import camelyon_data as mirror
 
 
 class ClassLabel:

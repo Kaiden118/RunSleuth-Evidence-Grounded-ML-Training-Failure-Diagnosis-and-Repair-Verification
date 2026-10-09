@@ -33,8 +33,11 @@ import torch
 from torch import nn
 from torch.optim import Optimizer
 
-from runsleuth.optimizer_audit import audit_optimizer_parameters
-from runsleuth.parameter_group_monitor import ParameterGroupMonitor, parameter_trainability
+from runsleuth.parameter_group_monitor import (
+    ParameterGroupMonitor,
+    audit_optimizer_parameters,
+    parameter_trainability,
+)
 
 
 def _l2(tensors) -> float:

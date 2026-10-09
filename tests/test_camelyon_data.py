@@ -5,7 +5,6 @@ import importlib.util
 import json
 import pickle
 import random
-import sys
 import tempfile
 import unittest
 from collections import Counter
@@ -174,12 +173,7 @@ class LoaderIntegrationTests(unittest.TestCase):
             seed=42,
         )
         self.load_mirror = Mock(return_value=self.dataset)
-        self.mock_mirror = patch.dict(
-            sys.modules,
-            {
-                "runsleuth.camelyon_mirror": SimpleNamespace(load_camelyon_mirror=self.load_mirror),
-            },
-        )
+        self.mock_mirror = patch("runsleuth.camelyon_data.load_camelyon_mirror", self.load_mirror)
         self.mock_mirror.start()
         self.addCleanup(self.mock_mirror.stop)
 

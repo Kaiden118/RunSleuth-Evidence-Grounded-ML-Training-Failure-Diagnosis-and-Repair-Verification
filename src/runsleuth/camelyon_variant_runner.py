@@ -89,11 +89,9 @@ def run_training_variant(
         build_camelyon_model,
     )
     from runsleuth.camelyon_data import build_camelyon_data
-    from runsleuth.optimizer_audit import audit_optimizer_parameters
     from runsleuth.optimizer_probe import state_dict_sha256
-    from runsleuth.parameter_group_monitor import ParameterGroupMonitor
-    from runsleuth.telemetry import EpochMetrics, append_epoch_metrics
-    from runsleuth.train import seed_everything, train_one_epoch
+    from runsleuth.parameter_group_monitor import ParameterGroupMonitor, audit_optimizer_parameters
+    from runsleuth.train import EpochMetrics, append_epoch_metrics, seed_everything, train_one_epoch
 
     directory.mkdir()
     config.save(directory / "config.json")

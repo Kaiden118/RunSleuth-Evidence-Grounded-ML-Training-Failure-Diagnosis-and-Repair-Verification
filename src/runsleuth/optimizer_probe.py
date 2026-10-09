@@ -19,7 +19,7 @@ from dataclasses import asdict
 import torch
 from torch import nn
 
-from runsleuth.optimizer_audit import audit_optimizer_parameters
+from runsleuth.parameter_group_monitor import audit_optimizer_parameters
 
 _VARIANTS = ("clean", "stale_head")
 

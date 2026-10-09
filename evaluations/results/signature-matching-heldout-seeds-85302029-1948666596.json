@@ -1,0 +1,641 @@
+{
+  "scope": "held-out seeds [85302029, 1948666596], drawn after the signatures, LLM prompt and repair gate were frozen; author-injected faults, development thresholds, not a statistical benchmark",
+  "summary": {
+    "reference_free": {
+      "exact_matches": 28,
+      "pending_reference_with_true_fault": 4,
+      "cases": 32,
+      "healthy_false_positives": 0,
+      "healthy_cases": 18,
+      "confusion": {
+        "no_known_fault": {
+          "no_known_fault": 18
+        },
+        "stale_optimizer_binding": {
+          "stale_optimizer_binding": 2
+        },
+        "frozen_head": {
+          "pending_reference": 2
+        },
+        "high_learning_rate": {
+          "high_learning_rate": 2
+        },
+        "missing_optimizer_step": {
+          "missing_optimizer_step": 2
+        },
+        "train_eval_normalization_mismatch": {
+          "train_eval_normalization_mismatch": 2
+        },
+        "classifier_size_mismatch": {
+          "classifier_size_mismatch": 2
+        },
+        "frozen_backbone_module": {
+          "pending_reference": 2
+        }
+      }
+    },
+    "with_reference": {
+      "exact_matches": 32,
+      "pending_reference_with_true_fault": 0,
+      "cases": 32,
+      "healthy_false_positives": 0,
+      "healthy_cases": 18,
+      "confusion": {
+        "no_known_fault": {
+          "no_known_fault": 18
+        },
+        "stale_optimizer_binding": {
+          "stale_optimizer_binding": 2
+        },
+        "frozen_head": {
+          "frozen_head": 2
+        },
+        "high_learning_rate": {
+          "high_learning_rate": 2
+        },
+        "missing_optimizer_step": {
+          "missing_optimizer_step": 2
+        },
+        "train_eval_normalization_mismatch": {
+          "train_eval_normalization_mismatch": 2
+        },
+        "classifier_size_mismatch": {
+          "classifier_size_mismatch": 2
+        },
+        "frozen_backbone_module": {
+          "frozen_backbone_module": 2
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "report": "artifacts\\frozen_head_training\\run-20261008T213753095258Z\\frozen_head_training_report.json",
+      "seed": 85302029,
+      "variant": "clean",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\frozen_head_training\\run-20261008T213753095258Z\\frozen_head_training_report.json",
+      "seed": 85302029,
+      "variant": "stale_head",
+      "truth": "stale_optimizer_binding",
+      "reference_free": {
+        "diagnosis": "stale_optimizer_binding",
+        "supported": [
+          "stale_optimizer_binding"
+        ],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "stale_optimizer_binding",
+        "supported": [
+          "stale_optimizer_binding"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\frozen_head_training\\run-20261008T213753095258Z\\frozen_head_training_report.json",
+      "seed": 85302029,
+      "variant": "frozen_head",
+      "truth": "frozen_head",
+      "reference_free": {
+        "diagnosis": "pending_reference",
+        "supported": [],
+        "pending_reference": [
+          "frozen_head"
+        ]
+      },
+      "with_reference": {
+        "diagnosis": "frozen_head",
+        "supported": [
+          "frozen_head"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\frozen_head_training\\run-20261008T213753095258Z\\frozen_head_training_report.json",
+      "seed": 85302029,
+      "variant": "frozen_head_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261008T220030786155Z\\config_fault_training_report.json",
+      "seed": 85302029,
+      "variant": "clean",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261008T220030786155Z\\config_fault_training_report.json",
+      "seed": 85302029,
+      "variant": "high_learning_rate",
+      "truth": "high_learning_rate",
+      "reference_free": {
+        "diagnosis": "high_learning_rate",
+        "supported": [
+          "high_learning_rate"
+        ],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "high_learning_rate",
+        "supported": [
+          "high_learning_rate"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261008T220030786155Z\\config_fault_training_report.json",
+      "seed": 85302029,
+      "variant": "high_learning_rate_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261008T220030786155Z\\config_fault_training_report.json",
+      "seed": 85302029,
+      "variant": "missing_optimizer_step",
+      "truth": "missing_optimizer_step",
+      "reference_free": {
+        "diagnosis": "missing_optimizer_step",
+        "supported": [
+          "missing_optimizer_step"
+        ],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "missing_optimizer_step",
+        "supported": [
+          "missing_optimizer_step"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261008T220030786155Z\\config_fault_training_report.json",
+      "seed": 85302029,
+      "variant": "missing_optimizer_step_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T223054943318Z\\vit_fault_report.json",
+      "seed": 85302029,
+      "variant": "clean",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T223054943318Z\\vit_fault_report.json",
+      "seed": 85302029,
+      "variant": "train_eval_normalization_mismatch",
+      "truth": "train_eval_normalization_mismatch",
+      "reference_free": {
+        "diagnosis": "train_eval_normalization_mismatch",
+        "supported": [
+          "train_eval_normalization_mismatch"
+        ],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "train_eval_normalization_mismatch",
+        "supported": [
+          "train_eval_normalization_mismatch"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T223054943318Z\\vit_fault_report.json",
+      "seed": 85302029,
+      "variant": "train_eval_normalization_mismatch_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T223054943318Z\\vit_fault_report.json",
+      "seed": 85302029,
+      "variant": "imagenet_head_kept",
+      "truth": "classifier_size_mismatch",
+      "reference_free": {
+        "diagnosis": "classifier_size_mismatch",
+        "supported": [
+          "classifier_size_mismatch"
+        ],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "classifier_size_mismatch",
+        "supported": [
+          "classifier_size_mismatch"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T223054943318Z\\vit_fault_report.json",
+      "seed": 85302029,
+      "variant": "imagenet_head_kept_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T223054943318Z\\vit_fault_report.json",
+      "seed": 85302029,
+      "variant": "frozen_patch_embedding",
+      "truth": "frozen_backbone_module",
+      "reference_free": {
+        "diagnosis": "pending_reference",
+        "supported": [],
+        "pending_reference": [
+          "frozen_backbone_module"
+        ]
+      },
+      "with_reference": {
+        "diagnosis": "frozen_backbone_module",
+        "supported": [
+          "frozen_backbone_module"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T223054943318Z\\vit_fault_report.json",
+      "seed": 85302029,
+      "variant": "frozen_patch_embedding_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\frozen_head_training\\run-20261008T231257898816Z\\frozen_head_training_report.json",
+      "seed": 1948666596,
+      "variant": "clean",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\frozen_head_training\\run-20261008T231257898816Z\\frozen_head_training_report.json",
+      "seed": 1948666596,
+      "variant": "stale_head",
+      "truth": "stale_optimizer_binding",
+      "reference_free": {
+        "diagnosis": "stale_optimizer_binding",
+        "supported": [
+          "stale_optimizer_binding"
+        ],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "stale_optimizer_binding",
+        "supported": [
+          "stale_optimizer_binding"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\frozen_head_training\\run-20261008T231257898816Z\\frozen_head_training_report.json",
+      "seed": 1948666596,
+      "variant": "frozen_head",
+      "truth": "frozen_head",
+      "reference_free": {
+        "diagnosis": "pending_reference",
+        "supported": [],
+        "pending_reference": [
+          "frozen_head"
+        ]
+      },
+      "with_reference": {
+        "diagnosis": "frozen_head",
+        "supported": [
+          "frozen_head"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\frozen_head_training\\run-20261008T231257898816Z\\frozen_head_training_report.json",
+      "seed": 1948666596,
+      "variant": "frozen_head_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261008T232851609020Z\\config_fault_training_report.json",
+      "seed": 1948666596,
+      "variant": "clean",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261008T232851609020Z\\config_fault_training_report.json",
+      "seed": 1948666596,
+      "variant": "high_learning_rate",
+      "truth": "high_learning_rate",
+      "reference_free": {
+        "diagnosis": "high_learning_rate",
+        "supported": [
+          "high_learning_rate"
+        ],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "high_learning_rate",
+        "supported": [
+          "high_learning_rate"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261008T232851609020Z\\config_fault_training_report.json",
+      "seed": 1948666596,
+      "variant": "high_learning_rate_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261008T232851609020Z\\config_fault_training_report.json",
+      "seed": 1948666596,
+      "variant": "missing_optimizer_step",
+      "truth": "missing_optimizer_step",
+      "reference_free": {
+        "diagnosis": "missing_optimizer_step",
+        "supported": [
+          "missing_optimizer_step"
+        ],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "missing_optimizer_step",
+        "supported": [
+          "missing_optimizer_step"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\config_fault_training\\run-20261008T232851609020Z\\config_fault_training_report.json",
+      "seed": 1948666596,
+      "variant": "missing_optimizer_step_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T235010128165Z\\vit_fault_report.json",
+      "seed": 1948666596,
+      "variant": "clean",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T235010128165Z\\vit_fault_report.json",
+      "seed": 1948666596,
+      "variant": "train_eval_normalization_mismatch",
+      "truth": "train_eval_normalization_mismatch",
+      "reference_free": {
+        "diagnosis": "train_eval_normalization_mismatch",
+        "supported": [
+          "train_eval_normalization_mismatch"
+        ],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "train_eval_normalization_mismatch",
+        "supported": [
+          "train_eval_normalization_mismatch"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T235010128165Z\\vit_fault_report.json",
+      "seed": 1948666596,
+      "variant": "train_eval_normalization_mismatch_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T235010128165Z\\vit_fault_report.json",
+      "seed": 1948666596,
+      "variant": "imagenet_head_kept",
+      "truth": "classifier_size_mismatch",
+      "reference_free": {
+        "diagnosis": "classifier_size_mismatch",
+        "supported": [
+          "classifier_size_mismatch"
+        ],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "classifier_size_mismatch",
+        "supported": [
+          "classifier_size_mismatch"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T235010128165Z\\vit_fault_report.json",
+      "seed": 1948666596,
+      "variant": "imagenet_head_kept_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T235010128165Z\\vit_fault_report.json",
+      "seed": 1948666596,
+      "variant": "frozen_patch_embedding",
+      "truth": "frozen_backbone_module",
+      "reference_free": {
+        "diagnosis": "pending_reference",
+        "supported": [],
+        "pending_reference": [
+          "frozen_backbone_module"
+        ]
+      },
+      "with_reference": {
+        "diagnosis": "frozen_backbone_module",
+        "supported": [
+          "frozen_backbone_module"
+        ],
+        "pending_reference": []
+      }
+    },
+    {
+      "report": "artifacts\\vit_fault_training\\run-20261008T235010128165Z\\vit_fault_report.json",
+      "seed": 1948666596,
+      "variant": "frozen_patch_embedding_repaired",
+      "truth": "no_known_fault",
+      "reference_free": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      },
+      "with_reference": {
+        "diagnosis": "no_known_fault",
+        "supported": [],
+        "pending_reference": []
+      }
+    }
+  ]
+}

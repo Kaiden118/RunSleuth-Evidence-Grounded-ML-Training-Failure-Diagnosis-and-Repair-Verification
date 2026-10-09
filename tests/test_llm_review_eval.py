@@ -92,7 +92,10 @@ class ReviewEvaluationTests(unittest.TestCase):
         directory = self.run_reviews(EchoClient())
         summary = module.summarize(directory)
         self.assertTrue(summary["complete"])
-        self.assertEqual(directory.name, "ollama-fake-model")
+        self.assertEqual(directory.name, "ollama-fake-model-prompt-v2")
+        self.assertEqual(
+            (summary["prompt_version"], summary["response_format"]), (2, "json_schema")
+        )
         overall = summary["overall"]
         self.assertEqual((overall["cases"], overall["completed"]), (12, 12))
         self.assertEqual(overall["agrees_with_matcher"], 12)
@@ -150,8 +153,23 @@ class ReviewEvaluationTests(unittest.TestCase):
         pauses = []
         self.run_reviews(EchoClient(), limit=3, pause=4.0, sleep=pauses.append)
         self.assertEqual(pauses, [4.0, 4.0])
-        with self.assertRaisesRegex(ValueError, "other settings or reports"):
-            self.run_reviews(EchoClient(), reports=self.reports[:1])
+        for change in ({"reports": self.reports[:1]}, {"response_format": "json_object"}):
+            with self.subTest(change=list(change)):
+                with self.assertRaisesRegex(ValueError, "other settings or reports"):
+                    self.run_reviews(EchoClient(), **change)
+
+    def test_runs_before_prompt_versioning_summarize_as_prompt_1(self):
+        directory = self.run_reviews(EchoClient(), response_format="json_object", limit=1)
+        settings = json.loads((directory / "run.json").read_text(encoding="utf-8"))
+        self.assertEqual(settings["response_format"], "json_object")
+        for key in ("prompt_version", "system_prompt_sha256", "response_format"):
+            settings.pop(key)
+        (directory / "run.json").write_text(json.dumps(settings), encoding="utf-8")
+        summary = module.summarize(directory)
+        self.assertEqual(
+            (summary["prompt_version"], summary["response_format"]), (1, "json_object")
+        )
+        self.assertIn("fake-model p1", module.summary_table([summary]))
 
     def test_reports_can_come_from_a_signature_matching_record(self):
         cases = [

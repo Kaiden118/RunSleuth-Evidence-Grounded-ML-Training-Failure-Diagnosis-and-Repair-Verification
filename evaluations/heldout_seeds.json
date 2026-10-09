@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "task": "heldout_seed_draw",
+  "drawn_at": "2026-10-08T20:52:08.892585+00:00",
+  "method": "secrets.randbelow(2147483648), skipping seeds already used",
+  "excluded_seeds": [
+    7,
+    42,
+    2026
+  ],
+  "seeds": [
+    85302029,
+    1948666596
+  ],
+  "code_commit": "b10e57dea26267a7575341dd4a14d50dbcd04b08",
+  "frozen": {
+    "failure_signatures_sha256": "447f0765847836737268524424fa315affd7d278bd05c05e62c6c3a15bf08332",
+    "llm_prompt_version": 2,
+    "llm_system_prompt_sha256": "20813663d1aaeefa190fb5ff9e6b18240cbe7c5c8ed3b54b1a4f5d98e96937e8",
+    "repair_gate": {
+      "version": 2,
+      "gating_comparator": "healthy reference of the same setup; the faulty run without one",
+      "faulty_run": "informational when a healthy reference gates",
+      "no_valid_comparator": "rejected"
+    },
+    "repair_policy": {
+      "max_accuracy_drop": 0.01,
+      "max_loss_ratio": 1.1
+    }
+  },
+  "scope": "training seeds never used in development; data subset and budgets unchanged"
+}

@@ -1,0 +1,70 @@
+{
+  "scope": "held-out seeds [1439400887, 1219121115], drawn after the signatures, LLM prompt and repair gate were frozen; author-injected faults, development thresholds, not a statistical benchmark",
+  "faults": {
+    "stale_head": {
+      "cases": 2,
+      "accepted": 2,
+      "faulty_passes_gate_vs_reference": 1
+    },
+    "train_in_eval_mode": {
+      "cases": 2,
+      "accepted": 2,
+      "faulty_passes_gate_vs_reference": 0
+    },
+    "scheduler_stepped_per_batch": {
+      "cases": 2,
+      "accepted": 2,
+      "faulty_passes_gate_vs_reference": 0
+    }
+  },
+  "cases": [
+    {
+      "seed": 1439400887,
+      "report": "artifacts/optimizer_sweeps/20261009T040809216542Z/s1/paired/pair-20261009T041249537169Z/optimizer_training_report.json",
+      "fault": "stale_head",
+      "decision": "accepted",
+      "structure_verified": true,
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "seed": 1219121115,
+      "report": "artifacts/optimizer_sweeps/20261009T040809216542Z/s2/paired/pair-20261009T043451317894Z/optimizer_training_report.json",
+      "fault": "stale_head",
+      "decision": "accepted",
+      "structure_verified": true,
+      "faulty_passes_gate_vs_reference": true
+    },
+    {
+      "seed": 1439400887,
+      "report": "artifacts/loop_fault_training/run-20261009T045237090942Z/loop_fault_training_report.json",
+      "fault": "train_in_eval_mode",
+      "decision": "accepted",
+      "structure_verified": true,
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "seed": 1439400887,
+      "report": "artifacts/loop_fault_training/run-20261009T045237090942Z/loop_fault_training_report.json",
+      "fault": "scheduler_stepped_per_batch",
+      "decision": "accepted",
+      "structure_verified": true,
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "seed": 1219121115,
+      "report": "artifacts/loop_fault_training/run-20261009T052307711344Z/loop_fault_training_report.json",
+      "fault": "train_in_eval_mode",
+      "decision": "accepted",
+      "structure_verified": true,
+      "faulty_passes_gate_vs_reference": false
+    },
+    {
+      "seed": 1219121115,
+      "report": "artifacts/loop_fault_training/run-20261009T052307711344Z/loop_fault_training_report.json",
+      "fault": "scheduler_stepped_per_batch",
+      "decision": "accepted",
+      "structure_verified": true,
+      "faulty_passes_gate_vs_reference": false
+    }
+  ]
+}

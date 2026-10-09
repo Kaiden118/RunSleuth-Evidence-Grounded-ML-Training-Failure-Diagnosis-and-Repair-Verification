@@ -26,16 +26,19 @@ from pathlib import Path
 from runsleuth.camelyon_optimizer_probe import file_sha256
 from runsleuth.rescore_repairs import rescore_report
 
-# The development seeds and the source baseline's seed.
-USED_SEEDS = (7, 42, 2026)
+# The development seeds, the source baseline's seed and the first held-out draw.
+USED_SEEDS = (7, 42, 2026, 85302029, 1948666596)
 SEED_LIMIT = 2**31
-EXPERIMENTS = ("frozen_head", "config_faults", "vit")
+EXPERIMENTS = ("frozen_head", "config_faults", "vit", "loop_faults")
+# What a draw runs unless it names its experiments; the first draw named none.
+DEFAULT_EXPERIMENTS = ("frozen_head", "config_faults", "vit")
 # Where the development runs went; nesting held-out runs deeper would push Windows
 # paths past their limit.
 OUTPUT_DIRECTORIES = {
     "frozen_head": Path("artifacts/frozen_head_training"),
     "config_faults": Path("artifacts/config_fault_training"),
     "vit": Path("artifacts/vit_fault_training"),
+    "loop_faults": Path("artifacts/loop_fault_training"),
 }
 # The longest path a seed writes below the workspace (the stale-binding pair's
 # metrics), measured on the development runs with the sweep's short names.
@@ -76,10 +79,19 @@ def frozen_components() -> dict:
     }
 
 
-def draw_seeds(count: int, path: Path, *, randbelow=secrets.randbelow, git=_git) -> dict:
-    """Draw new training seeds once; an existing draw is never replaced."""
+def draw_seeds(
+    count: int,
+    path: Path,
+    *,
+    experiments=DEFAULT_EXPERIMENTS,
+    randbelow=secrets.randbelow,
+    git=_git,
+) -> dict:
+    """Draw new training seeds once for the named experiments; never replace a draw."""
     if isinstance(count, bool) or count not in (1, 2, 3):
         raise ValueError("Draw one to three seeds; the sweep runs at most three")
+    if not experiments or not set(experiments) <= set(EXPERIMENTS):
+        raise ValueError(f"Choose experiments from {EXPERIMENTS}")
     if path.exists():
         raise FileExistsError(f"{path} already holds a draw; keep it or choose another --output")
     if git("status", "--porcelain", "--", "src"):
@@ -96,6 +108,7 @@ def draw_seeds(count: int, path: Path, *, randbelow=secrets.randbelow, git=_git)
         "method": f"secrets.randbelow({SEED_LIMIT}), skipping seeds already used",
         "excluded_seeds": list(USED_SEEDS),
         "seeds": seeds,
+        "experiments": [name for name in EXPERIMENTS if name in experiments],
         "code_commit": git("rev-parse", "HEAD"),
         "frozen": frozen_components(),
         "scope": "training seeds never used in development; data subset and budgets unchanged",
@@ -130,12 +143,14 @@ def check_path_budget(
 def _runners() -> dict:
     from runsleuth.camelyon_config_faults import run_config_fault_training
     from runsleuth.camelyon_frozen_head_training import run_frozen_head_training
+    from runsleuth.camelyon_loop_faults import run_loop_fault_training
     from runsleuth.camelyon_vit import run_vit_faults
 
     return {
         "frozen_head": run_frozen_head_training,
         "config_faults": run_config_fault_training,
         "vit": run_vit_faults,
+        "loop_faults": run_loop_fault_training,
     }
 
 
@@ -219,6 +234,7 @@ def run_heldout(
     check_path_budget(Path.cwd())
     runners = runners or _runners()
     seeds = draw["seeds"]
+    experiments = draw.get("experiments", DEFAULT_EXPERIMENTS)
     name = "seeds-" + "-".join(map(str, seeds))
     directory = Path("artifacts/heldout") / name
     state_path = directory / "batch.json"
@@ -264,7 +280,7 @@ def run_heldout(
         entry = state["seeds"][str(seed)]
         if not _swept(entry):
             continue
-        for experiment in EXPERIMENTS:
+        for experiment in experiments:
             if entry.get(experiment, {}).get("status") in ("completed", "inconclusive"):
                 continue
             print(f"phase=seed-{seed}-{experiment}", flush=True)
@@ -292,7 +308,7 @@ def run_heldout(
     completed = [
         (int(seed), entry[experiment]["report"])
         for seed, entry in state["seeds"].items()
-        for experiment in EXPERIMENTS
+        for experiment in experiments
         if entry.get(experiment, {}).get("status") == "completed"
     ]
     stale = [
@@ -314,7 +330,7 @@ def run_heldout(
     }
     _write(Path(state["results"]["signature_matching"]), diagnosis)
     _write(Path(state["results"]["repairs"]), repairs)
-    finished = len(stale) == len(seeds) and len(completed) == len(seeds) * len(EXPERIMENTS)
+    finished = len(stale) == len(seeds) and len(completed) == len(seeds) * len(experiments)
     state["status"] = "completed" if finished else "completed_with_errors"
     _write(state_path, state)
     return state_path
@@ -345,13 +361,16 @@ def main() -> None:
     draw = commands.add_parser("draw", help="Draw and record held-out seeds")
     draw.add_argument("--count", type=int, default=2)
     draw.add_argument("--output", type=Path, default=DEFAULT_SEEDS_FILE)
+    draw.add_argument(
+        "--experiments", nargs="+", choices=EXPERIMENTS, default=list(DEFAULT_EXPERIMENTS)
+    )
     run = commands.add_parser("run", help="Train and evaluate the drawn seeds")
     run.add_argument("--reference-run", type=Path, required=True, help="Source baseline run")
     run.add_argument("--seeds-file", type=Path, default=DEFAULT_SEEDS_FILE)
     run.add_argument("--device", choices=("auto", "cpu", "cuda"))
     args = parser.parse_args()
     if args.command == "draw":
-        record = draw_seeds(args.count, args.output)
+        record = draw_seeds(args.count, args.output, experiments=args.experiments)
         print(f"seeds={record['seeds']} commit={record['code_commit']}")
         print(f"seeds_file={args.output}")
         return

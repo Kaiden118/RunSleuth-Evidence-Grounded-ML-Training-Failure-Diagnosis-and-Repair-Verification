@@ -57,9 +57,15 @@ def train_one_epoch(
     device: torch.device,
     *,
     optimizer_step_enabled: bool = True,
+    train_mode: bool = True,
 ) -> TrainingResult:
-    """Train for one epoch and collect optimization evidence."""
-    model.train()
+    """Train for one epoch and collect optimization evidence.
+
+    train_mode=False leaves the model's mode alone, as a loop without model.train()
+    does; after an evaluation that means training in eval mode.
+    """
+    if train_mode:
+        model.train()
 
     total_loss = 0.0
     total_correct = 0

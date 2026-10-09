@@ -39,6 +39,10 @@ REPAIR_GATE = {
 }
 
 
+# Cosine annealing over the run's epochs, stepped as intended or after every batch.
+LR_SCHEDULES = (None, "cosine_per_epoch", "cosine_per_batch")
+
+
 def _non_finite_state(model) -> bool:
     import torch
 
@@ -64,13 +68,20 @@ def run_training_variant(
     optimizer_step_enabled=True,
     allow_missing_steps=False,
     record_divergence=False,
+    train_mode=True,
+    lr_schedule=None,
 ):
     """Train one variant from the reference state under the stale-binding protocol.
 
     make_optimizer(model, variant, config) returns (optimizer, repair record or None).
     With record_divergence, a non-finite parameter or gradient ends the variant with
-    status "diverged" instead of failing the experiment.
+    status "diverged" instead of failing the experiment. train_mode=False never
+    calls model.train(), so after the initial evaluation every epoch trains in eval
+    mode. lr_schedule anneals the rate with cosine over the epochs, stepped once per
+    epoch or, as the fault, after every optimizer step.
     """
+    if lr_schedule not in LR_SCHEDULES:
+        raise ValueError(f"lr_schedule must be one of {LR_SCHEDULES}")
     import torch
     from torch import nn
 
@@ -96,6 +107,8 @@ def run_training_variant(
         "error": None,
         "run_directory": str(directory),
         "optimizer_step_enabled": optimizer_step_enabled,
+        "train_mode": train_mode,
+        "lr_schedule": lr_schedule,
         "parameter_group_epochs": [],
         "test_evaluated": False,
     }
@@ -111,6 +124,11 @@ def run_training_variant(
         model.load_state_dict(state, strict=True)
         model.to(device)
         optimizer, repair = make_optimizer(model, variant, config)
+        scheduler = None
+        if lr_schedule is not None:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
+            if lr_schedule == "cosine_per_batch":
+                optimizer.register_step_post_hook(lambda *_: scheduler.step())
         if repair is not None:
             report["repair"] = repair
         report["initial_state_sha256"] = state_dict_sha256(model.state_dict())
@@ -140,6 +158,7 @@ def run_training_variant(
                         loss_function,
                         device,
                         optimizer_step_enabled=optimizer_step_enabled,
+                        train_mode=train_mode,
                     )
                 groups = {"epoch": epoch, **monitor.summary()}
                 _check_training_result(training)
@@ -150,6 +169,8 @@ def run_training_variant(
                 print(f"phase=diverged variant={variant} epoch={epoch}", flush=True)
                 diverged = True
                 break
+            if lr_schedule == "cosine_per_epoch":
+                scheduler.step()
             domains = _evaluate_domains(model, data, loss_function, device)
             if device.type == "cuda":
                 torch.cuda.synchronize(device)

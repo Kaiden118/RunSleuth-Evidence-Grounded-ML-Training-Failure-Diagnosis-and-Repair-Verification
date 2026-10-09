@@ -312,6 +312,60 @@
         "timing": "before_first_optimizer_step",
         "description": "Set requires_grad=True on the frozen backbone module before training."
       }
+    },
+    {
+      "id": "train_in_eval_mode",
+      "subsystem": "training_loop",
+      "scope": "global",
+      "description": "Training forwards run with the model in eval mode, usually because model.train() is missing after an evaluation: BatchNorm normalizes with its frozen running statistics instead of updating them, and dropout is off.",
+      "requires": [
+        {
+          "evidence": "max_eval_mode_training_fraction",
+          "op": ">",
+          "value": 0,
+          "meaning": "forwards that an optimizer step trains on run in eval mode"
+        },
+        {
+          "evidence": "reference_max_eval_mode_training_fraction",
+          "op": "==",
+          "value": 0,
+          "needs_reference": true,
+          "meaning": "the healthy reference trains in train mode, so eval mode is unintended rather than a deliberate BatchNorm freeze"
+        }
+      ],
+      "contradicts": [],
+      "repair": {
+        "action": "call_model_train",
+        "timing": "start_of_every_training_epoch",
+        "description": "Call model.train() at the start of every training epoch, after any evaluation."
+      }
+    },
+    {
+      "id": "scheduler_stepped_per_batch",
+      "subsystem": "training_loop",
+      "scope": "global",
+      "description": "A learning-rate schedule meant to advance once per epoch is stepped after every batch, so the rate runs through its whole cycle within a few steps: it falls and rises again within an epoch instead of decaying across epochs.",
+      "requires": [
+        {
+          "evidence": "max_learning_rate_rebounds_per_epoch",
+          "op": ">",
+          "value": 0,
+          "meaning": "within an epoch the rate rises again after falling, which linear, warmup and one-cycle schedules stepped per batch never do"
+        },
+        {
+          "evidence": "reference_max_learning_rate_changes_per_epoch",
+          "op": "==",
+          "value": 0,
+          "needs_reference": true,
+          "meaning": "the healthy reference keeps its rate constant within each epoch, so per-step changes are unintended rather than a per-step schedule"
+        }
+      ],
+      "contradicts": [],
+      "repair": {
+        "action": "step_scheduler_per_epoch",
+        "timing": "end_of_every_training_epoch",
+        "description": "Call scheduler.step() once per epoch, after the batch loop, instead of after every optimizer step."
+      }
     }
   ]
 }

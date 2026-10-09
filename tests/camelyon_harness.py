@@ -32,12 +32,27 @@ class TinyClassifier(torch.nn.Module):
         return self.fc(torch.tanh(self.backbone(inputs.mean(dim=(2, 3)))))
 
 
+class TinyBatchNormClassifier(TinyClassifier):
+    """TinyClassifier with BatchNorm, whose running statistics change only in train mode."""
+
+    def __init__(self):
+        super().__init__()
+        self.norm = torch.nn.BatchNorm1d(4)
+
+    def forward(self, inputs):
+        if self.training:
+            self.training_order.append(inputs[:, 0, 0, 0].tolist())
+        return self.fc(torch.tanh(self.norm(self.backbone(inputs.mean(dim=(2, 3))))))
+
+
 class CamelyonHarness(unittest.TestCase):
     """A reference run on disk plus patchable model and data builders."""
 
     # Nonzero weight decay: an untouched frozen head also shows AdamW skipped its decay.
     weight_decay = 0.01
     learning_rate = 0.03
+    model_class = TinyClassifier
+    training_samples = 6
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -75,7 +90,7 @@ class CamelyonHarness(unittest.TestCase):
         self.nan_training_images = False
         torch.manual_seed(29)
         self.initial = {
-            name: value.clone() for name, value in TinyClassifier().state_dict().items()
+            name: value.clone() for name, value in self.model_class().state_dict().items()
         }
         checkpoint = self.reference / "initial_state_dict.pt"
         torch.save(self.initial, checkpoint)
@@ -92,15 +107,16 @@ class CamelyonHarness(unittest.TestCase):
 
     def build_model(self, *, pretrained):
         self.assertFalse(pretrained, "The saved reference initialization needs no download")
-        model = TinyClassifier()
+        model = self.model_class()
         self.models.append(model)
         return model
 
     def build_data(self, config, *, device, download):
         self.assertFalse(download, "Runners must use cached data")
-        values = torch.arange(6).float() / 5
-        images = values.reshape(6, 1, 1, 1).expand(6, 3, 96, 96).clone()
-        labels = torch.tensor([0, 0, 0, 1, 1, 1])
+        count = self.training_samples
+        values = torch.arange(count).float() / (count - 1)
+        images = values.reshape(count, 1, 1, 1).expand(count, 3, 96, 96).clone()
+        labels = (torch.arange(count) >= count // 2).long()
         training_images = images.clone()
         if self.nan_training_images:
             training_images[-1] = float("nan")

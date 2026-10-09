@@ -44,6 +44,10 @@ GROUND_TRUTH = {
     "imagenet_head_kept_repaired": "no_known_fault",
     "frozen_patch_embedding": "frozen_backbone_module",
     "frozen_patch_embedding_repaired": "no_known_fault",
+    "train_in_eval_mode": "train_in_eval_mode",
+    "train_in_eval_mode_repaired": "no_known_fault",
+    "scheduler_stepped_per_batch": "scheduler_stepped_per_batch",
+    "scheduler_stepped_per_batch_repaired": "no_known_fault",
 }
 
 
@@ -84,6 +88,29 @@ def _ratios(stats: list[dict], numerator: str) -> list[float] | None:
     if not stats or any(numerator not in item for item in stats):
         return None
     return [item[numerator] / item["parameter_tensors"] for item in stats]
+
+
+def _eval_mode_training_fraction(run: dict) -> float | None:
+    """Largest per-epoch share of training forwards run in eval mode."""
+    rows = run.get("parameter_group_epochs", [])
+    if not rows or any("eval_mode_training_forwards" not in row for row in rows):
+        return None
+    # As for steps per forward, rows without forward counts imply one per step.
+    fractions = [
+        row["eval_mode_training_forwards"] / forwards
+        for row in rows
+        if (forwards := row.get("training_forwards", row["optimizer_steps"])) > 0
+    ]
+    return max(fractions) if fractions else None
+
+
+def _learning_rate_counts(run: dict, field: str) -> int | None:
+    """The most rate changes or rebounds (rises after a fall) in one epoch."""
+    rows = run.get("parameter_group_epochs", [])
+    rates = [row["learning_rate"] for row in rows if row.get("learning_rate")]
+    if not rows or any("learning_rate" not in row for row in rows) or not rates:
+        return None
+    return max(rate[field] for rate in rates)
 
 
 def _inferred_first_step_lr(run: dict, group: str) -> float | None:
@@ -162,6 +189,9 @@ def extract_evidence(
         else sum(name.startswith(head_prefix) for name in missing),
         "audit_foreign_tensors": audit.get("foreign_parameter_tensors"),
         "reference_available": reference is not None,
+        "max_eval_mode_training_fraction": _eval_mode_training_fraction(run),
+        "max_learning_rate_changes_per_epoch": _learning_rate_counts(run, "changes"),
+        "max_learning_rate_rebounds_per_epoch": _learning_rate_counts(run, "rebounds"),
     }
     for group in GROUPS:
         stats = _group_stats(run, group)
@@ -192,8 +222,12 @@ def extract_evidence(
     evidence["reference_head_min_trainable_fraction"] = None
     evidence["reference_backbone_min_trainable_fraction"] = None
     evidence["backbone_inferred_lr_ratio_to_reference"] = None
+    evidence["reference_max_eval_mode_training_fraction"] = None
+    evidence["reference_max_learning_rate_changes_per_epoch"] = None
     if reference is not None:
         base = extract_evidence(reference, None, optimizer_name)
+        for name in ("max_eval_mode_training_fraction", "max_learning_rate_changes_per_epoch"):
+            evidence[f"reference_{name}"] = base[name]
         evidence["reference_head_min_trainable_fraction"] = base["head_min_trainable_fraction"]
         evidence["reference_backbone_min_trainable_fraction"] = base[
             "backbone_min_trainable_fraction"

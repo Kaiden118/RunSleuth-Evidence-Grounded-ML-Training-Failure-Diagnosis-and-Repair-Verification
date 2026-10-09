@@ -295,6 +295,61 @@ class ParameterGroupMonitorTests(unittest.TestCase):
                 actual[group]["first_step_parameter_update_l2_norm"], updates[0], places=6
             )
 
+    def test_training_in_eval_mode_is_counted_and_measured_like_train_mode(self):
+        # A loop without model.train(): forwards run in eval mode, yet optimizer steps follow.
+        model, optimizer = self.make_pair()
+        model.eval()
+        with ParameterGroupMonitor(model, optimizer) as monitor:
+            self.train(model, optimizer, train_mode=False)
+        self.assertFalse(model.training)
+        summary = monitor.summary()
+        self.assertEqual(
+            (
+                summary["optimizer_steps"],
+                summary["training_forwards"],
+                summary["eval_mode_training_forwards"],
+            ),
+            (2, 2, 2),
+        )
+        self.assert_cleaned_up(monitor, model, optimizer)
+        # TinyModel has no dropout or BatchNorm, so eval mode changes nothing else.
+        clean, clean_optimizer = self.make_pair()
+        with ParameterGroupMonitor(clean, clean_optimizer) as clean_monitor:
+            self.train(clean, clean_optimizer)
+        self.assertEqual(clean_monitor.summary()["eval_mode_training_forwards"], 0)
+        self.assertEqual(summary["head"], clean_monitor.summary()["head"])
+
+    def test_learning_rates_show_a_schedule_stepped_within_the_epoch(self):
+        model, optimizer = self.make_pair()
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
+        optimizer.register_step_post_hook(lambda *_: scheduler.step())
+        with ParameterGroupMonitor(model, optimizer) as monitor:
+            self.train(model, optimizer)
+        self.assertEqual(
+            monitor.summary()["learning_rate"],
+            {
+                "first": 0.01,
+                "last": 0.005,
+                "min": 0.005,
+                "max": 0.01,
+                "changes": 1,
+                "rebounds": 0,
+            },
+        )
+        # A one-epoch cosine stepped every batch falls to zero and rises again.
+        model, optimizer = self.make_pair()
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=1)
+        optimizer.register_step_post_hook(lambda *_: scheduler.step())
+        with ParameterGroupMonitor(model, optimizer) as monitor:
+            self.train(model, optimizer)
+            self.train(model, optimizer)
+        rate = monitor.summary()["learning_rate"]
+        self.assertEqual((rate["changes"], rate["rebounds"]), (3, 1))
+        model, optimizer = self.make_pair()
+        with ParameterGroupMonitor(model, optimizer) as monitor:
+            self.train(model, optimizer)
+        self.assertEqual(monitor.summary()["learning_rate"]["changes"], 0)
+
     def test_missing_steps_are_counted_when_allowed(self):
         model, optimizer = self.make_pair()
         before = {name: parameter.detach().clone() for name, parameter in model.named_parameters()}
@@ -302,7 +357,14 @@ class ParameterGroupMonitorTests(unittest.TestCase):
             self.train(model, optimizer, optimizer_step_enabled=False)
         self.assertEqual(
             monitor.summary(),
-            {"optimizer_steps": 0, "training_forwards": 2, "head": None, "backbone": None},
+            {
+                "optimizer_steps": 0,
+                "training_forwards": 2,
+                "eval_mode_training_forwards": 0,
+                "learning_rate": None,
+                "head": None,
+                "backbone": None,
+            },
         )
         for name, parameter in model.named_parameters():
             self.assertTrue(torch.equal(parameter, before[name]), name)

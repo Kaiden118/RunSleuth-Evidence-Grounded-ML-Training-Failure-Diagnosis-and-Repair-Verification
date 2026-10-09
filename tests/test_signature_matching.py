@@ -31,8 +31,22 @@ def group(*, trainable=2, gradient=2, update=0.01, first=None, elements=100):
     return stats
 
 
-def run(*, lr=1e-4, head=None, missing=(), steps=10, forwards=10):
-    """Two epochs of rows; the first step of AdamW moves each element by about lr."""
+def run(
+    *,
+    lr=1e-4,
+    head=None,
+    missing=(),
+    steps=10,
+    forwards=10,
+    eval_mode=0,
+    lr_changes=0,
+    lr_rebounds=0,
+):
+    """Two epochs of rows; the first step of AdamW moves each element by about lr.
+
+    eval_mode forwards per epoch run in eval mode; the learning rate changes
+    lr_changes times within each epoch and rises again after falling lr_rebounds times.
+    """
     head = head or group(first=lr * math.sqrt(HEAD_ELEMENTS), elements=HEAD_ELEMENTS)
     backbone = group(first=lr * math.sqrt(BACKBONE_ELEMENTS), elements=BACKBONE_ELEMENTS)
     stepless = steps == 0
@@ -41,6 +55,17 @@ def run(*, lr=1e-4, head=None, missing=(), steps=10, forwards=10):
             "epoch": epoch,
             "optimizer_steps": steps,
             "training_forwards": forwards,
+            "eval_mode_training_forwards": eval_mode,
+            "learning_rate": None
+            if stepless
+            else {
+                "first": lr,
+                "last": lr,
+                "min": lr,
+                "max": lr,
+                "changes": lr_changes,
+                "rebounds": lr_rebounds,
+            },
             "head": None if stepless else head,
             "backbone": None if stepless else backbone,
         }
@@ -67,6 +92,8 @@ SCENARIOS = {
     "frozen_head": run(head=group(trainable=0, gradient=0, update=0.0)),
     "high_learning_rate": run(lr=1e-2),
     "missing_optimizer_step": run(steps=0),
+    "train_in_eval_mode": run(eval_mode=10),
+    "scheduler_stepped_per_batch": run(lr_changes=9, lr_rebounds=3),
 }
 
 
@@ -92,6 +119,8 @@ class SignatureMatchingTests(unittest.TestCase):
                 "train_eval_normalization_mismatch",
                 "classifier_size_mismatch",
                 "frozen_backbone_module",
+                "train_in_eval_mode",
+                "scheduler_stepped_per_batch",
             ],
         )
         broken = (
@@ -120,6 +149,8 @@ class SignatureMatchingTests(unittest.TestCase):
             "frozen_head": ("pending_reference", "frozen_head"),
             "high_learning_rate": ("high_learning_rate", "high_learning_rate"),
             "missing_optimizer_step": ("missing_optimizer_step", "missing_optimizer_step"),
+            "train_in_eval_mode": ("pending_reference", "train_in_eval_mode"),
+            "scheduler_stepped_per_batch": ("pending_reference", "scheduler_stepped_per_batch"),
         }
         for name, (without, with_reference) in expected.items():
             with self.subTest(variant=name):
@@ -146,6 +177,34 @@ class SignatureMatchingTests(unittest.TestCase):
         self.assertAlmostEqual(observed["backbone_inferred_lr_ratio_to_reference"], 100)
         self.assertEqual(high["requires"][1]["expected"], 0.001)
         json.dumps(result, allow_nan=False)
+
+    def test_intended_eval_mode_or_per_step_schedule_in_the_reference_is_no_fault(self):
+        # A deliberate BatchNorm freeze or a per-step schedule shows in the reference too.
+        for name in ("train_in_eval_mode", "scheduler_stepped_per_batch"):
+            with self.subTest(fault=name):
+                result = diagnose(SCENARIOS[name], SCENARIOS[name])
+                self.assertEqual(verdicts(result)[name], "not_supported")
+                self.assertEqual(result["diagnosis"], "no_known_fault")
+
+    def test_a_monotone_per_step_schedule_is_no_fault_with_or_without_a_reference(self):
+        # Linear decay or warmup stepped per batch, as the Hugging Face Trainer does.
+        per_step = run(lr_changes=9)
+        for reference in (None, SCENARIOS["clean"]):
+            with self.subTest(reference=reference is not None):
+                result = diagnose(per_step, reference)
+                self.assertEqual(verdicts(result)["scheduler_stepped_per_batch"], "not_supported")
+                self.assertEqual(result["diagnosis"], "no_known_fault")
+
+    def test_runs_recorded_before_the_loop_evidence_leave_it_unavailable(self):
+        legacy = copy.deepcopy(SCENARIOS["clean"])
+        for row in legacy["parameter_group_epochs"]:
+            del row["eval_mode_training_forwards"], row["learning_rate"]
+        evidence = matching.extract_evidence(legacy, None, "AdamW")
+        self.assertIsNone(evidence["max_eval_mode_training_fraction"])
+        self.assertIsNone(evidence["max_learning_rate_changes_per_epoch"])
+        result = matching.diagnose(evidence, matching.load_library())
+        self.assertEqual(verdicts(result)["train_in_eval_mode"], "insufficient_evidence")
+        self.assertEqual(result["diagnosis"], "no_known_fault")
 
     def test_intentionally_frozen_reference_does_not_support_frozen_head(self):
         result = diagnose(SCENARIOS["frozen_head"], SCENARIOS["frozen_head"])
@@ -199,9 +258,10 @@ class SignatureMatchingTests(unittest.TestCase):
             result = matching.evaluate_reports(paths, matching.load_library())
             reference_free = result["summary"]["reference_free"]
             with_reference = result["summary"]["with_reference"]
-            self.assertEqual((with_reference["exact_matches"], with_reference["cases"]), (12, 12))
+            self.assertEqual((with_reference["exact_matches"], with_reference["cases"]), (16, 16))
             self.assertEqual(reference_free["exact_matches"], 10)
-            self.assertEqual(reference_free["pending_reference_with_true_fault"], 2)
+            # Frozen head, eval mode and the scheduler wait for a reference on both seeds.
+            self.assertEqual(reference_free["pending_reference_with_true_fault"], 6)
             self.assertEqual(
                 (with_reference["healthy_false_positives"], with_reference["healthy_cases"]),
                 (0, 4),

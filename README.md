@@ -233,6 +233,7 @@ set "SEED=artifacts/optimizer_sweeps/<sweep>/s1/baseline/<baseline-run>"
 python -m runsleuth.camelyon_frozen_head_training --reference-run "%SEED%"
 python -m runsleuth.camelyon_config_faults --reference-run "%SEED%"
 python -m runsleuth.camelyon_vit --reference-run "%SEED%"
+python -m runsleuth.camelyon_loop_faults --reference-run "%SEED%"
 ```
 
 Score the signature matcher on the experiment reports these commands print:

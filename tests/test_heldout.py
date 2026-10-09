@@ -31,6 +31,13 @@ VARIANTS = {
         "missing_optimizer_step_repaired": "clean",
     },
     "vit": {"clean": "clean", "imagenet_head_kept_repaired": "clean"},
+    "loop_faults": {
+        "clean": "clean",
+        "train_in_eval_mode": "train_in_eval_mode",
+        "train_in_eval_mode_repaired": "clean",
+        "scheduler_stepped_per_batch": "scheduler_stepped_per_batch",
+        "scheduler_stepped_per_batch_repaired": "clean",
+    },
 }
 
 
@@ -50,6 +57,10 @@ VERIFICATIONS = {
         "missing_optimizer_step": verification("missing_optimizer_step"),
     },
     "vit": {"imagenet_head_kept": verification("imagenet_head_kept", decision="rejected")},
+    "loop_faults": {
+        "train_in_eval_mode": verification("train_in_eval_mode", silent=True),
+        "scheduler_stepped_per_batch": verification("scheduler_stepped_per_batch"),
+    },
 }
 
 
@@ -127,10 +138,11 @@ class HeldoutTests(unittest.TestCase):
         directory.__enter__()
         self.addCleanup(directory.__exit__, None, None, None)
 
-    def draw(self, git=None):
-        draws = iter([7, 123, 123, 456])  # a development seed and a repeat are skipped
+    def draw(self, git=None, **options):
+        # A development seed, a first-draw seed and a repeat are skipped.
+        draws = iter([7, 85302029, 123, 123, 456])
         return module.draw_seeds(
-            2, self.seeds_path, randbelow=lambda _: next(draws), git=git or FakeGit()
+            2, self.seeds_path, randbelow=lambda _: next(draws), git=git or FakeGit(), **options
         )
 
     def run_batch(self, training, git=None):
@@ -162,6 +174,9 @@ class HeldoutTests(unittest.TestCase):
         for count in (0, 4, True):
             with self.subTest(count=count), self.assertRaises(ValueError):
                 module.draw_seeds(count, self.seeds_path, git=FakeGit())
+        for experiments in ((), ("loop_faults", "tabular")):
+            with self.subTest(experiments=experiments), self.assertRaises(ValueError):
+                self.draw(experiments=experiments)
 
     def test_batch_trains_every_seed_writes_records_and_resumes(self):
         self.draw()
@@ -169,7 +184,7 @@ class HeldoutTests(unittest.TestCase):
         state = self.run_batch(training)
         self.assertEqual(state["status"], "completed")
         self.assertFalse(state["source_changed_since_draw"])
-        self.assertEqual(len(training.calls), 1 + 2 * len(module.EXPERIMENTS))
+        self.assertEqual(len(training.calls), 1 + 2 * len(module.DEFAULT_EXPERIMENTS))
         self.assertIn(("vit", "artifacts/sweep/seed-456/baseline"), training.calls)
 
         repairs = json.loads(Path(state["results"]["repairs"]).read_text("utf-8"))
@@ -194,7 +209,7 @@ class HeldoutTests(unittest.TestCase):
         self.assertIn("frozen_head", text)
 
         self.run_batch(training)
-        self.assertEqual(len(training.calls), 1 + 2 * len(module.EXPERIMENTS))
+        self.assertEqual(len(training.calls), 1 + 2 * len(module.DEFAULT_EXPERIMENTS))
 
     def test_a_failed_experiment_is_recorded_and_retried_alone(self):
         self.draw()
@@ -218,13 +233,32 @@ class HeldoutTests(unittest.TestCase):
         retry = FakeTraining()
         state = self.run_batch(retry)
         self.assertEqual(retry.calls[0], ("sweep", (456,)))
-        self.assertEqual(len(retry.calls), 1 + len(module.EXPERIMENTS))
+        self.assertEqual(len(retry.calls), 1 + len(module.DEFAULT_EXPERIMENTS))
         self.assertEqual(state["status"], "completed")
         self.assertEqual([sweep["seeds"] for sweep in state["sweeps"]], [[123, 456], [456]])
-        for experiment, directory in module.OUTPUT_DIRECTORIES.items():
-            self.assertTrue(
-                state["seeds"]["456"][experiment]["report"].startswith(directory.as_posix())
-            )
+        for experiment in module.DEFAULT_EXPERIMENTS:
+            directory = module.OUTPUT_DIRECTORIES[experiment].as_posix()
+            self.assertTrue(state["seeds"]["456"][experiment]["report"].startswith(directory))
+
+    def test_a_draw_runs_only_the_experiments_it_names(self):
+        record = self.draw(experiments=["loop_faults"])
+        self.assertEqual(record["experiments"], ["loop_faults"])
+        training = FakeTraining()
+        state = self.run_batch(training)
+        self.assertEqual(state["status"], "completed")
+        self.assertEqual(
+            [call[0] for call in training.calls], ["sweep", "loop_faults", "loop_faults"]
+        )
+        repairs = json.loads(Path(state["results"]["repairs"]).read_text("utf-8"))
+        self.assertEqual(
+            sorted(repairs["faults"]),
+            ["scheduler_stepped_per_batch", "stale_head", "train_in_eval_mode"],
+        )
+        diagnosis = json.loads(Path(state["results"]["signature_matching"]).read_text("utf-8"))
+        with_reference = diagnosis["summary"]["with_reference"]
+        self.assertEqual((with_reference["exact_matches"], with_reference["cases"]), (10, 10))
+        reference_free = diagnosis["summary"]["reference_free"]
+        self.assertEqual(reference_free["pending_reference_with_true_fault"], 4)
 
     def test_a_batch_recorded_before_retries_keeps_its_failed_sweep(self):
         self.draw()
@@ -274,7 +308,9 @@ class HeldoutTests(unittest.TestCase):
             contextlib.redirect_stdout(io.StringIO()) as printed,
         ):
             module.main()
-        draw.assert_called_once_with(2, module.DEFAULT_SEEDS_FILE)
+        draw.assert_called_once_with(
+            2, module.DEFAULT_SEEDS_FILE, experiments=list(module.DEFAULT_EXPERIMENTS)
+        )
         self.assertIn("seeds=[123, 456] commit=abc123", printed.getvalue())
 
 

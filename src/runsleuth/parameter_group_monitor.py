@@ -82,6 +82,14 @@ class ParameterGroupMonitor:
     optimizer step is counted instead of rejected, so a missing step becomes
     evidence (training_forwards > optimizer_steps). Group statistics cover only
     the steps that happened and are None when no step happened.
+
+    A gradient-enabled forward in eval mode is evaluation unless an optimizer step
+    follows it; then it counts as a training forward in eval mode, the trace of a
+    loop that never calls model.train(). Such forwards leave gradients untouched,
+    as evaluation forwards do. Each step also records the optimizer's learning
+    rates: how often they changed within the epoch and how often the largest rate
+    rose again after falling, which a per-epoch schedule stepped every batch does
+    and linear, warmup or one-cycle schedules stepped per batch do not.
     """
 
     def __init__(
@@ -98,6 +106,9 @@ class ParameterGroupMonitor:
         self._allow_missing_steps = allow_missing_steps
         self._head_prefix = head_prefix
         self._training_forwards = 0
+        self._eval_mode_training_forwards = 0
+        self._eval_mode_forward = False
+        self._rates: list[tuple[float, ...]] = []
         self._handles: list[Any] = []
         self._used = False
         self._active = False
@@ -154,8 +165,13 @@ class ParameterGroupMonitor:
         self._active = False
 
     def _before_forward(self, module: nn.Module, inputs: tuple[Any, ...]) -> None:
-        if not module.training or not torch.is_grad_enabled():
+        if not torch.is_grad_enabled():
             return
+        if not module.training:
+            # Evaluation unless an optimizer step follows; see _before_step.
+            self._eval_mode_forward = True
+            return
+        self._eval_mode_forward = False
         if self._pending_step is not None or (
             self._forward_pending and not self._allow_missing_steps
         ):
@@ -165,6 +181,12 @@ class ParameterGroupMonitor:
         self._training_forwards += 1
 
     def _before_step(self, optimizer: Optimizer, args: tuple, kwargs: dict) -> None:
+        if not self._forward_pending and self._eval_mode_forward:
+            # The forward this step trains on ran in eval mode.
+            self._eval_mode_forward = False
+            self._forward_pending = True
+            self._training_forwards += 1
+            self._eval_mode_training_forwards += 1
         if not self._forward_pending:
             raise RuntimeError("Optimizer step has no preceding training forward")
         if self._pending_step is not None:
@@ -207,6 +229,7 @@ class ParameterGroupMonitor:
                 for group, parameters in groups.items()
             },
             "snapshots": snapshots,
+            "rates": tuple(float(group["lr"]) for group in optimizer.param_groups),
         }
 
     def _after_step(self, optimizer: Optimizer, args: tuple, kwargs: dict) -> None:
@@ -243,6 +266,7 @@ class ParameterGroupMonitor:
                 self._elements[group] = pending["elements"][group]
                 if self._optimizer_steps == 0:
                     self._first_updates[group] = update
+            self._rates.append(pending["rates"])
             self._optimizer_steps += 1
             self._forward_pending = False
         finally:
@@ -251,6 +275,31 @@ class ParameterGroupMonitor:
             pending["snapshots"].clear()
             pending.clear()
             self._pending_step = None
+
+    def _learning_rate(self) -> dict[str, Any] | None:
+        """Largest rate over parameter groups at the first and last step, the extremes,
+        how many steps used different rates from the step before, and how often the
+        largest rate rose again after falling."""
+        if not self._rates:
+            return None
+        rebounds, falling = 0, False
+        for previous, current in zip(self._rates, self._rates[1:], strict=False):
+            if max(current) < max(previous):
+                falling = True
+            elif max(current) > max(previous):
+                rebounds += falling
+                falling = False
+        return {
+            "first": max(self._rates[0]),
+            "last": max(self._rates[-1]),
+            "min": min(min(rates) for rates in self._rates),
+            "max": max(max(rates) for rates in self._rates),
+            "changes": sum(
+                current != previous
+                for previous, current in zip(self._rates, self._rates[1:], strict=False)
+            ),
+            "rebounds": rebounds,
+        }
 
     def summary(self) -> dict[str, Any]:
         """Return JSON-compatible means and tensor counts; reject failed or unfinished epochs."""
@@ -269,6 +318,8 @@ class ParameterGroupMonitor:
         result: dict[str, Any] = {
             "optimizer_steps": self._optimizer_steps,
             "training_forwards": self._training_forwards,
+            "eval_mode_training_forwards": self._eval_mode_training_forwards,
+            "learning_rate": self._learning_rate(),
         }
         if self._optimizer_steps == 0:
             return {**result, "head": None, "backbone": None}

@@ -52,6 +52,10 @@ class RunMonitorTests(unittest.TestCase):
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
         if scenario == "stale_head":
             setattr(model, head, deepcopy(getattr(model, head)))
+        if scenario == "train_in_eval_mode":
+            model.eval()  # and the loop below never calls model.train()
+        # Two epochs of cosine; stepped per batch it falls to zero and rises within one.
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=2)
         monitor = RunMonitor(model, optimizer, self.root / f"{scenario}-{head}", head=head)
         for _ in range(2):
             with monitor.epoch():
@@ -63,6 +67,8 @@ class RunMonitorTests(unittest.TestCase):
                     loss.backward()
                     if scenario != "missing_optimizer_step":
                         optimizer.step()
+                    if scenario == "scheduler_stepped_per_batch":
+                        scheduler.step()  # meant to run once per epoch
             monitor.log(train_loss=loss.item())
         return json.loads(monitor.close().read_text(encoding="utf-8"))
 
@@ -87,6 +93,8 @@ class RunMonitorTests(unittest.TestCase):
             "frozen_head": ("pending_reference", "frozen_head"),
             "high_learning_rate": ("high_learning_rate", "high_learning_rate"),
             "missing_optimizer_step": ("missing_optimizer_step", "missing_optimizer_step"),
+            "train_in_eval_mode": ("pending_reference", "train_in_eval_mode"),
+            "scheduler_stepped_per_batch": ("pending_reference", "scheduler_stepped_per_batch"),
         }
         for scenario, (alone, with_reference) in expected.items():
             with self.subTest(scenario=scenario):

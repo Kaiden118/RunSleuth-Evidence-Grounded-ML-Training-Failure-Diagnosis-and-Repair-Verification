@@ -130,15 +130,15 @@ author and thresholds are development choices; this is not a statistical benchma
 
 | Stage | Sep | Oct | Nov | Dec | Jan | Feb | Status |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|---|
-| Training monitor, first fault on Camelyon17 | █ | | | | | | Done |
-| Nine faults, signature library, ResNet18 and DeiT | | █ | | | | | Done |
-| Repair verification, held-out seeds, LLM explanation | | █ | | | | | Done |
-| Command line, CI, Docker | | █ | | | | | Done |
-| Repair tasks and harness for LLM agents | | █ | | | | | Done |
-| LLM agent that repairs training code, pilot study | | ▓ | ▓ | | | | In progress |
-| Main agent experiments and baselines | | | ░ | ░ | | | Planned |
-| Second dataset (HAM10000) | | | | ░ | ░ | | Planned |
-| Report and release | | | | | ░ | ░ | Planned |
+| Training monitor, first fault on Camelyon17 | ████ | | | | | | Done |
+| Nine faults, signature library, ResNet18 and DeiT | | ████ | | | | | Done |
+| Repair verification, held-out seeds, LLM explanation | | ████ | | | | | Done |
+| Command line, CI, Docker | | ████ | | | | | Done |
+| Repair tasks and harness for LLM agents | | ████ | | | | | Done |
+| LLM agent that repairs training code, pilot study | | ▓▓▓▓ | ▓▓▓▓ | | | | In progress |
+| Main agent experiments and baselines | | | ░░░░ | ░░░░ | | | Planned |
+| Second dataset (HAM10000) | | | | ░░░░ | ░░░░ | | Planned |
+| Report and release | | | | | ░░░░ | ░░░░ | Planned |
 
 September 2026 to February 2027. The agent work measures how often an LLM agent
 declares a silent fault repaired when it is not. Its tasks are ready:

@@ -37,8 +37,11 @@ def prepare_evaluation_batch(images: torch.Tensor) -> torch.Tensor:
     return normalize(images)
 
 
-def build(device: torch.device, epochs: int):
-    """Create the model, its optimizer and the learning-rate schedule."""
+def build(device: torch.device, epochs: int, steps_per_epoch: int):
+    """Create the model, its optimizer and the learning-rate schedule.
+
+    The harness trains for epochs epochs of steps_per_epoch batches each.
+    """
     model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
     model.fc = nn.Linear(model.fc.in_features, 2)
     model.to(device)

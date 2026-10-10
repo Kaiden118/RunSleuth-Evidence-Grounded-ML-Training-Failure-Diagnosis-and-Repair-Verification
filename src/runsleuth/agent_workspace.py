@@ -2,7 +2,8 @@
 
 The script (train.py, see agent_tasks) only defines the pipeline. This harness owns
 what an agent must not change: the data, the epoch budget, the monitoring, a hash of
-the model state after each of the first optimizer steps, and the evaluation.
+the model state after each of the first optimizer steps and after every epoch, and
+the evaluation.
 
 A script is checked before it runs and executed with restricted builtins: imports
 outside an allowlist and file, network or process access are refused. This guards
@@ -40,7 +41,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from runsleuth import agent_tasks
-from runsleuth.agent_tasks import FAULTS, HEALTHY, SCRIPT_NAME, TASKS
+from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME, TASKS
 from runsleuth.camelyon_config import CamelyonConfig
 from runsleuth.camelyon_data import (
     NativeRGBPatch,
@@ -383,8 +384,11 @@ def run_workspace(
     script = Path(workspace) / SCRIPT_NAME
     module = load_script(script)
     data = build_data(module.use_for_training, device, seed)
+    steps_per_epoch = len(data.train_loader)
+    if max_train_batches is not None:
+        steps_per_epoch = min(steps_per_epoch, max_train_batches)
     seed_everything(seed)
-    model, optimizer, scheduler = module.build(device, epochs)
+    model, optimizer, scheduler = module.build(device, epochs, steps_per_epoch)
     loss_function = nn.CrossEntropyLoss()
     monitor = RunMonitor(model, optimizer, run_dir, head=head)
     record = {
@@ -392,11 +396,13 @@ def run_workspace(
         "seed": seed,
         "epochs": epochs,
         "max_train_batches": max_train_batches,
+        "steps_per_epoch": steps_per_epoch,
         "data": data.record,
         "initialization_metrics": None,
         "initial_state_sha256": state_dict_sha256(model.state_dict()),
         "hashed_steps": hashed_steps,
         "step_state_sha256": [],
+        "epoch_state_sha256": [],
         "final_state_sha256": None,
     }
     monitor.report["workspace"] = record
@@ -452,6 +458,7 @@ def run_workspace(
                 with monitor.epoch():
                     module.train_one_epoch(model, batches(), optimizer, scheduler, loss_function)
                 phase["training"] = False
+                record["epoch_state_sha256"].append(state_dict_sha256(model.state_dict()))
                 metrics = evaluate()
                 if not finite(metrics):
                     monitor.report["status"] = "diverged"
@@ -591,7 +598,7 @@ def check_tasks(
         )
         row = {
             "task": task,
-            "expected": FAULTS[task].signature if task in FAULTS else "no_known_fault",
+            "expected": agent_tasks.expected_diagnosis(task),
             "status": outcome["status"],
             "diagnosis": None,
             "as_expected": False,

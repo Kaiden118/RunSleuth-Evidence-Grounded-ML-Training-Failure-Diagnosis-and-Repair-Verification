@@ -113,6 +113,13 @@ def _learning_rate_counts(run: dict, field: str) -> int | None:
     return max(rate[field] for rate in rates)
 
 
+def _lowest_epoch_peak_learning_rate(run: dict) -> float | None:
+    """The smallest of the epochs' highest learning rates; zero means an epoch learned nothing."""
+    rows = run.get("parameter_group_epochs", [])
+    peaks = [row["learning_rate"]["max"] for row in rows if row.get("learning_rate")]
+    return min(peaks) if peaks else None
+
+
 def _heldout_training_samples(run: dict) -> int | None:
     """Most training samples drawn from the groups that one evaluation split holds out.
 
@@ -206,6 +213,7 @@ def extract_evidence(
         "max_eval_mode_training_fraction": _eval_mode_training_fraction(run),
         "max_learning_rate_changes_per_epoch": _learning_rate_counts(run, "changes"),
         "max_learning_rate_rebounds_per_epoch": _learning_rate_counts(run, "rebounds"),
+        "min_epoch_peak_learning_rate": _lowest_epoch_peak_learning_rate(run),
         "max_training_samples_in_heldout_groups": _heldout_training_samples(run),
     }
     for group in GROUPS:

@@ -386,6 +386,32 @@
         "timing": "before_training",
         "description": "Remove from the training set every sample whose group belongs to a held-out evaluation split."
       }
+    },
+    {
+      "id": "zero_learning_rate_epoch",
+      "subsystem": "training_loop",
+      "scope": "global",
+      "description": "A whole epoch runs at a learning rate of zero, usually because the schedule is shorter than the run: its optimizer steps change no parameter, so that epoch of training is wasted. Earlier epochs can be entirely correct.",
+      "requires": [
+        {
+          "evidence": "min_epoch_peak_learning_rate",
+          "op": "==",
+          "value": 0,
+          "meaning": "in some epoch the learning rate is zero at every optimizer step"
+        },
+        {
+          "evidence": "max_optimizer_steps_per_forward",
+          "op": ">",
+          "value": 0,
+          "meaning": "optimizer steps do run, so the loop is not simply missing them"
+        }
+      ],
+      "contradicts": [],
+      "repair": {
+        "action": "extend_schedule_over_all_epochs",
+        "timing": "before_training",
+        "description": "Make the learning-rate schedule span every epoch, so that the rate reaches its minimum only when training ends."
+      }
     }
   ]
 }

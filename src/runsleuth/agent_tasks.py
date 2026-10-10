@@ -1,9 +1,12 @@
 """Repair tasks for agents: one training script with a fault written into its source.
 
 Each fault is an exact edit of the healthy script in agent_task_template.py, so the
-healthy script is its ground-truth repair. materialize() writes a workspace holding
-train.py and TASK.md, the only files an agent is given. The task statement never names
-a fault, and the healthy control gets the same statement.
+healthy script is its ground-truth repair. Most faults act from the first optimizer
+step; schedule_ends_an_epoch_early leaves the first epoch untouched. A look-alike is
+also an edit, but one that keeps training correct while resembling a fault, to
+measure false alarms. materialize() writes a workspace holding train.py and TASK.md,
+the only files an agent is given. The task statement never names a fault, and every
+task gets the same statement.
 
     python -m runsleuth.agent_tasks list
     python -m runsleuth.agent_tasks show train_in_eval_mode
@@ -132,8 +135,63 @@ FAULTS = {
             ),
         ),
     ),
+    "schedule_ends_an_epoch_early": Fault(
+        "zero_learning_rate_epoch",
+        "The cosine schedule is one epoch too short, so the last epoch trains at a learning "
+        "rate of zero. The first epoch is the healthy script's, step for step; the fault needs "
+        "at least two epochs.",
+        (
+            (
+                "CosineAnnealingLR(optimizer, T_max=epochs)",
+                "CosineAnnealingLR(optimizer, T_max=epochs - 1)",
+            ),
+        ),
+    ),
 }
-TASKS = (HEALTHY, *FAULTS)
+
+
+@dataclass(frozen=True, slots=True)
+class Lookalike:
+    """A correct script that resembles a fault; resembles names that fault."""
+
+    resembles: str
+    summary: str
+    edits: tuple[tuple[str, str], ...]
+
+
+LOOKALIKES = {
+    "head_replaced_after_moving": Lookalike(
+        "stale_head",
+        "The head is replaced after the model moves to the device, yet before the optimizer "
+        "is built: the same training as the healthy script.",
+        (
+            (
+                "    model.fc = nn.Linear(model.fc.in_features, 2)\n    model.to(device)\n",
+                "    model.to(device)\n"
+                "    model.fc = nn.Linear(model.fc.in_features, 2).to(device)\n",
+            ),
+        ),
+    ),
+    "cosine_stepped_per_batch_over_the_run": Lookalike(
+        "scheduler_stepped_per_batch",
+        "The schedule is stepped after every batch and its period is the whole run: a correct "
+        "per-step cosine, though not the healthy script's trajectory.",
+        (
+            ("T_max=epochs)", "T_max=epochs * steps_per_epoch)"),
+            (
+                "        optimizer.step()\n    scheduler.step()\n",
+                "        optimizer.step()\n        scheduler.step()\n",
+            ),
+        ),
+    ),
+}
+TASKS = (HEALTHY, *LOOKALIKES, *FAULTS)
+NO_FAULT = "no_known_fault"
+
+
+def expected_diagnosis(task: str) -> str:
+    """The signature a task's run should be diagnosed with; none for correct scripts."""
+    return FAULTS[task].signature if task in FAULTS else NO_FAULT
 
 
 def healthy_source() -> str:
@@ -141,13 +199,14 @@ def healthy_source() -> str:
 
 
 def task_source(task: str) -> str:
-    """The script for a task: the healthy script, or it with one fault's edits applied."""
+    """The script for a task: the healthy script, or it with the task's edits applied."""
     source = healthy_source()
     if task == HEALTHY:
         return source
-    if task not in FAULTS:
+    variants = {**LOOKALIKES, **FAULTS}
+    if task not in variants:
         raise ValueError(f"Unknown task {task!r}; choose from {', '.join(TASKS)}")
-    for old, new in FAULTS[task].edits:
+    for old, new in variants[task].edits:
         if source.count(old) != 1:
             raise ValueError(f"{task}: every edit must match the script exactly once")
         source = source.replace(old, new)
@@ -192,6 +251,8 @@ def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.command == "list":
         print(f"{HEALTHY}: the healthy script, used as a control")
+        for name, lookalike in LOOKALIKES.items():
+            print(f"{name}: {lookalike.summary} [correct; resembles {lookalike.resembles}]")
         for name, fault in FAULTS.items():
             print(f"{name}: {fault.summary} [{fault.signature}]")
     elif args.command == "show":

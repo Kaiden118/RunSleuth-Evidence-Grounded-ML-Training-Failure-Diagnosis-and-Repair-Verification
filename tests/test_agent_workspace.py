@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from runsleuth import agent_tasks
-from runsleuth.agent_tasks import FAULTS, HEALTHY, TASKS
+from runsleuth.agent_tasks import FAULTS, HEALTHY, LOOKALIKES, TASKS
 from runsleuth.signature_matching import diagnose, extract_evidence, load_library
 
 try:
@@ -176,6 +176,9 @@ class WorkspaceRunTests(unittest.TestCase):
         hashes = {record["initial_state_sha256"], *record["step_state_sha256"]}
         self.assertEqual(len(hashes), 13)
         self.assertEqual(record["final_state_sha256"], record["step_state_sha256"][-1])
+        self.assertEqual(record["steps_per_epoch"], 6)
+        steps = record["step_state_sha256"]
+        self.assertEqual(record["epoch_state_sha256"], [steps[5], steps[11]])
         self.assertNotIn("traceback", record)
 
     def test_the_same_script_and_seed_replay_bit_for_bit(self):
@@ -197,6 +200,10 @@ class WorkspaceRunTests(unittest.TestCase):
                 self.assertEqual(report["status"], "completed")
                 found = diagnose(extract_evidence(report, healthy), library)["diagnosis"]
                 self.assertEqual(found, fault.signature)
+        for task in LOOKALIKES:
+            with self.subTest(task=task):
+                found = diagnose(extract_evidence(self.reports[task], healthy), library)
+                self.assertEqual(found["diagnosis"], "no_known_fault")
         # Leakage needs no reference: the run itself says which hospital it trained on.
         leaky = self.reports["validation_hospital_in_training"]
         self.assertEqual(
@@ -223,6 +230,22 @@ class WorkspaceRunTests(unittest.TestCase):
                 same = record["step_state_sha256"] == healthy["step_state_sha256"]
                 # A normalization used only for evaluation does not change training.
                 self.assertEqual(same, task == "train_eval_normalization_mismatch")
+        # The late fault replays the healthy first epoch and leaves it in the second.
+        late = self.reports["schedule_ends_an_epoch_early"]["workspace"]
+        self.assertEqual(late["step_state_sha256"][:6], healthy["step_state_sha256"][:6])
+        self.assertEqual(late["epoch_state_sha256"][0], healthy["epoch_state_sha256"][0])
+        self.assertNotEqual(late["epoch_state_sha256"][1], healthy["epoch_state_sha256"][1])
+        # One look-alike trains exactly as the healthy script does; the other is correct
+        # on a different trajectory.
+        same = {
+            task: self.reports[task]["workspace"]["step_state_sha256"]
+            == healthy["step_state_sha256"]
+            for task in LOOKALIKES
+        }
+        self.assertEqual(
+            same,
+            {"head_replaced_after_moving": True, "cosine_stepped_per_batch_over_the_run": False},
+        )
         mismatch = self.reports["train_eval_normalization_mismatch"]
         self.assertNotEqual(mismatch["final_metrics"], self.reports[HEALTHY]["final_metrics"])
         self.assertEqual(
@@ -522,10 +545,12 @@ class TaskCheckTests(unittest.TestCase):
                 self.assertEqual(row["diagnosis"], row["expected"])
                 self.assertIsNone(row["output"])
                 self.assertIn("ood_validation_accuracy", row["metrics"])
-                self.assertEqual(
-                    row["same_steps_as_healthy"],
-                    row["task"] in (HEALTHY, "train_eval_normalization_mismatch"),
+                unchanged = (
+                    HEALTHY,
+                    "head_replaced_after_moving",
+                    "train_eval_normalization_mismatch",
                 )
+                self.assertEqual(row["same_steps_as_healthy"], row["task"] in unchanged)
                 workspace = self.root / "check" / "workspaces" / row["task"]
                 self.assertTrue((workspace / "TASK.md").is_file())
         saved = json.loads((self.root / "check" / "check_report.json").read_text(encoding="utf-8"))

@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from runsleuth import agent_tasks
-from runsleuth.agent_tasks import FAULTS, HEALTHY, TASKS, Fault
+from runsleuth.agent_tasks import FAULTS, HEALTHY, LOOKALIKES, TASKS, Fault
 from runsleuth.signature_matching import load_library
 
 try:
@@ -28,10 +28,10 @@ class TaskSourceTests(unittest.TestCase):
         )
         self.assertEqual(agent_tasks.source_diff(HEALTHY), "")
 
-    def test_every_fault_changes_the_script_and_stays_valid_python(self):
+    def test_every_variant_changes_the_script_and_stays_valid_python(self):
         sources = {task: agent_tasks.task_source(task) for task in TASKS}
         self.assertEqual(len(set(sources.values())), len(TASKS), "tasks must differ")
-        for task in FAULTS:
+        for task in (*LOOKALIKES, *FAULTS):
             with self.subTest(task=task):
                 compile(sources[task], agent_tasks.SCRIPT_NAME, "exec")
                 diff = agent_tasks.source_diff(task)
@@ -41,7 +41,7 @@ class TaskSourceTests(unittest.TestCase):
                     for line in diff.splitlines()
                     if line[:1] in "+-" and line[:3] not in ("+++", "---")
                 ]
-                self.assertLessEqual(len(changed), 6, "a fault is a small edit")
+                self.assertLessEqual(len(changed), 6, "a variant is a small edit")
 
     def test_an_edit_must_match_exactly_once(self):
         for old in ("not in the script", "model"):
@@ -59,6 +59,12 @@ class TaskSourceTests(unittest.TestCase):
     def test_faults_map_to_failure_signatures(self):
         library = {signature["id"] for signature in load_library()["signatures"]}
         self.assertEqual({fault.signature for fault in FAULTS.values()} - library, set())
+        for task in TASKS:
+            expected = FAULTS[task].signature if task in FAULTS else "no_known_fault"
+            self.assertEqual(agent_tasks.expected_diagnosis(task), expected)
+        self.assertEqual(
+            {lookalike.resembles for lookalike in LOOKALIKES.values()} - set(FAULTS), set()
+        )
 
     def test_workspace_holds_only_the_script_and_a_neutral_statement(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -75,7 +81,8 @@ class TaskSourceTests(unittest.TestCase):
                 statements.add((workspace / "TASK.md").read_text(encoding="utf-8"))
             self.assertEqual(len(statements), 1, "every task gets the same statement")
             statement = statements.pop().lower()
-            for hint in (*FAULTS, *(fault.signature for fault in FAULTS.values()), "fault", "bug"):
+            signatures = (fault.signature for fault in FAULTS.values())
+            for hint in (*FAULTS, *LOOKALIKES, *signatures, "fault", "bug"):
                 self.assertNotIn(hint.lower(), statement)
             with self.assertRaises(FileExistsError):
                 agent_tasks.materialize(HEALTHY, Path(temporary) / HEALTHY)
@@ -117,16 +124,22 @@ def load_task(task: str) -> types.ModuleType:
 def profile(task: str) -> dict:
     """What one epoch of a task's script does, as the mechanisms the faults change."""
     torch.manual_seed(5)
-    batches = [(torch.rand(4, 3, 16, 16), torch.tensor([0, 1, 0, 1])) for _ in range(3)]
+    batches = [(torch.rand(4, 3, 16, 16), torch.tensor([0, 1, 0, 1])) for _ in range(5)]
     module = load_task(task)
-    model, optimizer, scheduler = module.build(torch.device("cpu"), epochs=2)
+    model, optimizer, scheduler = module.build(torch.device("cpu"), 2, len(batches))
     optimized = {id(p) for group in optimizer.param_groups for p in group["params"]}
     learning_rate = optimizer.param_groups[0]["lr"]
     model.eval()  # The harness evaluates before the first epoch and after every epoch.
-    modes = []
-    hook = model.register_forward_pre_hook(lambda module_, _inputs: modes.append(module_.training))
+    modes, rates = [], []
+    hooks = [
+        model.register_forward_pre_hook(lambda module_, _inputs: modes.append(module_.training)),
+        optimizer.register_step_pre_hook(
+            lambda optimizer_, *_: rates.append(optimizer_.param_groups[0]["lr"])
+        ),
+    ]
     module.train_one_epoch(model, batches, optimizer, scheduler, torch.nn.CrossEntropyLoss())
-    hook.remove()
+    for hook in hooks:
+        hook.remove()
     images = torch.rand(2, 3, 16, 16)
     return {
         "head_outputs": model.fc.out_features,
@@ -135,6 +148,8 @@ def profile(task: str) -> dict:
         "learning_rate": learning_rate,
         "trains_in_train_mode": all(modes),
         "scheduler_steps_per_epoch": scheduler.last_epoch,
+        "rate_rises_within_epoch": any(b > a for a, b in zip(rates, rates[1:], strict=False)),
+        "trains_in_second_epoch": optimizer.param_groups[0]["lr"] > 0,
         "same_preprocessing": torch.equal(
             module.prepare_training_batch(images), module.prepare_evaluation_batch(images)
         ),
@@ -151,6 +166,8 @@ class TaskMechanismTests(unittest.TestCase):
         "learning_rate": 1e-4,
         "trains_in_train_mode": True,
         "scheduler_steps_per_epoch": 1,
+        "rate_rises_within_epoch": False,
+        "trains_in_second_epoch": True,
         "same_preprocessing": True,
         "training_hospitals": (0, 3, 4),
     }
@@ -162,16 +179,26 @@ class TaskMechanismTests(unittest.TestCase):
         "train_eval_normalization_mismatch": {"same_preprocessing": False},
         "imagenet_head_kept": {"head_outputs": 1000},
         "train_in_eval_mode": {"trains_in_train_mode": False},
-        "scheduler_stepped_per_batch": {"scheduler_steps_per_epoch": 3},
+        "scheduler_stepped_per_batch": {
+            "scheduler_steps_per_epoch": 5,
+            "rate_rises_within_epoch": True,
+        },
         "validation_hospital_in_training": {"training_hospitals": (0, 1, 3, 4)},
+        "schedule_ends_an_epoch_early": {"trains_in_second_epoch": False},
+    }
+    # A look-alike keeps every mechanism healthy, or changes one in a way that is correct.
+    lookalikes = {
+        "head_replaced_after_moving": {},
+        "cosine_stepped_per_batch_over_the_run": {"scheduler_steps_per_epoch": 5},
     }
 
     def test_healthy_script_trains_as_the_statement_describes(self):
         self.assertEqual(profile(HEALTHY), self.healthy)
 
-    def test_each_fault_changes_one_mechanism_only(self):
+    def test_each_fault_changes_one_mechanism_and_look_alikes_stay_correct(self):
         self.assertEqual(set(self.changes), set(FAULTS))
-        for task, change in self.changes.items():
+        self.assertEqual(set(self.lookalikes), set(LOOKALIKES))
+        for task, change in {**self.changes, **self.lookalikes}.items():
             with self.subTest(task=task):
                 self.assertEqual(profile(task), {**self.healthy, **change})
 

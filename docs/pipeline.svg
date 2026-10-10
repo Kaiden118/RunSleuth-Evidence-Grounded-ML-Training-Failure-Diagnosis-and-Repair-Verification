@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" width="1000" height="250" role="img" aria-labelledby="title desc" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title id="title">How RunSleuth works</title>
+  <desc id="desc">A training run produces evidence. The signature matcher turns evidence into a diagnosis and a minimal repair, which an LLM can explain. The repaired run is retrained and verified. A healthy reference run informs both the matcher and the verification.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#3d3a8c"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="250" rx="10" fill="#ffffff"/>
+
+  <!-- Optional LLM explanation, above the matcher -->
+  <rect x="330" y="16" width="176" height="46" rx="8" fill="#ffffff" stroke="#3d3a8c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="418" y="36" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">LLM explanation</text>
+  <text x="418" y="53" text-anchor="middle" font-size="12" fill="#5e5870">cited values are checked</text>
+  <line x1="418" y1="96" x2="418" y2="66" stroke="#3d3a8c" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Main flow -->
+  <g stroke="#3d3a8c" stroke-width="1.5" fill="#eeecf8">
+    <rect x="12" y="96" width="140" height="58" rx="8"/>
+    <rect x="180" y="96" width="140" height="58" rx="8"/>
+    <rect x="348" y="96" width="140" height="58" rx="8"/>
+    <rect x="516" y="96" width="140" height="58" rx="8"/>
+    <rect x="684" y="96" width="140" height="58" rx="8"/>
+    <rect x="852" y="96" width="136" height="58" rx="8" fill="#f8e6ed" stroke="#b8325f"/>
+  </g>
+  <g text-anchor="middle" fill="#1d1a26" font-size="14" font-weight="600">
+    <text x="82" y="121">Training run</text>
+    <text x="250" y="121">Evidence</text>
+    <text x="418" y="121">Signature matcher</text>
+    <text x="586" y="121">Diagnosis</text>
+    <text x="754" y="121">Retrain</text>
+    <text x="920" y="121">Verify</text>
+  </g>
+  <g text-anchor="middle" fill="#5e5870" font-size="12">
+    <text x="82" y="140">RunMonitor · HF callback</text>
+    <text x="250" y="140">run_report.json</text>
+    <text x="418" y="140">11 failure signatures</text>
+    <text x="586" y="140">and minimal repair</text>
+    <text x="754" y="140">the repaired run</text>
+    <text x="920" y="140">accept or reject</text>
+  </g>
+  <g stroke="#3d3a8c" stroke-width="1.5" marker-end="url(#arrow)">
+    <line x1="152" y1="125" x2="177" y2="125"/>
+    <line x1="320" y1="125" x2="345" y2="125"/>
+    <line x1="488" y1="125" x2="513" y2="125"/>
+    <line x1="656" y1="125" x2="681" y2="125"/>
+    <line x1="824" y1="125" x2="849" y2="125"/>
+  </g>
+
+  <!-- Healthy reference run, below, feeding the matcher and the verification -->
+  <rect x="560" y="188" width="220" height="46" rx="8" fill="#ffffff" stroke="#3d3a8c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="670" y="208" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">Healthy reference run</text>
+  <text x="670" y="225" text-anchor="middle" font-size="12" fill="#5e5870">same setup, no fault</text>
+  <g fill="none" stroke="#3d3a8c" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow)">
+    <path d="M560 211 H418 V158"/>
+    <path d="M780 211 H920 V158"/>
+  </g>
+</svg>

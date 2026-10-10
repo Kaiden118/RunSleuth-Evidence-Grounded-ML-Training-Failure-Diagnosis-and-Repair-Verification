@@ -42,6 +42,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from runsleuth import agent_tasks
 from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME, TASKS
+from runsleuth.agent_verification import compare_trajectories
 from runsleuth.camelyon_config import CamelyonConfig
 from runsleuth.camelyon_data import (
     NativeRGBPatch,
@@ -373,9 +374,14 @@ def run_workspace(
     device: torch.device,
     head: str = "fc",
     max_train_batches: int | None = None,
+    stop_after_epochs: int | None = None,
     hashed_steps: int = HASHED_STEPS,
 ) -> Path:
     """Train the workspace script for a fixed budget; return the run report's path.
+
+    stop_after_epochs ends the run early without changing what the script is told:
+    it still builds its schedule for epochs epochs, so the epochs it does run replay
+    the start of a full run, and no final state is recorded.
 
     Once training has started, a script that fails or diverges still yields a report
     that says so. A refused script raises ScriptRefused, and an error while the script
@@ -397,6 +403,7 @@ def run_workspace(
         "epochs": epochs,
         "max_train_batches": max_train_batches,
         "steps_per_epoch": steps_per_epoch,
+        "stop_after_epochs": stop_after_epochs,
         "data": data.record,
         "initialization_metrics": None,
         "initial_state_sha256": state_dict_sha256(model.state_dict()),
@@ -454,6 +461,8 @@ def run_workspace(
             initial = evaluate()
             record["initialization_metrics"] = initial if finite(initial) else None
             for epoch in range(1, epochs + 1):
+                if stop_after_epochs is not None and epoch > stop_after_epochs:
+                    break
                 phase["training"] = True
                 with monitor.epoch():
                     module.train_one_epoch(model, batches(), optimizer, scheduler, loss_function)
@@ -500,6 +509,7 @@ def run_in_subprocess(
     config: Path | None = None,
     device: str = "auto",
     max_train_batches: int | None = None,
+    stop_after_epochs: int | None = None,
     timeout: float = 3600.0,
 ) -> dict[str, Any]:
     """Run a workspace in a child process and return its outcome.
@@ -534,6 +544,8 @@ def run_in_subprocess(
         command += ["--config", str(Path(config).resolve())]
     if max_train_batches is not None:
         command += ["--max-train-batches", str(max_train_batches)]
+    if stop_after_epochs is not None:
+        command += ["--stop-after-epochs", str(stop_after_epochs)]
     try:
         completed = subprocess.run(
             command,
@@ -571,9 +583,9 @@ def check_tasks(
     """Train every task for the same budget and diagnose each run against the healthy one.
 
     A task is as_expected when its run completes and the diagnosis is its fault's
-    signature, or no_known_fault for the healthy script. same_steps_as_healthy says
-    whether the hashed optimizer steps replay the healthy run's bit for bit. The
-    check stops if the healthy run does not complete. The result is also written to
+    signature, or no_known_fault for a correct script. trajectory compares the model
+    states the run hashed with the healthy run's (see agent_verification). The check
+    stops if the healthy run does not complete. The result is also written to
     check_report.json in output_dir, which must be new.
     """
     if HEALTHY not in tasks:
@@ -602,7 +614,7 @@ def check_tasks(
             "status": outcome["status"],
             "diagnosis": None,
             "as_expected": False,
-            "same_steps_as_healthy": None,
+            "trajectory": None,
             "metrics": None,
             "report": outcome["report"],
             "output": None if outcome["status"] == "completed" else outcome["output"],
@@ -615,10 +627,7 @@ def check_tasks(
             row["as_expected"] = (
                 outcome["status"] == "completed" and row["diagnosis"] == row["expected"]
             )
-            row["same_steps_as_healthy"] = (
-                report["workspace"]["step_state_sha256"]
-                == healthy["workspace"]["step_state_sha256"]
-            )
+            row["trajectory"] = compare_trajectories(report, healthy)
             row["metrics"] = {
                 name: value for name, value in report["final_metrics"].items() if name != "epoch"
             }
@@ -645,10 +654,25 @@ def check_tasks(
     return result
 
 
+def _replay(trajectory: dict[str, Any] | None) -> str:
+    """Where a run's hashed states leave the healthy run's, for the check table."""
+    if trajectory is None or trajectory["outcome"] == "not_comparable":
+        return "-"
+    if trajectory["outcome"] != "diverged":
+        return "identical" if trajectory["outcome"] == "identical_full_run" else "checked steps"
+    where = trajectory["first_difference"]
+    place = where["at"].replace("_", " ")
+    return place if where["index"] is None else f"{place} {where['index']}"
+
+
 def check_text(result: dict[str, Any]) -> str:
-    """The check as a table, one line per task, then what failed tasks printed."""
+    """The check as a table, one line per task, then what failed tasks printed.
+
+    replay is identical when every hashed model state matches the healthy run's, or
+    names the first state that differs.
+    """
     lines = [
-        f"{'task':<36}{'status':<11}{'diagnosis':<36}{'ok':<5}{'replay':<8}id acc  ood acc",
+        f"{'task':<40}{'status':<11}{'diagnosis':<36}{'ok':<5}{'replay':<15}id acc  ood acc",
     ]
     for row in result["tasks"]:
         metrics = row["metrics"] or {}
@@ -656,10 +680,10 @@ def check_text(result: dict[str, Any]) -> str:
             f"{metrics[name]:.4f}" if name in metrics else "   -  "
             for name in ("id_validation_accuracy", "ood_validation_accuracy")
         )
-        replay = {True: "same", False: "differs", None: "-"}[row["same_steps_as_healthy"]]
         lines.append(
-            f"{row['task']:<36}{row['status']:<11}{row['diagnosis'] or '-':<36}"
-            f"{'yes' if row['as_expected'] else 'NO':<5}{replay:<8}{accuracies}"
+            f"{row['task']:<40}{row['status']:<11}{row['diagnosis'] or '-':<36}"
+            f"{'yes' if row['as_expected'] else 'NO':<5}{_replay(row['trajectory']):<15}"
+            f"{accuracies}"
         )
     lines.append(f"{result['tasks_as_expected']}/{len(result['tasks'])} tasks as expected")
     for row in result["tasks"]:
@@ -674,6 +698,9 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="Train a workspace script under monitoring.")
     run.add_argument("--workspace", type=Path, required=True)
     run.add_argument("--output", type=Path, required=True, help="New run directory.")
+    run.add_argument(
+        "--stop-after-epochs", type=int, help="End early; the schedule keeps its full length."
+    )
     check = commands.add_parser(
         "check", help="Train every task and diagnose each run against the healthy one."
     )
@@ -727,6 +754,7 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             device=resolve_device(args.device),
             max_train_batches=args.max_train_batches,
+            stop_after_epochs=args.stop_after_epochs,
         )
         status = json.loads(report.read_text(encoding="utf-8"))["status"]
         outcome.update(status=status, report=str(report))

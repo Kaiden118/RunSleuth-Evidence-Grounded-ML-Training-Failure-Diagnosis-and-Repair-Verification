@@ -20,6 +20,7 @@ except ModuleNotFoundError as error:
 
 if torch is not None:
     from runsleuth import agent_workspace
+    from runsleuth.agent_verification import compare_trajectories
     from runsleuth.agent_workspace import ScriptRefused, check_script
 
 # A model small enough for CPU, with the parts the faults act on: BatchNorm and a
@@ -146,7 +147,7 @@ class WorkspaceRunTests(unittest.TestCase):
         return directory
 
     @classmethod
-    def run_task(cls, task: str, name: str) -> dict:
+    def run_task(cls, task: str, name: str, **options) -> dict:
         path = agent_workspace.run_workspace(
             cls.workspace(name, tiny_source(task)),
             cls.root / "runs" / name,
@@ -154,6 +155,7 @@ class WorkspaceRunTests(unittest.TestCase):
             epochs=2,
             seed=11,
             device=torch.device("cpu"),
+            **options,
         )
         return json.loads(path.read_text(encoding="utf-8"))
 
@@ -253,6 +255,37 @@ class WorkspaceRunTests(unittest.TestCase):
                 "training_hospitals"
             ],
             [0, 1, 3, 4],
+        )
+
+    def test_a_run_stopped_early_misses_the_late_fault_that_the_full_run_exposes(self):
+        late = "schedule_ends_an_epoch_early"
+        healthy = self.reports[HEALTHY]
+        stopped = self.run_task(late, "late-stopped", stop_after_epochs=1)
+        self.assertEqual(stopped["status"], "completed")
+        self.assertEqual(stopped["completed_epochs"], 1)
+        record = stopped["workspace"]
+        self.assertEqual((record["epochs"], record["stop_after_epochs"]), (2, 1))
+        self.assertEqual(len(record["step_state_sha256"]), 6)
+        self.assertIsNone(record["final_state_sha256"])
+        bounded = compare_trajectories(stopped, healthy)
+        self.assertEqual(bounded["outcome"], "identical_over_checked_steps")
+        self.assertEqual(bounded["checked"], {"steps_hashed": 6, "epoch_ends": 1, "epochs": 2})
+        full = compare_trajectories(self.reports[late], healthy)
+        self.assertEqual(full["outcome"], "diverged")
+        self.assertEqual(full["first_difference"], {"at": "step", "index": 7})
+        # With fewer steps hashed one by one, the epoch end still exposes it.
+        coarse = [self.run_task(task, f"coarse-{task}", hashed_steps=3) for task in (late, HEALTHY)]
+        self.assertEqual(
+            compare_trajectories(*coarse)["first_difference"], {"at": "epoch", "index": 2}
+        )
+        # Stopping the healthy script early changes nothing it does before the stop.
+        early = self.run_task(HEALTHY, "healthy-stopped", stop_after_epochs=1)
+        self.assertEqual(
+            compare_trajectories(early, healthy)["outcome"], "identical_over_checked_steps"
+        )
+        self.assertEqual(
+            compare_trajectories(self.reports["head_replaced_after_moving"], healthy)["outcome"],
+            "identical_full_run",
         )
 
     def test_budget_and_hash_limits_bound_a_run(self):
@@ -550,7 +583,9 @@ class TaskCheckTests(unittest.TestCase):
                     "head_replaced_after_moving",
                     "train_eval_normalization_mismatch",
                 )
-                self.assertEqual(row["same_steps_as_healthy"], row["task"] in unchanged)
+                identical = row["trajectory"]["outcome"] == "identical_full_run"
+                self.assertEqual(identical, row["task"] in unchanged)
+                self.assertIn(row["trajectory"]["outcome"], ("identical_full_run", "diverged"))
                 workspace = self.root / "check" / "workspaces" / row["task"]
                 self.assertTrue((workspace / "TASK.md").is_file())
         saved = json.loads((self.root / "check" / "check_report.json").read_text(encoding="utf-8"))
@@ -601,7 +636,7 @@ class TaskCheckTests(unittest.TestCase):
             "status": "completed",
             "diagnosis": "frozen_head",
             "as_expected": False,
-            "same_steps_as_healthy": True,
+            "trajectory": {"outcome": "identical_full_run", "first_difference": None},
             "metrics": {"id_validation_accuracy": 0.5, "ood_validation_accuracy": 0.25},
         }
         result = {"tasks_as_expected": 0, "tasks": [row]}

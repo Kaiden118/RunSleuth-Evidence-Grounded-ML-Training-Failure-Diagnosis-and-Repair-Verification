@@ -58,9 +58,7 @@ class TaskSourceTests(unittest.TestCase):
 
     def test_faults_map_to_failure_signatures(self):
         library = {signature["id"] for signature in load_library()["signatures"]}
-        missing = {fault.signature for fault in FAULTS.values()} - library
-        # The leakage signature arrives with the workspace runner, which records the evidence.
-        self.assertEqual(missing, {"train_evaluation_group_overlap"})
+        self.assertEqual({fault.signature for fault in FAULTS.values()} - library, set())
 
     def test_workspace_holds_only_the_script_and_a_neutral_statement(self):
         with tempfile.TemporaryDirectory() as temporary:

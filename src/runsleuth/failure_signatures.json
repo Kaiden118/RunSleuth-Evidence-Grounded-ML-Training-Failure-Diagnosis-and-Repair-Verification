@@ -366,6 +366,26 @@
         "timing": "end_of_every_training_epoch",
         "description": "Call scheduler.step() once per epoch, after the batch loop, instead of after every optimizer step."
       }
+    },
+    {
+      "id": "train_evaluation_group_overlap",
+      "subsystem": "data",
+      "scope": "global",
+      "description": "Training uses samples from a group that an evaluation split holds out, such as a validation hospital, a patient or a lesion. That split then no longer measures generalization to unseen groups, and its metrics look better than they should.",
+      "requires": [
+        {
+          "evidence": "max_training_samples_in_heldout_groups",
+          "op": ">",
+          "value": 0,
+          "meaning": "training samples come from groups that an evaluation split holds out"
+        }
+      ],
+      "contradicts": [],
+      "repair": {
+        "action": "exclude_heldout_groups_from_training",
+        "timing": "before_training",
+        "description": "Remove from the training set every sample whose group belongs to a held-out evaluation split."
+      }
     }
   ]
 }

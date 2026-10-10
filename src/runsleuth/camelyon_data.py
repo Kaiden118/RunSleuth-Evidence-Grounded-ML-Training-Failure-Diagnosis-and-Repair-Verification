@@ -342,11 +342,19 @@ def _metadata_rows(raw: Any, expected: dict[str, int]) -> list[tuple[int, int, i
 class MirrorSubset:
     """Top-level, pickleable view with indices into combined mirror row order."""
 
-    def __init__(self, dataset: CamelyonMirror, split: str, transform: Any) -> None:
+    def __init__(
+        self,
+        dataset: CamelyonMirror,
+        split: str,
+        transform: Any,
+        indices: Sequence[int] | None = None,
+    ) -> None:
         self.dataset, self.transform = dataset, transform
-        self.indices = [
-            i for i, value in enumerate(dataset.split_array) if value == SPLIT_IDS[split]
-        ]
+        self.indices = (
+            [i for i, value in enumerate(dataset.split_array) if value == SPLIT_IDS[split]]
+            if indices is None
+            else [int(index) for index in indices]
+        )
 
     def __len__(self) -> int:
         return len(self.indices)
@@ -386,6 +394,10 @@ class CamelyonMirror:
                 "This adapter only exposes train, id_val, and val; test remains sealed."
             )
         return MirrorSubset(self, split, transform)
+
+    def get_patches(self, indices: Sequence[int], transform: Any = None) -> MirrorSubset:
+        """A view over chosen train and validation patches, by combined row index."""
+        return MirrorSubset(self, "train", transform, indices)
 
 
 def load_camelyon_mirror(config: Any, download: bool = False) -> CamelyonMirror:

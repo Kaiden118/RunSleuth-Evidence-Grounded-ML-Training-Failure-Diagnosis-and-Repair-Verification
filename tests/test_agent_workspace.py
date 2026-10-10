@@ -38,9 +38,12 @@ class Tiny(nn.Module):
 """
 
 
+TASK_SOURCE = agent_tasks.task_source  # Bound here, before any test patches it.
+
+
 def tiny_source(task: str) -> str:
     """A task's script with the tiny model in place of the pretrained ResNet18."""
-    source = agent_tasks.task_source(task)
+    source = TASK_SOURCE(task)
     resnet = "model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)"
     marker = "\n\ndef use_for_training"
     assert source.count(resnet) == 1 and source.count(marker) == 1
@@ -193,9 +196,24 @@ class WorkspaceRunTests(unittest.TestCase):
                 report = self.reports[task]
                 self.assertEqual(report["status"], "completed")
                 found = diagnose(extract_evidence(report, healthy), library)["diagnosis"]
-                # The leakage signature arrives with the Camelyon17 data source.
-                missing = fault.signature == "train_evaluation_group_overlap"
-                self.assertEqual(found, "no_known_fault" if missing else fault.signature)
+                self.assertEqual(found, fault.signature)
+        # Leakage needs no reference: the run itself says which hospital it trained on.
+        leaky = self.reports["validation_hospital_in_training"]
+        self.assertEqual(
+            leaky["evaluation_holdouts"]["ood"],
+            {
+                "held_out_by": "hospital",
+                "evaluation_groups": [1],
+                "training_samples_in_evaluation_groups": 8,
+            },
+        )
+        self.assertEqual(
+            diagnose(extract_evidence(leaky), library)["diagnosis"],
+            "train_evaluation_group_overlap",
+        )
+        self.assertEqual(
+            healthy["evaluation_holdouts"]["ood"]["training_samples_in_evaluation_groups"], 0
+        )
 
     def test_training_faults_leave_the_healthy_trajectory_and_evaluation_faults_do_not(self):
         healthy = self.reports[HEALTHY]["workspace"]
@@ -351,6 +369,230 @@ class SubprocessRunTests(unittest.TestCase):
         outcome = json.loads(printed.call_args.args[0])
         self.assertEqual(outcome["status"], "failed")
         self.assertEqual(outcome["error"]["type"], "NameError")
+
+
+@unittest.skipIf(torch is None, "Install torch and torchvision for the workspace tests")
+class CamelyonTaskDataTests(unittest.TestCase):
+    """The Camelyon17 source on a synthetic mirror: 36 training patches from hospitals
+    0, 3 and 4, 12 in-distribution validation patches, 12 from validation hospital 1."""
+
+    def setUp(self):
+        from test_camelyon_data import SyntheticSubset, SyntheticWILDS
+
+        from runsleuth.camelyon_config import CamelyonConfig
+
+        class Mirror(SyntheticWILDS):
+            def get_patches(self, indices, transform=None):
+                return SyntheticSubset(self, [int(index) for index in indices], transform)
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.mirror = Mirror(temporary.name)
+        self.config = CamelyonConfig(
+            device="cpu",
+            batch_size=4,
+            max_train_samples=18,
+            max_id_val_samples=6,
+            max_ood_val_samples=6,
+        )
+        for module in ("agent_workspace", "camelyon_data"):
+            patcher = patch(f"runsleuth.{module}.load_camelyon_mirror", return_value=self.mirror)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def build(self, use_for_training, seed=3):
+        builder = agent_workspace.camelyon_task_data(self.config)
+        return builder(use_for_training, torch.device("cpu"), seed)
+
+    @staticmethod
+    def indices(loader) -> list[int]:
+        return list(loader.dataset.subset.indices)
+
+    def test_a_healthy_script_gets_the_baseline_subsets_as_raw_patches(self):
+        from runsleuth.camelyon_data import build_camelyon_data
+
+        data = self.build(lambda hospital: hospital in (0, 3, 4))
+        baseline = build_camelyon_data(self.config, device=torch.device("cpu")).manifest["splits"]
+        self.assertEqual(self.indices(data.train_loader), baseline["train"]["selected_indices"])
+        self.assertEqual(
+            self.indices(data.evaluation_loaders["id"]), baseline["id_val"]["selected_indices"]
+        )
+        self.assertEqual(
+            self.indices(data.evaluation_loaders["ood"]), baseline["val"]["selected_indices"]
+        )
+        images, labels = next(iter(data.train_loader))
+        self.assertEqual(tuple(images.shape), (4, 3, 96, 96))
+        self.assertEqual(labels.dtype, torch.int64)
+        # RGB (255, 0, 128) in [0, 1]: the script, not the harness, normalizes.
+        self.assertTrue(torch.allclose(images[0, :, 0, 0], torch.tensor([1.0, 0.0, 128 / 255])))
+        self.assertEqual(data.record["training_hospitals"], [0, 3, 4])
+        self.assertEqual(data.record["training_samples"], 18)
+        self.assertEqual(data.record["evaluation_samples"], {"id": 6, "ood": 6})
+        self.assertEqual(
+            data.holdouts["ood"],
+            {
+                "held_out_by": "hospital",
+                "evaluation_groups": [1],
+                "training_samples_in_evaluation_groups": 0,
+                "slides_shared_with_training": 0,
+            },
+        )
+        self.assertIsNone(data.holdouts["id"]["held_out_by"])
+        json.dumps({"holdouts": data.holdouts, "record": data.record}, allow_nan=False)
+
+    def test_admitting_the_validation_hospital_leaks_its_slides_but_no_evaluation_patch(self):
+        data = self.build(lambda hospital: hospital != 2)
+        training = self.indices(data.train_loader)
+        evaluation = self.indices(data.evaluation_loaders["ood"])
+        self.assertFalse(set(training) & set(evaluation))
+        hospitals = self.mirror.metadata_array[:, 0].tolist()
+        leaked = [index for index in training if hospitals[index] == 1]
+        # 6 spare validation-hospital patches among 42 candidates, 18 drawn by stratum.
+        self.assertEqual(len(leaked), 2)
+        self.assertEqual(data.record["training_hospitals"], [0, 1, 3, 4])
+        self.assertEqual(data.holdouts["ood"]["training_samples_in_evaluation_groups"], 2)
+        self.assertGreater(data.holdouts["ood"]["slides_shared_with_training"], 0)
+        self.assertEqual(self.indices(data.evaluation_loaders["ood"]), evaluation)
+
+    def test_the_seed_orders_training_and_never_changes_the_subset(self):
+        def order(seed):
+            loader = self.build(lambda hospital: hospital in (0, 3, 4), seed).train_loader
+            return list(loader.sampler)
+
+        self.assertEqual(order(3), order(3))
+        self.assertNotEqual(order(3), order(4))
+        self.assertEqual(sorted(order(3)), sorted(order(4)))
+
+    def test_a_script_that_admits_no_hospital_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, "admits no hospital"):
+            self.build(lambda hospital: False)
+
+    def test_data_sources_are_named_on_the_command_line(self):
+        self.assertIs(
+            agent_workspace.data_builder("synthetic"), agent_workspace.synthetic_task_data
+        )
+        with self.assertRaisesRegex(ValueError, "--config"):
+            agent_workspace.data_builder("camelyon")
+        with self.assertRaisesRegex(ValueError, "Unknown data source"):
+            agent_workspace.data_builder("imagenet")
+        self.config.save(self.root / "config.json")
+        builder = agent_workspace.data_builder("camelyon", self.root / "config.json")
+        data = builder(lambda hospital: hospital in (0, 3, 4), torch.device("cpu"), 3)
+        self.assertEqual(data.record["source"], "camelyon17")
+
+
+@unittest.skipIf(torch is None, "Install torch and torchvision for the workspace tests")
+class TaskCheckTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        patcher = patch("runsleuth.agent_tasks.task_source", tiny_source)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def run_in_process(workspace, run_dir, *, data, config, epochs, seed, device, **_options):
+        path = agent_workspace.run_workspace(
+            workspace,
+            run_dir,
+            agent_workspace.data_builder(data, config),
+            epochs=epochs,
+            seed=seed,
+            device=torch.device(device),
+        )
+        status = json.loads(path.read_text(encoding="utf-8"))["status"]
+        return {"status": status, "problems": [], "report": str(path), "error": None, "output": ""}
+
+    def check(self, **options):
+        return agent_workspace.check_tasks(
+            self.root / "check", data="synthetic", epochs=2, seed=11, device="cpu", **options
+        )
+
+    def test_every_task_is_trained_and_diagnosed_against_the_healthy_run(self):
+        lines = []
+        result = self.check(run=self.run_in_process, progress=lines.append)
+        self.assertEqual(result["tasks_as_expected"], len(TASKS))
+        self.assertEqual([row["task"] for row in result["tasks"]], list(TASKS))
+        self.assertEqual(len(lines), len(TASKS))
+        for row in result["tasks"]:
+            with self.subTest(task=row["task"]):
+                self.assertEqual(row["status"], "completed")
+                self.assertEqual(row["diagnosis"], row["expected"])
+                self.assertIsNone(row["output"])
+                self.assertIn("ood_validation_accuracy", row["metrics"])
+                self.assertEqual(
+                    row["same_steps_as_healthy"],
+                    row["task"] in (HEALTHY, "train_eval_normalization_mismatch"),
+                )
+                workspace = self.root / "check" / "workspaces" / row["task"]
+                self.assertTrue((workspace / "TASK.md").is_file())
+        saved = json.loads((self.root / "check" / "check_report.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved, result)
+        text = agent_workspace.check_text(result)
+        self.assertIn(f"{len(TASKS)}/{len(TASKS)} tasks as expected", text)
+        self.assertNotIn(" NO ", text)
+
+    def test_a_task_that_does_not_run_is_reported_and_not_as_expected(self):
+        def run(workspace, run_dir, **options):
+            if workspace.name == "frozen_head":
+                return {"status": "crashed", "problems": [], "report": None, "output": "boom"}
+            return self.run_in_process(workspace, run_dir, **options)
+
+        result = self.check(run=run, tasks=("frozen_head", HEALTHY, "stale_head"))
+        rows = {row["task"]: row for row in result["tasks"]}
+        self.assertEqual(list(rows), [HEALTHY, "frozen_head", "stale_head"])
+        self.assertEqual(result["tasks_as_expected"], 2)
+        self.assertEqual(rows["frozen_head"]["status"], "crashed")
+        self.assertEqual(rows["frozen_head"]["output"], "boom")
+        self.assertIsNone(rows["frozen_head"]["diagnosis"])
+        text = agent_workspace.check_text(result)
+        self.assertIn(" NO ", text)
+        self.assertIn("frozen_head (crashed) printed:\nboom", text)
+
+    def test_the_check_stops_when_the_healthy_reference_does_not_complete(self):
+        calls = []
+
+        def run(workspace, run_dir, **_options):
+            calls.append(workspace.name)
+            return {"status": "refused", "problems": ["line 1"], "report": None, "output": "no"}
+
+        result = self.check(run=run)
+        self.assertEqual(calls, [HEALTHY])
+        self.assertEqual([row["task"] for row in result["tasks"]], [HEALTHY])
+        self.assertEqual(result["tasks_as_expected"], 0)
+
+    def test_check_needs_the_healthy_task_and_a_new_directory(self):
+        with self.assertRaisesRegex(ValueError, "healthy"):
+            self.check(run=self.run_in_process, tasks=("stale_head",))
+        (self.root / "check").mkdir(exist_ok=True)
+        with self.assertRaises(FileExistsError):
+            self.check(run=self.run_in_process)
+
+    def test_command_line_prints_the_table_and_fails_unless_every_task_is_as_expected(self):
+        row = {
+            "task": HEALTHY,
+            "status": "completed",
+            "diagnosis": "frozen_head",
+            "as_expected": False,
+            "same_steps_as_healthy": True,
+            "metrics": {"id_validation_accuracy": 0.5, "ood_validation_accuracy": 0.25},
+        }
+        result = {"tasks_as_expected": 0, "tasks": [row]}
+        arguments = ["check", "--output", str(self.root / "check"), "--data", "synthetic"]
+        with (
+            patch("runsleuth.agent_workspace.check_tasks", return_value=result) as check,
+            patch("builtins.print") as printed,
+        ):
+            self.assertEqual(agent_workspace.main(arguments), 1)
+            self.assertEqual(check.call_args.kwargs["tasks"], TASKS)
+            selected = [*arguments, "--tasks", HEALTHY, "stale_head"]
+            agent_workspace.main(selected)
+            self.assertEqual(check.call_args.kwargs["tasks"], (HEALTHY, "stale_head"))
+        self.assertEqual(check.call_args.kwargs["data"], "synthetic")
+        self.assertIn("0.5000  0.2500", printed.call_args.args[0])
+        self.assertIn("0/1 tasks as expected", printed.call_args.args[0])
 
 
 if __name__ == "__main__":

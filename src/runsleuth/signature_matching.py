@@ -113,6 +113,20 @@ def _learning_rate_counts(run: dict, field: str) -> int | None:
     return max(rate[field] for rate in rates)
 
 
+def _heldout_training_samples(run: dict) -> int | None:
+    """Most training samples drawn from the groups that one evaluation split holds out.
+
+    A run reports evaluation_holdouts per evaluation split; a split held out by a
+    group (a hospital, a patient, a lesion) names it in held_out_by.
+    """
+    counts = [
+        holdout["training_samples_in_evaluation_groups"]
+        for holdout in (run.get("evaluation_holdouts") or {}).values()
+        if holdout.get("held_out_by")
+    ]
+    return max(counts) if counts else None
+
+
 def _inferred_first_step_lr(run: dict, group: str) -> float | None:
     rows = run.get("parameter_group_epochs", [])
     first = rows[0].get(group) if rows else None
@@ -192,6 +206,7 @@ def extract_evidence(
         "max_eval_mode_training_fraction": _eval_mode_training_fraction(run),
         "max_learning_rate_changes_per_epoch": _learning_rate_counts(run, "changes"),
         "max_learning_rate_rebounds_per_epoch": _learning_rate_counts(run, "rebounds"),
+        "max_training_samples_in_heldout_groups": _heldout_training_samples(run),
     }
     for group in GROUPS:
         stats = _group_stats(run, group)

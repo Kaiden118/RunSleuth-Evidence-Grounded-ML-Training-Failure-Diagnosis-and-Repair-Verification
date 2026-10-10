@@ -11,6 +11,11 @@ this user, so run_in_subprocess adds a time limit and removes credentials from t
 environment.
 
     python -m runsleuth.agent_workspace run --workspace W --output runs/w --data synthetic
+    python -m runsleuth.agent_workspace check --output artifacts/agent_tasks/check-1 \
+        --data camelyon --config configs/camelyon17_clean.json --max-train-batches 200
+
+check trains every task of agent_tasks for the same budget and diagnoses each run
+against the healthy one, which shows whether the faults are visible in short runs.
 """
 
 import argparse
@@ -34,118 +39,43 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from runsleuth.agent_tasks import SCRIPT_NAME
+from runsleuth import agent_tasks
+from runsleuth.agent_tasks import FAULTS, HEALTHY, SCRIPT_NAME, TASKS
+from runsleuth.camelyon_config import CamelyonConfig
+from runsleuth.camelyon_data import (
+    NativeRGBPatch,
+    PairDataset,
+    load_camelyon_mirror,
+    seed_worker,
+    select_stratified_indices,
+)
 from runsleuth.optimizer_probe import state_dict_sha256
 from runsleuth.run_monitor import RunMonitor
+from runsleuth.signature_matching import diagnose, extract_evidence, load_library
 from runsleuth.train import resolve_device, seed_everything
 
 ALLOWED_IMPORTS = frozenset(
     {"torch", "torchvision", "math", "typing", "functools", "itertools", "collections"}
 )
 DENIED_NAMES = frozenset(
-    {
-        "open",
-        "exec",
-        "eval",
-        "compile",
-        "input",
-        "breakpoint",
-        "globals",
-        "locals",
-        "vars",
-        "getattr",
-        "setattr",
-        "delattr",
-        "exit",
-        "quit",
-    }
+    "open exec eval compile input breakpoint globals locals vars getattr setattr delattr "
+    "exit quit".split()
 )
 # Attribute and imported names that read or write files, reach the network or start
 # processes. Names with a leading underscore are refused as well, except __init__.
 DENIED_ATTRIBUTES = frozenset(
-    {
-        "load",
-        "save",
-        "hub",
-        "jit",
-        "io",
-        "datasets",
-        "onnx",
-        "tensorboard",
-        "save_image",
-        "write_png",
-        "write_jpeg",
-        "cpp_extension",
-        "collect_env",
-        "model_zoo",
-        "serialization",
-        "multiprocessing",
-        "distributed",
-        "package",
-        "from_file",
-        "tofile",
-        "load_url",
-        "load_state_dict_from_url",
-        "download_url_to_file",
-        "system",
-        "popen",
-    }
+    "load save hub jit io datasets onnx tensorboard save_image write_png write_jpeg "
+    "cpp_extension collect_env model_zoo serialization multiprocessing distributed package "
+    "from_file tofile load_url load_state_dict_from_url download_url_to_file system "
+    "popen".split()
 )
-ALLOWED_BUILTINS = (
-    "abs",
-    "all",
-    "any",
-    "bool",
-    "callable",
-    "classmethod",
-    "dict",
-    "divmod",
-    "enumerate",
-    "filter",
-    "float",
-    "frozenset",
-    "hasattr",
-    "int",
-    "isinstance",
-    "issubclass",
-    "iter",
-    "len",
-    "list",
-    "map",
-    "max",
-    "min",
-    "next",
-    "object",
-    "pow",
-    "print",
-    "property",
-    "range",
-    "repr",
-    "reversed",
-    "round",
-    "set",
-    "slice",
-    "sorted",
-    "staticmethod",
-    "str",
-    "sum",
-    "super",
-    "tuple",
-    "type",
-    "zip",
-    "ArithmeticError",
-    "AssertionError",
-    "AttributeError",
-    "Exception",
-    "IndexError",
-    "KeyError",
-    "NotImplementedError",
-    "RuntimeError",
-    "StopIteration",
-    "TypeError",
-    "ValueError",
-    "ZeroDivisionError",
-    "__build_class__",
+ALLOWED_BUILTINS = tuple(
+    "abs all any bool callable classmethod dict divmod enumerate filter float frozenset "
+    "hasattr int isinstance issubclass iter len list map max min next object pow print "
+    "property range repr reversed round set slice sorted staticmethod str sum super tuple "
+    "type zip ArithmeticError AssertionError AttributeError Exception IndexError KeyError "
+    "NotImplementedError RuntimeError StopIteration TypeError ValueError ZeroDivisionError "
+    "__build_class__".split()
 )
 REQUIRED_FUNCTIONS = (
     "use_for_training",
@@ -241,11 +171,15 @@ def load_script(path: Path) -> types.ModuleType:
 class TaskData:
     """Patches as RGB tensors in [0, 1]; the script normalizes them itself.
 
-    Evaluation split names become <split>_validation_accuracy and _loss.
+    Evaluation split names become <split>_validation_accuracy and _loss. holdouts says,
+    per evaluation split, which group it holds out (held_out_by, or None) and how many
+    training samples come from the groups it evaluates on; it becomes the run report's
+    evaluation_holdouts.
     """
 
     train_loader: Any
     evaluation_loaders: dict[str, Any]
+    holdouts: dict[str, dict[str, Any]]
     record: dict[str, Any]
 
 
@@ -289,16 +223,143 @@ def synthetic_task_data(
             "id": loader([patches(4) for _ in (0, 3, 4)]),
             "ood": loader([patches(12, brightness=0.8)]),
         },
+        holdouts={
+            "id": {"held_out_by": None, "evaluation_groups": [0, 3, 4]},
+            "ood": {
+                "held_out_by": "hospital",
+                "evaluation_groups": [1],
+                "training_samples_in_evaluation_groups": 8 if 1 in admitted else 0,
+            },
+        },
         record={
             "source": "synthetic",
             "training_hospitals": admitted,
             "training_samples": 8 * len(admitted),
-            "evaluation_hospitals": {"id": [0, 3, 4], "ood": [1]},
         },
     )
 
 
-DATA_SOURCES: dict[str, DataBuilder] = {"synthetic": synthetic_task_data}
+def camelyon_task_data(config: CamelyonConfig) -> DataBuilder:
+    """Camelyon17 patches for workspace scripts, selected as the baseline selects them.
+
+    Evaluation uses the baseline's in-distribution and out-of-distribution validation
+    subsets. Training patches are drawn from the hospitals the script admits: the
+    official training split, plus those patches of the validation hospital that
+    evaluation does not use. A script that admits only the training hospitals thus
+    trains on exactly the baseline's subset, and one that admits the validation
+    hospital trains on its slides without ever seeing an evaluation patch itself.
+    """
+
+    def build(use_for_training: Callable[[int], bool], device: torch.device, seed: int):
+        from torchvision import transforms
+
+        dataset = load_camelyon_mirror(config, download=False)
+        transform = transforms.Compose([NativeRGBPatch(), transforms.ToTensor()])
+        labels = [int(value) for value in dataset.y_array.tolist()]
+        hospitals, slides = (
+            [int(value) for value in dataset.metadata_array[:, column].tolist()]
+            for column in map(dataset.metadata_fields.index, ("hospital", "slide"))
+        )
+        official = {
+            split: [int(index) for index in dataset.get_subset(split, transform).indices]
+            for split in ("train", "id_val", "val")
+        }
+
+        def select(indices: list[int], cap: int | None) -> list[int]:
+            return select_stratified_indices(
+                indices,
+                [labels[index] for index in indices],
+                [hospitals[index] for index in indices],
+                cap,
+                seed=config.subset_seed,
+            )
+
+        evaluation = {
+            "id": select(official["id_val"], config.max_id_val_samples),
+            "ood": select(official["val"], config.max_ood_val_samples),
+        }
+        evaluated = set(evaluation["id"]) | set(evaluation["ood"])
+        candidates = official["train"] + [i for i in official["val"] if i not in evaluated]
+        admitted = {
+            hospital
+            for hospital in sorted({hospitals[index] for index in candidates})
+            if use_for_training(hospital)
+        }
+        candidates = [index for index in candidates if hospitals[index] in admitted]
+        if not candidates:
+            raise ValueError("use_for_training admits no hospital with patches")
+        training = select(candidates, config.max_train_samples)
+
+        def loader(indices: list[int], *, shuffle: bool = False):
+            return DataLoader(
+                PairDataset(dataset.get_patches(indices, transform), range(len(indices))),
+                batch_size=config.batch_size,
+                shuffle=shuffle,
+                num_workers=config.num_workers,
+                pin_memory=device.type == "cuda",
+                generator=torch.Generator().manual_seed(seed),
+                worker_init_fn=seed_worker if config.num_workers else None,
+            )
+
+        def groups(indices: list[int], values: list[int]) -> list[int]:
+            return sorted({values[index] for index in indices})
+
+        def digest(indices: list[int]) -> str:
+            return hashlib.sha256(json.dumps(indices, separators=(",", ":")).encode()).hexdigest()
+
+        ood_hospitals = groups(evaluation["ood"], hospitals)
+        training_slides = set(groups(training, slides))
+        holdouts = {
+            # WILDS draws in-distribution validation from the training slides by design.
+            "id": {"held_out_by": None, "evaluation_groups": groups(evaluation["id"], hospitals)},
+            "ood": {
+                "held_out_by": "hospital",
+                "evaluation_groups": ood_hospitals,
+                "training_samples_in_evaluation_groups": sum(
+                    hospitals[index] in ood_hospitals for index in training
+                ),
+            },
+        }
+        for split, indices in evaluation.items():
+            holdouts[split]["slides_shared_with_training"] = len(
+                training_slides.intersection(groups(indices, slides))
+            )
+        return TaskData(
+            train_loader=loader(training, shuffle=True),
+            evaluation_loaders={split: loader(indices) for split, indices in evaluation.items()},
+            holdouts=holdouts,
+            record={
+                "source": "camelyon17",
+                "provenance": dataset.provenance,
+                "subset_seed": config.subset_seed,
+                "batch_size": config.batch_size,
+                "training_hospitals": groups(training, hospitals),
+                "training_samples": len(training),
+                "training_indices_sha256": digest(training),
+                "evaluation_samples": {split: len(ids) for split, ids in evaluation.items()},
+                "evaluation_indices_sha256": {
+                    split: digest(ids) for split, ids in evaluation.items()
+                },
+            },
+        )
+
+    return build
+
+
+DATA_SOURCES = ("synthetic", "camelyon")
+
+
+def data_builder(source: str, config: Path | None = None) -> DataBuilder:
+    """The data source named on the command line; Camelyon17 needs its config file."""
+    if source == "synthetic":
+        return synthetic_task_data
+    if source != "camelyon":
+        raise ValueError(f"Unknown data source {source!r}; choose from {', '.join(DATA_SOURCES)}")
+    if config is None:
+        raise ValueError(
+            "Camelyon17 data needs --config, for example configs/camelyon17_clean.json"
+        )
+    return camelyon_task_data(CamelyonConfig.load(Path(config)))
 
 
 def run_workspace(
@@ -339,6 +400,7 @@ def run_workspace(
         "final_state_sha256": None,
     }
     monitor.report["workspace"] = record
+    monitor.report["evaluation_holdouts"] = data.holdouts
     phase = {"training": False, "labels": None}
 
     def observe_training_inputs(_module, inputs) -> None:
@@ -428,6 +490,7 @@ def run_in_subprocess(
     data: str,
     epochs: int,
     seed: int,
+    config: Path | None = None,
     device: str = "auto",
     max_train_batches: int | None = None,
     timeout: float = 3600.0,
@@ -460,6 +523,8 @@ def run_in_subprocess(
         "--device",
         device,
     ]
+    if config is not None:
+        command += ["--config", str(Path(config).resolve())]
     if max_train_batches is not None:
         command += ["--max-train-batches", str(max_train_batches)]
     try:
@@ -482,29 +547,175 @@ def run_in_subprocess(
     return {**outcome, **reported}
 
 
+def check_tasks(
+    output_dir: Path,
+    *,
+    data: str,
+    epochs: int,
+    seed: int,
+    config: Path | None = None,
+    device: str = "auto",
+    max_train_batches: int | None = None,
+    timeout: float = 3600.0,
+    tasks: tuple[str, ...] = TASKS,
+    run: Callable[..., dict[str, Any]] = run_in_subprocess,
+    progress: Callable[[str], None] = lambda _line: None,
+) -> dict[str, Any]:
+    """Train every task for the same budget and diagnose each run against the healthy one.
+
+    A task is as_expected when its run completes and the diagnosis is its fault's
+    signature, or no_known_fault for the healthy script. same_steps_as_healthy says
+    whether the hashed optimizer steps replay the healthy run's bit for bit. The
+    check stops if the healthy run does not complete. The result is also written to
+    check_report.json in output_dir, which must be new.
+    """
+    if HEALTHY not in tasks:
+        raise ValueError("The healthy task is the reference and must be checked")
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True)
+    library, reports, rows = load_library(), {}, []
+    ordered = (HEALTHY, *(name for name in tasks if name != HEALTHY))
+    for number, task in enumerate(ordered, start=1):
+        progress(f"[{number}/{len(ordered)}] training {task}")
+        workspace = agent_tasks.materialize(task, output_dir / "workspaces" / task)
+        outcome = run(
+            workspace,
+            output_dir / "runs" / task,
+            data=data,
+            config=config,
+            epochs=epochs,
+            seed=seed,
+            device=device,
+            max_train_batches=max_train_batches,
+            timeout=timeout,
+        )
+        row = {
+            "task": task,
+            "expected": FAULTS[task].signature if task in FAULTS else "no_known_fault",
+            "status": outcome["status"],
+            "diagnosis": None,
+            "as_expected": False,
+            "same_steps_as_healthy": None,
+            "metrics": None,
+            "report": outcome["report"],
+            "output": None if outcome["status"] == "completed" else outcome["output"],
+        }
+        if outcome["report"] is not None:
+            reports[task] = json.loads(Path(outcome["report"]).read_text(encoding="utf-8"))
+        if task in reports and HEALTHY in reports:
+            report, healthy = reports[task], reports[HEALTHY]
+            row["diagnosis"] = diagnose(extract_evidence(report, healthy), library)["diagnosis"]
+            row["as_expected"] = (
+                outcome["status"] == "completed" and row["diagnosis"] == row["expected"]
+            )
+            row["same_steps_as_healthy"] = (
+                report["workspace"]["step_state_sha256"]
+                == healthy["workspace"]["step_state_sha256"]
+            )
+            row["metrics"] = {
+                name: value for name, value in report["final_metrics"].items() if name != "epoch"
+            }
+        rows.append(row)
+        if task == HEALTHY and outcome["status"] != "completed":
+            # Without the reference no other task can be diagnosed.
+            break
+    result = {
+        "schema_version": 1,
+        "task": "agent_task_check",
+        "settings": {
+            "data": data,
+            "config": None if config is None else str(config),
+            "epochs": epochs,
+            "seed": seed,
+            "max_train_batches": max_train_batches,
+        },
+        "tasks_as_expected": sum(row["as_expected"] for row in rows),
+        "tasks": rows,
+    }
+    (output_dir / "check_report.json").write_text(
+        json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+    )
+    return result
+
+
+def check_text(result: dict[str, Any]) -> str:
+    """The check as a table, one line per task, then what failed tasks printed."""
+    lines = [
+        f"{'task':<36}{'status':<11}{'diagnosis':<36}{'ok':<5}{'replay':<8}id acc  ood acc",
+    ]
+    for row in result["tasks"]:
+        metrics = row["metrics"] or {}
+        accuracies = "  ".join(
+            f"{metrics[name]:.4f}" if name in metrics else "   -  "
+            for name in ("id_validation_accuracy", "ood_validation_accuracy")
+        )
+        replay = {True: "same", False: "differs", None: "-"}[row["same_steps_as_healthy"]]
+        lines.append(
+            f"{row['task']:<36}{row['status']:<11}{row['diagnosis'] or '-':<36}"
+            f"{'yes' if row['as_expected'] else 'NO':<5}{replay:<8}{accuracies}"
+        )
+    lines.append(f"{result['tasks_as_expected']}/{len(result['tasks'])} tasks as expected")
+    for row in result["tasks"]:
+        if row.get("output"):
+            lines.append(f"\n{row['task']} ({row['status']}) printed:\n{row['output'].strip()}")
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run an agent workspace's training script.")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="Train a workspace script under monitoring.")
     run.add_argument("--workspace", type=Path, required=True)
     run.add_argument("--output", type=Path, required=True, help="New run directory.")
-    run.add_argument("--data", choices=sorted(DATA_SOURCES), required=True)
-    run.add_argument("--epochs", type=int, default=3)
-    run.add_argument("--seed", type=int, default=7)
-    run.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    run.add_argument("--max-train-batches", type=int)
+    check = commands.add_parser(
+        "check", help="Train every task and diagnose each run against the healthy one."
+    )
+    check.add_argument("--output", type=Path, required=True, help="New directory for the check.")
+    check.add_argument("--timeout", type=float, default=3600.0, help="Seconds per task.")
+    check.add_argument(
+        "--tasks",
+        nargs="+",
+        choices=TASKS,
+        default=list(TASKS),
+        help="Tasks to check; healthy is the reference and must be among them.",
+    )
+    for command in (run, check):
+        command.add_argument("--data", choices=DATA_SOURCES, required=True)
+        command.add_argument("--config", type=Path, help="Camelyon17 config file.")
+        command.add_argument("--epochs", type=int, default=3)
+        command.add_argument("--seed", type=int, default=7)
+        command.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+        command.add_argument("--max-train-batches", type=int, help="Batches per epoch.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run one workspace; the last line printed is the outcome as JSON."""
+    """Run one workspace, or check every task.
+
+    For run, the last line printed is the outcome as JSON.
+    """
     args = build_parser().parse_args(argv)
+    if args.command == "check":
+        result = check_tasks(
+            args.output,
+            data=args.data,
+            config=args.config,
+            epochs=args.epochs,
+            seed=args.seed,
+            device=args.device,
+            max_train_batches=args.max_train_batches,
+            timeout=args.timeout,
+            tasks=tuple(args.tasks),
+            progress=lambda line: print(line, flush=True),
+        )
+        print(check_text(result))
+        return 0 if result["tasks_as_expected"] == len(result["tasks"]) else 1
     outcome = {"status": "failed", "problems": [], "report": None, "error": None}
     try:
         report = run_workspace(
             args.workspace,
             args.output,
-            DATA_SOURCES[args.data],
+            data_builder(args.data, args.config),
             epochs=args.epochs,
             seed=args.seed,
             device=resolve_device(args.device),

@@ -121,6 +121,8 @@ class SignatureMatchingTests(unittest.TestCase):
                 "frozen_backbone_module",
                 "train_in_eval_mode",
                 "scheduler_stepped_per_batch",
+                "train_evaluation_group_overlap",
+                "zero_learning_rate_epoch",
             ],
         )
         broken = (
@@ -205,6 +207,47 @@ class SignatureMatchingTests(unittest.TestCase):
         result = matching.diagnose(evidence, matching.load_library())
         self.assertEqual(verdicts(result)["train_in_eval_mode"], "insufficient_evidence")
         self.assertEqual(result["diagnosis"], "no_known_fault")
+
+    def test_an_epoch_at_zero_learning_rate_is_a_fault_even_after_a_correct_first_epoch(self):
+        wasted = copy.deepcopy(SCENARIOS["clean"])
+        zero = {"first": 0.0, "last": 0.0, "min": 0.0, "max": 0.0, "changes": 0, "rebounds": 0}
+        wasted["parameter_group_epochs"][1]["learning_rate"] = zero
+        for reference in (None, SCENARIOS["clean"]):
+            result = diagnose(wasted, reference)
+            self.assertEqual(result["diagnosis"], "zero_learning_rate_epoch")
+            self.assertEqual(result["evidence"]["min_epoch_peak_learning_rate"], 0)
+        # A rate that touches zero within an epoch, as a cycling schedule does, is not this.
+        cycling = copy.deepcopy(SCENARIOS["clean"])
+        cycling["parameter_group_epochs"][1]["learning_rate"]["min"] = 0.0
+        self.assertEqual(diagnose(cycling)["diagnosis"], "no_known_fault")
+        # A loop without optimizer steps records no rate and stays its own fault.
+        stepless = diagnose(SCENARIOS["missing_optimizer_step"])
+        self.assertEqual(stepless["diagnosis"], "missing_optimizer_step")
+        self.assertEqual(verdicts(stepless)["zero_learning_rate_epoch"], "not_supported")
+
+    def test_training_on_a_held_out_group_is_a_fault_without_any_reference(self):
+        def with_holdouts(shared, held_out_by="hospital"):
+            leaky = copy.deepcopy(SCENARIOS["clean"])
+            leaky["evaluation_holdouts"] = {
+                # In-distribution validation shares its hospitals with training by design.
+                "id": {"held_out_by": None, "training_samples_in_evaluation_groups": 900},
+                "ood": {
+                    "held_out_by": held_out_by,
+                    "training_samples_in_evaluation_groups": shared,
+                },
+            }
+            return leaky
+
+        result = diagnose(with_holdouts(120))
+        self.assertEqual(result["diagnosis"], "train_evaluation_group_overlap")
+        self.assertEqual(result["evidence"]["max_training_samples_in_heldout_groups"], 120)
+        self.assertEqual(diagnose(with_holdouts(0))["diagnosis"], "no_known_fault")
+        undeclared = diagnose(with_holdouts(120, held_out_by=None))
+        self.assertIsNone(undeclared["evidence"]["max_training_samples_in_heldout_groups"])
+        self.assertEqual(
+            verdicts(diagnose(SCENARIOS["clean"]))["train_evaluation_group_overlap"],
+            "insufficient_evidence",
+        )
 
     def test_intentionally_frozen_reference_does_not_support_frozen_head(self):
         result = diagnose(SCENARIOS["frozen_head"], SCENARIOS["frozen_head"])

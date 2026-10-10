@@ -28,7 +28,7 @@ ENTRYPOINT ["runsleuth"]
 CMD ["--help"]
 
 FROM base AS test
-# Git lets the source-patch tests apply and check real diffs instead of skipping.
+# Git is there for the held-out tool, which records the commit a seed draw froze.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*

@@ -23,14 +23,16 @@ STATEMENT = """\
 # Task
 
 `train.py` fine-tunes an ImageNet-pretrained ResNet18 to tell tumor from normal tissue
-in 96x96 histopathology patches (Camelyon17). It fine-tunes the whole network with a new
-two-class head, AdamW, and a cosine learning-rate schedule that spans the epochs.
+in 96x96 histopathology patches (Camelyon17). It is meant to fine-tune the whole network
+with a new two-class head, AdamW at a fine-tuning learning rate, and a cosine
+learning-rate schedule that spans the epochs. Training and evaluation normalize their
+inputs in the same way.
 
 A harness imports `train.py`, supplies the patches and calls its functions. After every
 epoch the harness itself evaluates the model on two validation sets:
 
 - in-distribution: held-out patches from the hospitals used for training;
-- out-of-distribution: patches from hospital 1.
+- out-of-distribution: patches from hospital 1, which training must never see.
 
 Hospital 2 is the sealed test set.
 

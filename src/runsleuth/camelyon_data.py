@@ -310,9 +310,12 @@ def _metadata_rows(raw: Any, expected: dict[str, int]) -> list[tuple[int, int, i
         if len(dataset) != wanted:
             raise ValueError(f"Mirror {source} has {len(dataset)} rows; expected {wanted}.")
         columns = dataset.select_columns(required).to_dict()
+        # Read the features once: the property rebuilds them on every access, which
+        # took over two minutes across the mirror's 370,900 rows.
+        center_feature, label_feature = dataset.features["center"], dataset.features["label"]
         for image_id, center, slide, label in zip(*(columns[key] for key in required), strict=True):
-            hospital = canonical_value(center, dataset.features["center"], field="center")
-            target = canonical_value(label, dataset.features["label"], field="label")
+            hospital = canonical_value(center, center_feature, field="center")
+            target = canonical_value(label, label_feature, field="label")
             if hospital == 2 or (source == "train" and hospital not in (0, 3, 4)):
                 raise ValueError(f"Unexpected hospital {hospital} in mirror {source}.")
             if isinstance(image_id, bool) or not isinstance(image_id, Integral) or image_id < 0:

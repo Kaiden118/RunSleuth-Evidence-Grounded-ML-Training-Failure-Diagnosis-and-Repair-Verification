@@ -19,6 +19,8 @@ verifier never labels correctness.
 Runs are cached by script, budget and seed, so the healthy reference and scripts an
 agent left unchanged are trained once.
 
+    python -m runsleuth.agent_episodes prepare --output artifacts/agent_pilot/pilot-1 \\
+        --data camelyon --config configs/camelyon17_clean.json
     python -m runsleuth.agent_episodes pilot --output artifacts/agent_pilot/pilot-1 \\
         --data camelyon --config configs/camelyon17_clean.json
     python -m runsleuth.agent_episodes summarize artifacts/agent_pilot/pilot-1
@@ -29,6 +31,7 @@ import ast
 import hashlib
 import json
 import shutil
+import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -421,22 +424,63 @@ def run_pilot(
     return summary
 
 
+def prepare_runs(
+    store: RunStore,
+    tasks: tuple[str, ...] = PILOT_TASKS,
+    *,
+    quick: Budget = QUICK,
+    full: Budget = FULL,
+    progress: Callable[[str], None] = lambda _line: None,
+) -> list[dict[str, Any]]:
+    """Train the healthy script and every task's original script on both budgets.
+
+    Every episode needs these runs and none needs a model for them, so they can be
+    trained ahead of the agents; episodes then find them in the store.
+    """
+    sources = {HEALTHY: agent_tasks.task_source(HEALTHY)}
+    sources.update({task: agent_tasks.task_source(task) for task in tasks})
+    rows = []
+    for task, source in sources.items():
+        for name, budget in (("quick", quick), ("full", full)):
+            started = time.perf_counter()
+            outcome = store.run(source, budget)
+            seconds = round(time.perf_counter() - started, 1)
+            report = outcome["report"]
+            rows.append(
+                {
+                    "task": task,
+                    "budget": name,
+                    "status": outcome["status"],
+                    "seconds": seconds,
+                    "final_metrics": None if report is None else report.get("final_metrics"),
+                }
+            )
+            progress(f"{task} ({name}): {outcome['status']} in {seconds:.0f} s")
+    return rows
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Episodes of the agent study.")
     commands = parser.add_subparsers(dest="command", required=True)
+    prepare = commands.add_parser(
+        "prepare", help="Train the runs every episode needs; no model is called."
+    )
     pilot = commands.add_parser("pilot", help="Run tasks under conditions with one model.")
-    pilot.add_argument("--output", type=Path, required=True, help="Directory; reused to resume.")
-    pilot.add_argument("--data", choices=("synthetic", "camelyon"), required=True)
-    pilot.add_argument("--config", type=Path, help="Camelyon17 config file.")
+    for command in (prepare, pilot):
+        command.add_argument(
+            "--output", type=Path, required=True, help="Directory; reused to resume."
+        )
+        command.add_argument("--data", choices=("synthetic", "camelyon"), required=True)
+        command.add_argument("--config", type=Path, help="Camelyon17 config file.")
+        command.add_argument("--tasks", nargs="+", choices=TASKS, default=list(PILOT_TASKS))
+        command.add_argument("--seed", type=int, default=7)
+        command.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     pilot.add_argument("--provider", default="gemini", help="gemini, ollama or openai.")
     pilot.add_argument("--model", help="Defaults to the provider's environment variable.")
-    pilot.add_argument("--tasks", nargs="+", choices=TASKS, default=list(PILOT_TASKS))
     pilot.add_argument(
         "--conditions", nargs="+", choices=tuple(CONDITIONS), default=list(CONDITIONS)
     )
     pilot.add_argument("--repetitions", type=int, default=3)
-    pilot.add_argument("--seed", type=int, default=7)
-    pilot.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     pilot.add_argument("--pause", type=float, default=4.0, help="Seconds before a model call.")
     pilot.add_argument("--error-wait", type=float, default=60.0, help="Seconds after an error.")
     show = commands.add_parser("summarize", help="Summarize the episodes of a pilot directory.")
@@ -449,9 +493,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "summarize":
         print(summary_text(summarize(load_episodes(args.directory))))
         return 0
-    from runsleuth.llm_client import create_llm_client
-
-    client, model = create_llm_client(args.provider, args.model)
     store = RunStore(
         args.output / "runs",
         data=args.data,
@@ -459,6 +500,12 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         device=args.device,
     )
+    if args.command == "prepare":
+        rows = prepare_runs(store, tuple(args.tasks), progress=lambda line: print(line, flush=True))
+        return 0 if all(row["status"] == "completed" for row in rows) else 1
+    from runsleuth.llm_client import create_llm_client
+
+    client, model = create_llm_client(args.provider, args.model)
     summary = run_pilot(
         args.output,
         client,

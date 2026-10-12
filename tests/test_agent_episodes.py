@@ -233,6 +233,23 @@ class EpisodeTests(unittest.TestCase):
             first["report"]["workspace"]["final_state_sha256"],
         )
 
+    def test_preparing_trains_what_episodes_need_so_they_train_nothing_more(self):
+        lines = []
+        rows = agent_episodes.prepare_runs(
+            self.store, ("stale_head",), quick=BUDGET, full=BUDGET, progress=lines.append
+        )
+        self.assertEqual(
+            [(row["task"], row["budget"]) for row in rows][::2],
+            [(HEALTHY, "quick"), ("stale_head", "quick")],
+        )
+        self.assertEqual({row["status"] for row in rows}, {"completed"})
+        self.assertEqual(len(lines), 4)
+        self.assertIn("ood_validation_accuracy", rows[0]["final_metrics"])
+        trained = self.store.trained
+        self.assertEqual(trained, 2, "equal budgets share one run per script")
+        self.episode("stale_head", "C1", reply(("run_training", {})), finish(True, "none"))
+        self.assertEqual(self.store.trained, trained)
+
     def test_a_pilot_runs_every_task_under_every_condition_and_resumes(self):
         replies = (
             finish(True, "none"),  # stale_head, C0: a false claim

@@ -56,6 +56,9 @@ class Scripted:
 class RateLimited(Exception):
     status_code = 429
 
+    def __str__(self):
+        return "quota exceeded"
+
 
 class AgentLoopTests(unittest.TestCase):
     def setUp(self):
@@ -250,7 +253,10 @@ class AgentLoopTests(unittest.TestCase):
             self.workspace(HEALTHY), RateLimited(), RateLimited(), finish(), error_wait=45.0
         )
         self.assertEqual(record["status"], "finished")
-        self.assertEqual(record["api_errors"], [{"type": "RateLimited", "status_code": 429}] * 2)
+        self.assertEqual(
+            record["api_errors"],
+            [{"type": "RateLimited", "status_code": 429, "message": "quota exceeded"}] * 2,
+        )
         self.assertEqual(self.sleeps.count(45.0), 2)
         self.assertEqual(record["model_calls"], 1)
         record, _ = self.work(self.workspace(HEALTHY), *[RateLimited()] * 3)

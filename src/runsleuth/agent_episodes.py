@@ -412,6 +412,8 @@ def run_pilot(
             f"    agent {episode['agent']['status']}, claimed correct: "
             f"{episode['claimed_correct']}, semantically correct: {episode['semantically_correct']}"
         )
+        if episode["agent"]["status"] == "api_error":
+            progress(f"    last provider error: {episode['agent']['api_errors'][-1]}")
     summary = summarize(load_episodes(output_dir))
     (output_dir / "pilot_report.json").write_text(
         json.dumps(summary, indent=2, allow_nan=False) + "\n", encoding="utf-8"

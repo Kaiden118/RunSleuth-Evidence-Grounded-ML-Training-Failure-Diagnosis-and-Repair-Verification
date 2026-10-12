@@ -215,7 +215,11 @@ def run_agent(
             )
         except Exception as error:  # network, quota or provider errors
             record["api_errors"].append(
-                {"type": type(error).__name__, "status_code": getattr(error, "status_code", None)}
+                {
+                    "type": type(error).__name__,
+                    "status_code": getattr(error, "status_code", None),
+                    "message": str(error)[:300],
+                }
             )
             if len(record["api_errors"]) >= max_api_errors:
                 record["status"] = "api_error"

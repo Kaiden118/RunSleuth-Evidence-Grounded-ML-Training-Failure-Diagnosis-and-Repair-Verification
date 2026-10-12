@@ -94,6 +94,25 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _with_provider_content(entry: dict[str, Any], source: Any) -> dict[str, Any]:
+    """Return what a provider attached to its reply along with the reply.
+
+    Gemini signs its function calls (extra_content.google.thought_signature) and
+    rejects a conversation in which a call comes back without its signature.
+    """
+    extra = getattr(source, "extra_content", None)
+    if extra is not None:
+        entry["extra_content"] = extra
+    return entry
+
+
+def _rejected(status_code: Any) -> bool:
+    """The provider refused the request as it stands, so sending it again cannot help."""
+    if not isinstance(status_code, int) or status_code in (408, 429):  # timeout, rate limit
+        return False
+    return 400 <= status_code < 500
+
+
 def run_agent(
     client: Any,
     model: str,
@@ -114,7 +133,7 @@ def run_agent(
     that ended the episode: tool_call_limit, no_tool_call (the model kept answering in
     text) or api_error. claim is the agent's own conclusion, None unless it finished.
     pause is waited before every model call and error_wait after a failed one, for
-    rate-limited providers.
+    rate-limited providers; a request the provider rejects is not sent again.
     """
     workspace = Path(workspace)
     script, statement = workspace / SCRIPT_NAME, workspace / STATEMENT_NAME
@@ -214,14 +233,15 @@ def run_agent(
                 max_tokens=MAX_OUTPUT_TOKENS,
             )
         except Exception as error:  # network, quota or provider errors
+            status_code = getattr(error, "status_code", None)
             record["api_errors"].append(
                 {
                     "type": type(error).__name__,
-                    "status_code": getattr(error, "status_code", None),
+                    "status_code": status_code,
                     "message": str(error)[:300],
                 }
             )
-            if len(record["api_errors"]) >= max_api_errors:
+            if _rejected(status_code) or len(record["api_errors"]) >= max_api_errors:
                 record["status"] = "api_error"
             else:
                 sleep(error_wait)
@@ -239,27 +259,37 @@ def run_agent(
             if text_replies > MAX_TEXT_REPLIES:
                 record["status"] = "no_tool_call"
                 break
-            messages.append({"role": "assistant", "content": message.content or ""})
+            messages.append(
+                _with_provider_content(
+                    {"role": "assistant", "content": message.content or ""}, message
+                )
+            )
             messages.append(
                 {"role": "user", "content": "Use a tool. Call finish when you are done."}
             )
             continue
         messages.append(
-            {
-                "role": "assistant",
-                "content": message.content,
-                "tool_calls": [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.function.name,
-                            "arguments": call.function.arguments,
-                        },
-                    }
-                    for call in calls
-                ],
-            }
+            _with_provider_content(
+                {
+                    "role": "assistant",
+                    "content": message.content,
+                    "tool_calls": [
+                        _with_provider_content(
+                            {
+                                "id": call.id,
+                                "type": "function",
+                                "function": {
+                                    "name": call.function.name,
+                                    "arguments": call.function.arguments,
+                                },
+                            },
+                            call,
+                        )
+                        for call in calls
+                    ],
+                },
+                message,
+            )
         )
         for call in calls:
             name = call.function.name

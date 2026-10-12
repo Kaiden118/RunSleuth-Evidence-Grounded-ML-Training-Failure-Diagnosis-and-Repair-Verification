@@ -60,6 +60,13 @@ class RateLimited(Exception):
         return "quota exceeded"
 
 
+class Rejected(Exception):
+    status_code = 400
+
+    def __str__(self):
+        return "Function call is missing a thought_signature"
+
+
 class AgentLoopTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -262,6 +269,32 @@ class AgentLoopTests(unittest.TestCase):
         record, _ = self.work(self.workspace(HEALTHY), *[RateLimited()] * 3)
         self.assertEqual((record["status"], record["model_calls"]), ("api_error", 0))
         self.assertEqual(len(record["api_errors"]), 3)
+
+    def test_a_request_the_provider_rejects_is_not_sent_again(self):
+        record, client = self.work(self.workspace(HEALTHY), Rejected(), finish())
+        self.assertEqual((record["status"], record["claim"]), ("api_error", None))
+        self.assertEqual([error["status_code"] for error in record["api_errors"]], [400])
+        self.assertEqual(len(client.requests), 1)
+        self.assertNotIn(30.0, self.sleeps)
+
+    def test_what_the_provider_attached_to_a_tool_call_is_sent_back_with_it(self):
+        # Gemini rejects a conversation whose function call lost its thought signature.
+        signature = {"google": {"thought_signature": "opaque"}}
+        signed = reply(("read_file", {"name": "TASK.md"}), ("read_file", {"name": "train.py"}))
+        signed.choices[0].message.tool_calls[0].extra_content = signature
+        text = reply(content="Let me think.")
+        text.choices[0].message.extra_content = signature
+        record, client = self.work(self.workspace(HEALTHY), signed, text, finish())
+        self.assertEqual(record["status"], "finished")
+        first, second = client.requests[1]["messages"][2]["tool_calls"]
+        self.assertEqual(first["extra_content"], signature)
+        self.assertNotIn("extra_content", second)
+        self.assertEqual(
+            client.requests[2]["messages"][5],
+            {"role": "assistant", "content": "Let me think.", "extra_content": signature},
+        )
+        unsigned = client.requests[2]["messages"][2]
+        self.assertEqual(sorted(unsigned), ["content", "role", "tool_calls"])
 
     def test_the_record_is_json_and_names_the_prompt_it_used(self):
         record, client = self.work(self.workspace(HEALTHY), finish())

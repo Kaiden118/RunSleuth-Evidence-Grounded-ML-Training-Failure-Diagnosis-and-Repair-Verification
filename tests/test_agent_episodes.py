@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from test_agent_loop import REPAIR, Scripted, finish, reply
+from test_agent_loop import REPAIR, Rejected, Scripted, finish, reply
 from test_agent_workspace import tiny_source
 
 from runsleuth.agent_tasks import HEALTHY
@@ -302,6 +302,36 @@ class EpisodeTests(unittest.TestCase):
             self.assertEqual(agent_episodes.main(["summarize", str(output)]), 0)
         self.assertIn("false claims", printed.getvalue())
         self.assertRegex(printed.getvalue(), r"C0\s+2\s+2\s+2")
+
+    def test_a_pilot_stops_at_a_provider_failure_and_runs_that_episode_again(self):
+        options = {
+            "tasks": ("stale_head",),
+            "conditions": ("C0",),
+            "repetitions": 2,
+            "quick": BUDGET,
+            "full": BUDGET,
+            "sleep": lambda _seconds: None,
+        }
+        output, lines = self.root / "pilot", []
+        client = Scripted(Rejected(), finish(True, "none"))
+        stopped = agent_episodes.run_pilot(
+            output, client, "scripted-model", self.store, progress=lines.append, **options
+        )
+        # The failed episode is no observation of the agent, and the second was not tried.
+        self.assertEqual((stopped["episodes"], stopped["provider_failures"]), (0, 1))
+        self.assertEqual(stopped["conditions"], {})
+        self.assertEqual(len(client.requests), 1)
+        self.assertEqual(len(lines), 2)
+        self.assertIn("thought_signature", lines[1])
+        resumed = agent_episodes.run_pilot(
+            output,
+            Scripted(finish(True, "none"), finish(False, "the head never updates")),
+            "scripted-model",
+            self.store,
+            **options,
+        )
+        self.assertEqual((resumed["episodes"], resumed["provider_failures"]), (2, 0))
+        self.assertEqual(resumed["conditions"]["C0"]["false_claims"], 1)
 
 
 if __name__ == "__main__":

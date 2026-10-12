@@ -313,8 +313,18 @@ def run_episode(
     return episode
 
 
+def provider_failed(episode: dict[str, Any]) -> bool:
+    """The model could not be asked, so the episode shows nothing about the agent."""
+    return episode["agent"]["status"] == "api_error"
+
+
 def summarize(episodes: list[dict[str, Any]]) -> dict[str, Any]:
-    """Counts per condition. A false claim says a script trains correctly when it does not."""
+    """Counts per condition. A false claim says a script trains correctly when it does not.
+
+    Episodes the provider failed are counted apart and left out of every condition.
+    """
+    failures = sum(provider_failed(episode) for episode in episodes)
+    episodes = [episode for episode in episodes if not provider_failed(episode)]
     rows = {}
     for condition in CONDITIONS:
         group = [episode for episode in episodes if episode["condition"] == condition]
@@ -351,6 +361,7 @@ def summarize(episodes: list[dict[str, Any]]) -> dict[str, Any]:
         "task": "agent_episode_summary",
         "scope": "development pilot; injected faults, one seed, small samples",
         "episodes": len(episodes),
+        "provider_failures": failures,
         "conditions": rows,
     }
 
@@ -393,8 +404,9 @@ def run_pilot(
 ) -> dict[str, Any]:
     """Run every task under every condition, resuming after an interruption.
 
-    Episodes that already have an episode.json are kept. The summary is written to
-    pilot_report.json in output_dir.
+    Episodes that already have an episode.json are kept, except those the provider
+    failed, which are run again. A provider failure stops the pilot, since the next
+    episode would meet it too. The summary is written to pilot_report.json in output_dir.
     """
     output_dir = Path(output_dir)
     plan = [
@@ -405,18 +417,20 @@ def run_pilot(
     ]
     for number, (task, condition, repetition) in enumerate(plan, start=1):
         directory = output_dir / "episodes" / f"{task}-{condition}-{repetition}"
-        if (directory / "episode.json").is_file():
+        saved = directory / "episode.json"
+        if saved.is_file() and not provider_failed(json.loads(saved.read_text(encoding="utf-8"))):
             continue
         if directory.exists():
-            shutil.rmtree(directory)  # An interrupted episode is run again.
+            shutil.rmtree(directory)  # An interrupted or failed episode is run again.
         progress(f"[{number}/{len(plan)}] {task} {condition} repetition {repetition}")
         episode = run_episode(client, model, task, condition, directory, store, **options)
+        if provider_failed(episode):
+            progress(f"    stopped, the provider failed: {episode['agent']['api_errors'][-1]}")
+            break
         progress(
             f"    agent {episode['agent']['status']}, claimed correct: "
             f"{episode['claimed_correct']}, semantically correct: {episode['semantically_correct']}"
         )
-        if episode["agent"]["status"] == "api_error":
-            progress(f"    last provider error: {episode['agent']['api_errors'][-1]}")
     summary = summarize(load_episodes(output_dir))
     (output_dir / "pilot_report.json").write_text(
         json.dumps(summary, indent=2, allow_nan=False) + "\n", encoding="utf-8"
@@ -520,6 +534,9 @@ def main(argv: list[str] | None = None) -> int:
         max_api_errors=5,
     )
     print(summary_text(summary))
+    if summary["provider_failures"]:
+        print("Stopped at a provider failure. The same command resumes the pilot.")
+        return 1
     return 0
 
 

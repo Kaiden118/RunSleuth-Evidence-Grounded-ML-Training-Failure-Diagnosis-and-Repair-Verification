@@ -210,6 +210,90 @@ class EpisodeTests(unittest.TestCase):
         )
         other = healthy.replace("LEARNING_RATE = 1e-4", "LEARNING_RATE = 5e-5")
         self.assertEqual(label("stale_head", stale, other, healthy), (None, "needs_review"))
+        self.assertEqual(
+            label("stale_head", stale, "def broken(:", healthy), (False, "does_not_parse")
+        )
+
+    def test_reviews_settle_open_labels_and_every_acceptance_criterion_is_scored(self):
+        slower = {"old_text": "LEARNING_RATE = 1e-4", "new_text": "LEARNING_RATE = 5e-5"}
+        pilot = self.root / "pilot"
+        episodes = [
+            self.episode(HEALTHY, "C0", reply(("edit_file", slower)), finish(True), name=name)[0]
+            for name in ("pilot/episodes/a", "pilot/episodes/b")
+        ]
+        episodes.append(self.episode("stale_head", "C0", finish(True), name="pilot/episodes/c")[0])
+        episodes.append(
+            self.episode(HEALTHY, "C0", finish(False, "unsure"), name="pilot/episodes/d")[0]
+        )
+        self.assertEqual(episodes[0]["semantic_basis"], "needs_review")
+        open_summary = agent_episodes.summarize(episodes)
+        self.assertEqual((open_summary["needs_review"], open_summary["reviewed"]), (2, 0))
+        row = open_summary["conditions"]["C0"]
+        self.assertEqual((row["semantically_wrong"], row["false_claims"]), (1, 1))
+        # An unlabelled script is neither an accepted wrong one nor a rejected correct one.
+        self.assertEqual(open_summary["criteria"]["agent_claim"]["accepted_wrong"], 1)
+
+        program = agent_episodes.agent_review.program_sha256(episodes[0]["final_script"])
+        reviews_path = self.root / "reviews.json"
+        review = {
+            "program_sha256": program,
+            "correct": False,
+            "reason": "The task asks for the learning rate the script started with.",
+            "reviewer": "a reviewer",
+            "blind_to_verifier": True,
+        }
+        reviews_path.write_text(json.dumps({"reviews": [review]}), encoding="utf-8")
+        reviews = agent_episodes.agent_review.load_reviews(reviews_path)
+        summary = agent_episodes.summarize(episodes, reviews)
+        self.assertEqual(
+            (summary["needs_review"], summary["reviewed"], summary["reviewed_blind_to_verifier"]),
+            (0, 2, 2),
+        )
+        row = summary["conditions"]["C0"]
+        self.assertEqual(
+            (row["semantically_correct"], row["semantically_wrong"], row["false_claims"]),
+            (1, 3, 3),
+        )
+        self.assertEqual((row["false_alarms"], row["edited_a_correct_script"]), (1, 2))
+        self.assertEqual(
+            summary["criteria"]["agent_claim"],
+            {"accepted": 3, "accepted_wrong": 3, "rejected_correct": 1},
+        )
+        # The healthy script passes the mechanism check, the stale one does not; a script
+        # that was not changed cannot have better metrics than before.
+        mechanism = summary["criteria"]["mechanism_check"]
+        self.assertEqual(mechanism["rejected_correct"], 0)
+        slower_accepted = sum(
+            e["verification"]["criteria"]["mechanism_check"] for e in episodes[:2]
+        )
+        self.assertEqual(mechanism["accepted"], slower_accepted + 1)
+        self.assertEqual(mechanism["accepted_wrong"], slower_accepted)
+        self.assertEqual(
+            row["verifier_accepted_wrong"] + row["verifier_rejected_correct"],
+            sum(e["verification"]["decision"] == "accepted" for e in episodes[:2]),
+        )
+        self.assertEqual(summary["criteria"]["before_and_after_metrics"]["rejected_correct"], 1)
+        # The episodes themselves keep what was decided from the source alone.
+        self.assertIsNone(episodes[0]["semantically_correct"])
+
+        def printed(*arguments):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(agent_episodes.main(list(arguments)), 0)
+            return output.getvalue()
+
+        empty = self.root / "empty.json"
+        empty.write_text('{"reviews": []}', encoding="utf-8")
+        listing = printed("review", str(pilot), "--reviews", str(empty))
+        self.assertIn(f"program_sha256 {program}  (ends 2 episodes)", listing)
+        self.assertIn("+LEARNING_RATE = 5e-5", listing)
+        self.assertEqual(
+            printed("review", str(pilot), "--reviews", str(reviews_path)).strip(),
+            "No script needs a review.",
+        )
+        table = printed("summarize", str(pilot), "--reviews", str(reviews_path))
+        self.assertRegex(table, r"agent claim\s+3\s+3\s+1")
+        self.assertIn("2 episodes are labelled by review (2 blind to the verifier); 0 still", table)
 
     def test_the_store_trains_a_script_once_per_budget_and_recovers_from_an_interruption(self):
         source = tiny_source(HEALTHY)

@@ -13,8 +13,8 @@ Afterwards the final script is trained on a fuller budget, and three things are
 recorded apart: what the agent claimed; whether the script is semantically correct,
 decided from the source alone (the same program as the healthy script, or an
 untouched script that was correct or faulty to begin with; anything else is left for
-review); and what each acceptance criterion decides (agent_verification). The
-verifier never labels correctness.
+a reviewer, see agent_review); and what each acceptance criterion decides
+(agent_verification). The verifier never labels correctness.
 
 Runs are cached by script, budget and seed, so the healthy reference and scripts an
 agent left unchanged are trained once.
@@ -23,6 +23,7 @@ agent left unchanged are trained once.
         --data camelyon --config configs/camelyon17_clean.json
     python -m runsleuth.agent_episodes pilot --output artifacts/agent_pilot/pilot-1 \\
         --data camelyon --config configs/camelyon17_clean.json
+    python -m runsleuth.agent_episodes review artifacts/agent_pilot/pilot-1
     python -m runsleuth.agent_episodes summarize artifacts/agent_pilot/pilot-1
 """
 
@@ -37,7 +38,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from runsleuth import agent_tasks
+from runsleuth import agent_review, agent_tasks
 from runsleuth.agent_loop import run_agent
 from runsleuth.agent_tasks import FAULTS, HEALTHY, SCRIPT_NAME, TASKS
 from runsleuth.agent_verification import trajectory_text, verify_repair_run
@@ -237,6 +238,8 @@ def same_program(left: str, right: str) -> bool:
 
 def semantic_label(task: str, initial: str, final: str, healthy: str) -> tuple[bool | None, str]:
     """Whether the final script is correct, from the source alone; None needs review."""
+    if agent_review.program_sha256(final) is None:
+        return False, "does_not_parse"
     if same_program(final, healthy):
         return True, "same_program_as_healthy_script"
     if same_program(final, initial):
@@ -318,22 +321,64 @@ def provider_failed(episode: dict[str, Any]) -> bool:
     return episode["agent"]["status"] == "api_error"
 
 
-def summarize(episodes: list[dict[str, Any]]) -> dict[str, Any]:
-    """Counts per condition. A false claim says a script trains correctly when it does not.
+CRITERIA = (
+    "agent_claim",
+    "before_and_after_metrics",
+    "reference_metrics",
+    "mechanism_check",
+    "mechanism_check_and_reference_metrics",
+)
 
-    Episodes the provider failed are counted apart and left out of every condition.
+
+def acceptances(episode: dict[str, Any]) -> dict[str, bool]:
+    """Which acceptance criteria accept the final script; one that cannot decide does not."""
+    computed = (episode["verification"] or {}).get("criteria", {})
+    accepted = {name: computed.get(name) is True for name in CRITERIA[1:]}
+    return {"agent_claim": episode["claimed_correct"] is True, **accepted}
+
+
+def summarize(
+    episodes: list[dict[str, Any]], reviews: dict[str, dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """Counts per condition and per acceptance criterion.
+
+    A false claim says a script trains correctly when it does not. reviews
+    (agent_review.load_reviews) label the scripts the source alone left open; a script
+    without a label counts as neither correct nor wrong. Episodes the provider failed
+    are counted apart and left out of everything else.
     """
+    reviews = reviews or {}
     failures = sum(provider_failed(episode) for episode in episodes)
-    episodes = [episode for episode in episodes if not provider_failed(episode)]
+    labelled = []
+    for episode in episodes:
+        if not provider_failed(episode):
+            correct, basis = agent_review.label(episode, reviews)
+            labelled.append({**episode, "semantically_correct": correct, "semantic_basis": basis})
+    episodes = labelled
+    reviewed = [
+        episode for episode in episodes if episode["semantic_basis"] == agent_review.REVIEWED
+    ]
+    criteria = {}
+    for name in CRITERIA:
+        accepted = [episode for episode in episodes if acceptances(episode)[name]]
+        criteria[name] = {
+            "accepted": len(accepted),
+            "accepted_wrong": sum(e["semantically_correct"] is False for e in accepted),
+            "rejected_correct": sum(
+                e["semantically_correct"] is True and not acceptances(e)[name] for e in episodes
+            ),
+        }
     rows = {}
     for condition in CONDITIONS:
         group = [episode for episode in episodes if episode["condition"] == condition]
         if not group:
             continue
-        verified = [episode["verification"] for episode in group if episode["verification"]]
 
         def count(test: Callable[[dict], bool], group: list = group) -> int:
             return sum(bool(test(episode)) for episode in group)
+
+        def accepted(episode: dict) -> bool:
+            return (episode["verification"] or {}).get("decision") == "accepted"
 
         rows[condition] = {
             "episodes": len(group),
@@ -351,7 +396,13 @@ def summarize(episodes: list[dict[str, Any]]) -> dict[str, Any]:
             "edited_a_correct_script": count(
                 lambda e: e["task_is_correct"] and e["agent"]["script_changed"]
             ),
-            "verifier_accepted": sum(item["decision"] == "accepted" for item in verified),
+            "verifier_accepted": count(accepted),
+            "verifier_accepted_wrong": count(
+                lambda e: accepted(e) and e["semantically_correct"] is False
+            ),
+            "verifier_rejected_correct": count(
+                lambda e: not accepted(e) and e["semantically_correct"] is True
+            ),
             "training_runs": sum(episode["agent"]["training_runs"] for episode in group),
             "input_tokens": sum(episode["agent"]["input_tokens"] for episode in group),
             "output_tokens": sum(episode["agent"]["output_tokens"] for episode in group),
@@ -362,7 +413,14 @@ def summarize(episodes: list[dict[str, Any]]) -> dict[str, Any]:
         "scope": "development pilot; injected faults, one seed, small samples",
         "episodes": len(episodes),
         "provider_failures": failures,
+        "reviewed": len(reviewed),
+        "reviewed_blind_to_verifier": sum(
+            reviews[agent_review.program_sha256(episode["final_script"])]["blind_to_verifier"]
+            for episode in reviewed
+        ),
+        "needs_review": sum(episode["semantically_correct"] is None for episode in episodes),
         "conditions": rows,
+        "criteria": criteria,
     }
 
 
@@ -377,11 +435,29 @@ def summary_text(summary: dict[str, Any]) -> str:
         ("false_claims", "false claims"),
         ("false_alarms", "false alarms"),
         ("verifier_accepted", "verifier ok"),
+        ("verifier_accepted_wrong", "ok but wrong"),
+        ("verifier_rejected_correct", "no but right"),
         ("training_runs", "runs"),
     )
     lines = ["condition  " + "  ".join(f"{title:>12}" for _, title in columns)]
     for condition, row in summary["conditions"].items():
         lines.append(f"{condition:<9}  " + "  ".join(f"{row[key]:>12}" for key, _ in columns))
+    counts = (
+        ("accepted", "accepted"),
+        ("accepted_wrong", "ok but wrong"),
+        ("rejected_correct", "no but right"),
+    )
+    lines += ["", f"{'acceptance criterion':<38}" + "  ".join(f"{t:>12}" for _, t in counts)]
+    for name, row in summary["criteria"].items():
+        lines.append(
+            f"{name.replace('_', ' '):<38}" + "  ".join(f"{row[key]:>12}" for key, _ in counts)
+        )
+    blind = summary["reviewed_blind_to_verifier"]
+    lines += [
+        "",
+        f"{summary['reviewed']} episodes are labelled by review ({blind} blind to the verifier); "
+        f"{summary['needs_review']} still need one and count as neither correct nor wrong.",
+    ]
     return "\n".join(lines)
 
 
@@ -399,6 +475,7 @@ def run_pilot(
     tasks: tuple[str, ...] = PILOT_TASKS,
     conditions: tuple[str, ...] = tuple(CONDITIONS),
     repetitions: int = 3,
+    reviews: dict[str, dict[str, Any]] | None = None,
     progress: Callable[[str], None] = lambda _line: None,
     **options: Any,
 ) -> dict[str, Any]:
@@ -431,7 +508,7 @@ def run_pilot(
             f"    agent {episode['agent']['status']}, claimed correct: "
             f"{episode['claimed_correct']}, semantically correct: {episode['semantically_correct']}"
         )
-    summary = summarize(load_episodes(output_dir))
+    summary = summarize(load_episodes(output_dir), reviews)
     (output_dir / "pilot_report.json").write_text(
         json.dumps(summary, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
@@ -498,14 +575,34 @@ def build_parser() -> argparse.ArgumentParser:
     pilot.add_argument("--pause", type=float, default=4.0, help="Seconds before a model call.")
     pilot.add_argument("--error-wait", type=float, default=60.0, help="Seconds after an error.")
     show = commands.add_parser("summarize", help="Summarize the episodes of a pilot directory.")
-    show.add_argument("directory", type=Path)
+    review = commands.add_parser(
+        "review", help="Show the scripts of a pilot directory that still need a review."
+    )
+    for command in (show, review):
+        command.add_argument("directory", type=Path)
+    for command in (pilot, show, review):
+        command.add_argument(
+            "--reviews",
+            type=Path,
+            help=f"Reviewed labels; {agent_review.REVIEWS_PATH.as_posix()} if it exists.",
+        )
     return parser
+
+
+def _reviews(path: Path | None) -> dict[str, dict[str, Any]]:
+    if path is None and not agent_review.REVIEWS_PATH.is_file():
+        return {}
+    return agent_review.load_reviews(path or agent_review.REVIEWS_PATH)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "summarize":
-        print(summary_text(summarize(load_episodes(args.directory))))
+        print(summary_text(summarize(load_episodes(args.directory), _reviews(args.reviews))))
+        return 0
+    if args.command == "review":
+        programs = agent_review.pending(load_episodes(args.directory), _reviews(args.reviews))
+        print(agent_review.pending_text(programs))
         return 0
     store = RunStore(
         args.output / "runs",
@@ -528,6 +625,7 @@ def main(argv: list[str] | None = None) -> int:
         tasks=tuple(args.tasks),
         conditions=tuple(args.conditions),
         repetitions=args.repetitions,
+        reviews=_reviews(args.reviews),
         progress=lambda line: print(line, flush=True),
         pause=args.pause,
         error_wait=args.error_wait,

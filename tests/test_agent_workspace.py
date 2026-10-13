@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from runsleuth import agent_tasks
-from runsleuth.agent_tasks import FAULTS, HEALTHY, LOOKALIKES, TASKS
+from runsleuth.agent_tasks import FAULTS, HEALTHY, LOOKALIKES, TASKS, UNLISTED_FAULTS
 from runsleuth.signature_matching import diagnose, extract_evidence, load_library
 
 try:
@@ -224,6 +224,26 @@ class WorkspaceRunTests(unittest.TestCase):
             healthy["evaluation_holdouts"]["ood"]["training_samples_in_evaluation_groups"], 0
         )
 
+    def test_the_library_knows_nothing_of_the_faults_it_has_no_signature_for(self):
+        library, healthy = load_library(), self.reports[HEALTHY]
+        for task in UNLISTED_FAULTS:
+            with self.subTest(task=task):
+                report = self.reports[task]
+                self.assertEqual(report["status"], "completed")
+                found = diagnose(extract_evidence(report, healthy), library)["diagnosis"]
+                self.assertEqual(found, "no_known_fault")
+        # Every one of them leaves the healthy run, though some only later in it.
+        for task in UNLISTED_FAULTS:
+            with self.subTest(task=task):
+                trajectory = compare_trajectories(self.reports[task], healthy)
+                self.assertEqual(trajectory["outcome"], "diverged")
+        late = compare_trajectories(self.reports["head_frozen_from_the_second_epoch"], healthy)
+        first = late["first_difference"]
+        self.assertTrue(
+            first["at"] == "epoch" or first["index"] > healthy["workspace"]["steps_per_epoch"],
+            "the first epoch is the healthy script's",
+        )
+
     def test_training_faults_leave_the_healthy_trajectory_and_evaluation_faults_do_not(self):
         healthy = self.reports[HEALTHY]["workspace"]
         for task in FAULTS:
@@ -246,7 +266,13 @@ class WorkspaceRunTests(unittest.TestCase):
         }
         self.assertEqual(
             same,
-            {"head_replaced_after_moving": True, "cosine_stepped_per_batch_over_the_run": False},
+            {
+                "head_replaced_after_moving": True,
+                "cosine_stepped_per_batch_over_the_run": False,
+                "two_parameter_groups": True,
+                "cosine_written_as_a_formula": True,
+                "normalization_written_out": True,
+            },
         )
         mismatch = self.reports["train_eval_normalization_mismatch"]
         self.assertNotEqual(mismatch["final_metrics"], self.reports[HEALTHY]["final_metrics"])
@@ -581,6 +607,9 @@ class TaskCheckTests(unittest.TestCase):
                 unchanged = (
                     HEALTHY,
                     "head_replaced_after_moving",
+                    "two_parameter_groups",
+                    "cosine_written_as_a_formula",
+                    "normalization_written_out",
                     "train_eval_normalization_mismatch",
                 )
                 identical = row["trajectory"]["outcome"] == "identical_full_run"

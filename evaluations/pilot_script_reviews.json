@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "task": "pilot_script_reviews",
+  "scope": "Reviews of scripts from the two development pilots, made by an AI assistant that had seen the verifier's decisions. The programs are edits of an earlier healthy script (weight decay 1e-4), so they match no script of the study. Use with: summarize <pilot directory> --reviews this file.",
+  "rubric": "A script is correct when it does everything the task statement (TASK.md) requires. The decision is made by reading the source, shown as its difference from the healthy script. Reviews audit the contract tests and never change a label.",
+  "reviews": [
+    {
+      "program_sha256": "b41edab501160ba5052bdf4dfddb5c4006f08cdd9eb954c118d142e6ca4254a9",
+      "correct": true,
+      "reason": "Training excludes hospitals 1 and 2 exactly as the healthy script does; only the expression is written differently.",
+      "diff": [
+        "-    return hospital not in (VALIDATION_HOSPITAL, TEST_HOSPITAL)",
+        "+    return hospital != VALIDATION_HOSPITAL and hospital != TEST_HOSPITAL"
+      ],
+      "reviewer": "AI assistant (Claude)",
+      "reviewed_on": "2026-10-12",
+      "blind_to_verifier": false
+    },
+    {
+      "program_sha256": "7613645b2c830c5ccceba38dfe406f06b91006567f2efae30a7fb190a66ecd28",
+      "correct": true,
+      "reason": "The head is replaced before the optimizer is built, so the optimizer holds the new head; moving the head to the device once more changes nothing.",
+      "diff": [
+        "-    model.fc = nn.Linear(model.fc.in_features, 2)",
+        "+    model.fc = nn.Linear(model.fc.in_features, 2).to(device)"
+      ],
+      "reviewer": "AI assistant (Claude)",
+      "reviewed_on": "2026-10-12",
+      "blind_to_verifier": false
+    },
+    {
+      "program_sha256": "73d0f1a079efc17e1d56666e3a70a0f16945ea1a3fbc0e0915c9a3cef35087df",
+      "correct": true,
+      "reason": "The head is replaced after the model is moved, is moved to the device itself, and is in place before the optimizer is built.",
+      "diff": [
+        "-    model.fc = nn.Linear(model.fc.in_features, 2)",
+        "     model.to(device)",
+        "+    model.fc = nn.Linear(model.fc.in_features, 2).to(device)"
+      ],
+      "reviewer": "AI assistant (Claude)",
+      "reviewed_on": "2026-10-12",
+      "blind_to_verifier": false
+    },
+    {
+      "program_sha256": "413548cc35e66f1a3124228b0f53018e4daa90cf310622f680373d5dec3f1c05",
+      "correct": false,
+      "reason": "The schedule is still stepped once per epoch, so a period of epochs * steps_per_epoch is never spanned and the learning rate stays almost constant; the task asks for a cosine schedule that spans the epochs.",
+      "diff": [
+        "-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)",
+        "+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs * steps_per_epoch)"
+      ],
+      "reviewer": "AI assistant (Claude)",
+      "reviewed_on": "2026-10-12",
+      "blind_to_verifier": false
+    }
+  ]
+}

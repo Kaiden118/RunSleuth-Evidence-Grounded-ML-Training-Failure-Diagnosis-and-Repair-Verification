@@ -50,7 +50,7 @@ from typing import Any
 
 from runsleuth import agent_review, agent_tasks
 from runsleuth.agent_loop import run_agent
-from runsleuth.agent_tasks import FAULTS, HEALTHY, SCRIPT_NAME, TASKS
+from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME, TASKS
 from runsleuth.agent_verification import (
     TRIAGE,
     TRIAGE_MEANING,
@@ -269,7 +269,7 @@ def semantic_label(task: str, initial: str, final: str, healthy: str) -> tuple[b
     if same_program(final, healthy):
         return True, "same_program_as_healthy_script"
     if same_program(final, initial):
-        return task not in FAULTS, "unchanged_script"
+        return not agent_tasks.is_faulty(task), "unchanged_script"
     return None, "needs_review"
 
 
@@ -357,7 +357,8 @@ def run_episode(
         "condition": condition,
         "model": model,
         "provider": provider,
-        "task_is_correct": task not in FAULTS,
+        "task_is_correct": not agent_tasks.is_faulty(task),
+        "task_kind": agent_tasks.kind(task),
         "expected_diagnosis": agent_tasks.expected_diagnosis(task),
         "statement_sha256": _sha256(agent_tasks.STATEMENT),
         "presentation_version": PRESENTATION_VERSION,
@@ -388,9 +389,15 @@ def score_script(script: Path) -> dict[str, Any]:
 def score_episode(
     directory: Path, contract: Callable[[Path], dict[str, Any]] = score_script
 ) -> dict[str, Any]:
-    """Run the contract tests on an episode's final script and save contract.json."""
+    """Run the contract tests on an episode's final script and save contract.json.
+
+    The tests belong to the task statement, so an episode run under another statement
+    keeps the result it has and is refused.
+    """
     directory = Path(directory)
     episode = json.loads((directory / "episode.json").read_text(encoding="utf-8"))
+    if episode.get("statement_sha256") != _sha256(agent_tasks.STATEMENT):
+        raise ValueError(f"{directory.name} was run under another task statement")
     with tempfile.TemporaryDirectory() as temporary:
         script = Path(temporary) / SCRIPT_NAME
         script.write_text(episode["final_script"], encoding="utf-8", newline="\n")
@@ -674,7 +681,11 @@ def score_episodes(
     once, scored = scored_once(contract), 0
     for path in sorted(Path(directory).glob("episodes/*/episode.json")):
         if redo or not (path.parent / "contract.json").is_file():
-            result = score_episode(path.parent, once)
+            try:
+                result = score_episode(path.parent, once)
+            except ValueError as refusal:
+                progress(f"skipped: {refusal}")
+                continue
             progress(f"{path.parent.name}: {result['status']} {', '.join(result['failed'])}")
             scored += 1
     return scored

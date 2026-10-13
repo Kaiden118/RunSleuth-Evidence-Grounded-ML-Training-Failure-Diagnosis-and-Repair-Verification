@@ -8,7 +8,7 @@ from pathlib import Path
 from test_agent_workspace import TINY_MODEL
 
 from runsleuth import agent_tasks
-from runsleuth.agent_tasks import FAULTS, HEALTHY, LOOKALIKES, TASKS
+from runsleuth.agent_tasks import ALL_FAULTS, FAULTS, HEALTHY, LOOKALIKES, TASKS
 
 try:
     import torch
@@ -65,11 +65,13 @@ class AgentContractTests(unittest.TestCase):
     def test_the_cases_cover_correct_and_wrong_scripts_and_every_clause(self):
         for name in (HEALTHY, *LOOKALIKES):
             self.assertEqual(agent_contract.expected_failures(name), ())
-        self.assertEqual(set(agent_contract.FAULT_CLAUSES), set(FAULTS))
-        correct = [name for name, case in CASES.items() if not case.fails]
-        wrong = [name for name, case in CASES.items() if case.fails]
-        self.assertGreaterEqual(len(correct), 5)
-        self.assertGreaterEqual(len(wrong), 10)
+        self.assertEqual(set(agent_contract.FAULT_CLAUSES), set(ALL_FAULTS))
+        names = (*TASKS, *CASES)
+        correct = [name for name in names if not agent_contract.expected_failures(name)]
+        wrong = [name for name in names if agent_contract.expected_failures(name)]
+        self.assertEqual(set(correct) & set(TASKS), {HEALTHY, *LOOKALIKES})
+        self.assertGreaterEqual(len(correct), 9)
+        self.assertGreaterEqual(len(wrong), 21)
         failed_somewhere = {clause for case in CASES.values() for clause in case.fails}
         failed_somewhere.update(agent_contract.FAULT_CLAUSES.values())
         self.assertEqual(failed_somewhere, set(CLAUSES))
@@ -121,7 +123,7 @@ class AgentContractTests(unittest.TestCase):
             str(agent_contract.MEAN),
             str(agent_contract.STD),
             "learning rate 1e-4",
-            "weight decay 1e-4",
+            "weight decay 1e-2",
             "hospital (0 to 4) except hospitals 1 and 2",
             "once per epoch or once\n   per batch",
             "use_for_training",
@@ -131,8 +133,8 @@ class AgentContractTests(unittest.TestCase):
             "train_one_epoch",
         ):
             self.assertIn(stated, statement)
-        self.assertEqual((agent_contract.LEARNING_RATE, agent_contract.WEIGHT_DECAY), (1e-4, 1e-4))
-        for name in (*FAULTS, *(fault.signature for fault in FAULTS.values())):
+        self.assertEqual((agent_contract.LEARNING_RATE, agent_contract.WEIGHT_DECAY), (1e-4, 1e-2))
+        for name in (*ALL_FAULTS, *(fault.signature for fault in FAULTS.values())):
             self.assertNotIn(name, statement)
 
     def test_the_checks_share_no_code_with_the_verifier(self):

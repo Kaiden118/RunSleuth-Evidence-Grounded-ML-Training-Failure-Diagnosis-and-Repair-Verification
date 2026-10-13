@@ -105,8 +105,13 @@ class AgentReviewTests(unittest.TestCase):
             self.reviews(review(REWRITTEN, True, reason=" "))
 
     def test_the_reviews_of_the_repository_load_and_explain_themselves(self):
-        reviews = agent_review.load_reviews(REPOSITORY / agent_review.REVIEWS_PATH)
-        self.assertEqual(reviews[agent_review.program_sha256(REWRITTEN)]["correct"], True)
+        # The study's reviews are made blind, after its scripts exist; the pilots' are apart.
+        self.assertEqual(agent_review.load_reviews(REPOSITORY / agent_review.REVIEWS_PATH), {})
+        pilot = REPOSITORY / "evaluations" / "pilot_script_reviews.json"
+        reviews = agent_review.load_reviews(pilot)
+        self.assertEqual(len(reviews), 4)
+        self.assertEqual({item["blind_to_verifier"] for item in reviews.values()}, {False})
+        self.assertIn("development pilots", json.loads(pilot.read_text("utf-8"))["scope"])
         for program, item in reviews.items():
             self.assertRegex(program, r"^[0-9a-f]{64}$")
             self.assertTrue(any(line.startswith("+") for line in item["diff"]))

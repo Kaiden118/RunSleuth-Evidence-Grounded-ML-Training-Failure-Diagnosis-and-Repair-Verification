@@ -9,7 +9,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from runsleuth import agent_tasks
-from runsleuth.agent_tasks import FAULTS, HEALTHY, LOOKALIKES, TASKS, Fault
+from runsleuth.agent_tasks import (
+    ALL_FAULTS,
+    FAULTS,
+    HEALTHY,
+    LOOKALIKES,
+    TASKS,
+    UNLISTED_FAULTS,
+    Fault,
+)
 from runsleuth.signature_matching import load_library
 
 try:
@@ -31,7 +39,7 @@ class TaskSourceTests(unittest.TestCase):
     def test_every_variant_changes_the_script_and_stays_valid_python(self):
         sources = {task: agent_tasks.task_source(task) for task in TASKS}
         self.assertEqual(len(set(sources.values())), len(TASKS), "tasks must differ")
-        for task in (*LOOKALIKES, *FAULTS):
+        for task in (*LOOKALIKES, *ALL_FAULTS):
             with self.subTest(task=task):
                 compile(sources[task], agent_tasks.SCRIPT_NAME, "exec")
                 diff = agent_tasks.source_diff(task)
@@ -41,13 +49,13 @@ class TaskSourceTests(unittest.TestCase):
                     for line in diff.splitlines()
                     if line[:1] in "+-" and line[:3] not in ("+++", "---")
                 ]
-                self.assertLessEqual(len(changed), 6, "a variant is a small edit")
+                self.assertLessEqual(len(changed), 9, "a variant is a small edit")
 
     def test_an_edit_must_match_exactly_once(self):
         for old in ("not in the script", "model"):
             with (
                 self.subTest(old=old),
-                patch.dict(FAULTS, {"broken": Fault("none", "none", ((old, ""),))}),
+                patch.dict(ALL_FAULTS, {"broken": Fault("none", "none", ((old, ""),))}),
                 self.assertRaisesRegex(ValueError, "exactly once"),
             ):
                 agent_tasks.task_source("broken")
@@ -62,6 +70,15 @@ class TaskSourceTests(unittest.TestCase):
         for task in TASKS:
             expected = FAULTS[task].signature if task in FAULTS else "no_known_fault"
             self.assertEqual(agent_tasks.expected_diagnosis(task), expected)
+        # The other faults have no signature of their own, and are faults all the same.
+        self.assertEqual({fault.signature for fault in UNLISTED_FAULTS.values()}, {None})
+        self.assertEqual(len(TASKS), 1 + len(LOOKALIKES) + len(FAULTS) + len(UNLISTED_FAULTS))
+        self.assertEqual(
+            {agent_tasks.kind(task) for task in TASKS},
+            {"healthy", "lookalike", "listed_fault", "unlisted_fault"},
+        )
+        for task in TASKS:
+            self.assertEqual(agent_tasks.is_faulty(task), agent_tasks.kind(task).endswith("fault"))
         self.assertEqual(
             {lookalike.resembles for lookalike in LOOKALIKES.values()} - set(FAULTS), set()
         )
@@ -82,7 +99,7 @@ class TaskSourceTests(unittest.TestCase):
             self.assertEqual(len(statements), 1, "every task gets the same statement")
             statement = statements.pop().lower()
             signatures = (fault.signature for fault in FAULTS.values())
-            for hint in (*FAULTS, *LOOKALIKES, *signatures, "fault", "bug"):
+            for hint in (*ALL_FAULTS, *LOOKALIKES, *signatures, "fault", "bug"):
                 self.assertNotIn(hint.lower(), statement)
             with self.assertRaises(FileExistsError):
                 agent_tasks.materialize(HEALTHY, Path(temporary) / HEALTHY)
@@ -190,6 +207,20 @@ class TaskMechanismTests(unittest.TestCase):
     lookalikes = {
         "head_replaced_after_moving": {},
         "cosine_stepped_per_batch_over_the_run": {"scheduler_steps_per_epoch": 5},
+        "two_parameter_groups": {},
+        "cosine_written_as_a_formula": {},
+        "normalization_written_out": {},
+    }
+    # What one epoch shows of the faults without a signature; the contract tests, which
+    # train for longer and look at more, tell every one of them from a correct script.
+    unlisted = {
+        "schedule_period_in_steps_stepped_per_epoch": {},
+        "learning_rate_halved": {"learning_rate": 5e-5},
+        "same_wrong_normalization_twice": {},
+        "head_bias_left_frozen": {"head_trainable": False},
+        "head_frozen_from_the_second_epoch": {},
+        "weight_decay_dropped": {},
+        "training_hospital_left_out": {"training_hospitals": (3, 4)},
     }
 
     def test_healthy_script_trains_as_the_statement_describes(self):
@@ -198,7 +229,8 @@ class TaskMechanismTests(unittest.TestCase):
     def test_each_fault_changes_one_mechanism_and_look_alikes_stay_correct(self):
         self.assertEqual(set(self.changes), set(FAULTS))
         self.assertEqual(set(self.lookalikes), set(LOOKALIKES))
-        for task, change in {**self.changes, **self.lookalikes}.items():
+        self.assertEqual(set(self.unlisted), set(UNLISTED_FAULTS))
+        for task, change in {**self.changes, **self.lookalikes, **self.unlisted}.items():
             with self.subTest(task=task):
                 self.assertEqual(profile(task), {**self.healthy, **change})
 

@@ -27,6 +27,8 @@ MAX_OUTPUT_TOKENS = 4000
 # The harness refuses longer scripts (agent_workspace.MAX_SOURCE_CHARACTERS).
 MAX_SCRIPT_CHARACTERS = 20_000
 MAX_TEXT_REPLIES = 2
+# Long enough for a provider to say which quota or which part of a request it refused.
+MAX_ERROR_CHARACTERS = 1500
 
 
 def system_prompt(allow_runs: bool, max_tool_calls: int, max_runs: int) -> str:
@@ -238,7 +240,7 @@ def run_agent(
                 {
                     "type": type(error).__name__,
                     "status_code": status_code,
-                    "message": str(error)[:300],
+                    "message": str(error)[:MAX_ERROR_CHARACTERS],
                 }
             )
             if _rejected(status_code) or len(record["api_errors"]) >= max_api_errors:

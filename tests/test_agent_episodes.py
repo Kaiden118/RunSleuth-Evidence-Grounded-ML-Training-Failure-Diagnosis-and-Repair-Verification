@@ -502,14 +502,19 @@ class EpisodeTests(unittest.TestCase):
             finish(True, "none"),  # healthy, C0
             finish(True, "none"),  # healthy, C1
         )
-        lines = []
+        lines, scored = [], []
+
+        def counted(script):
+            scored.append(script.read_text(encoding="utf-8"))
+            return contract(script)
+
         options = {
             "tasks": ("stale_head", HEALTHY),
             "conditions": ("C0", "C1"),
             "repetitions": 1,
             "quick": BUDGET,
             "full": BUDGET,
-            "contract": contract,
+            "contract": counted,
             "sleep": lambda _seconds: None,
         }
         output = self.root / "pilot"
@@ -522,6 +527,8 @@ class EpisodeTests(unittest.TestCase):
             **options,
         )
         self.assertEqual(summary["episodes"], 4)
+        # The four episodes end in two scripts, and each is tested once.
+        self.assertEqual(scored, [tiny_source("stale_head"), tiny_source(HEALTHY)])
         zero, one = summary["conditions"]["C0"], summary["conditions"]["C1"]
         self.assertEqual(
             (zero["episodes"], zero["claimed_correct"], zero["false_claims"]), (2, 2, 1)

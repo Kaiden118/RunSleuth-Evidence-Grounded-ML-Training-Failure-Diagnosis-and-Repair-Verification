@@ -29,6 +29,18 @@ class LLMClientTests(unittest.TestCase):
         self.assertEqual(model, "gemini-x")
         self.assertEqual(str(client.base_url), llm_client.GEMINI_BASE_URL)
 
+    def test_openai_needs_a_key_and_a_model_and_uses_its_own_endpoint(self):
+        for environment, message in (
+            ({"OPENAI_MODEL": "gpt-x"}, "OPENAI_API_KEY"),
+            ({"OPENAI_API_KEY": "test-key"}, "OPENAI_MODEL"),
+        ):
+            with self.subTest(message=message), self.assertRaisesRegex(RuntimeError, message):
+                self.create(environment, "openai")
+        client, model = self.create({"OPENAI_API_KEY": "test-key"}, "openai", "gpt-x")
+        self.assertEqual(model, "gpt-x")
+        self.assertIn("api.openai.com", str(client.base_url))
+        self.assertIn("openai", llm_client.PROVIDERS)
+
     def test_ollama_is_local_and_needs_only_a_model(self):
         with self.assertRaisesRegex(RuntimeError, "OLLAMA_MODEL"):
             self.create({}, "ollama")

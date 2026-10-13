@@ -32,7 +32,7 @@ import sys
 import traceback
 import types
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -351,8 +351,14 @@ def camelyon_task_data(config: CamelyonConfig) -> DataBuilder:
 DATA_SOURCES = ("synthetic", "camelyon")
 
 
-def data_builder(source: str, config: Path | None = None) -> DataBuilder:
-    """The data source named on the command line; Camelyon17 needs its config file."""
+def data_builder(
+    source: str, config: Path | None = None, max_eval_samples: int | None = None
+) -> DataBuilder:
+    """The data source named on the command line; Camelyon17 needs its config file.
+
+    max_eval_samples caps each Camelyon17 validation split, for quick runs whose
+    metrics may be noisier; the synthetic source is small already and ignores it.
+    """
     if source == "synthetic":
         return synthetic_task_data
     if source != "camelyon":
@@ -361,7 +367,12 @@ def data_builder(source: str, config: Path | None = None) -> DataBuilder:
         raise ValueError(
             "Camelyon17 data needs --config, for example configs/camelyon17_clean.json"
         )
-    return camelyon_task_data(CamelyonConfig.load(Path(config)))
+    loaded = CamelyonConfig.load(Path(config))
+    if max_eval_samples is not None:
+        loaded = replace(
+            loaded, max_id_val_samples=max_eval_samples, max_ood_val_samples=max_eval_samples
+        )
+    return camelyon_task_data(loaded)
 
 
 def run_workspace(
@@ -510,6 +521,7 @@ def run_in_subprocess(
     device: str = "auto",
     max_train_batches: int | None = None,
     stop_after_epochs: int | None = None,
+    max_eval_samples: int | None = None,
     timeout: float = 3600.0,
 ) -> dict[str, Any]:
     """Run a workspace in a child process and return its outcome.
@@ -546,6 +558,8 @@ def run_in_subprocess(
         command += ["--max-train-batches", str(max_train_batches)]
     if stop_after_epochs is not None:
         command += ["--stop-after-epochs", str(stop_after_epochs)]
+    if max_eval_samples is not None:
+        command += ["--max-eval-samples", str(max_eval_samples)]
     try:
         completed = subprocess.run(
             command,
@@ -701,6 +715,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--stop-after-epochs", type=int, help="End early; the schedule keeps its full length."
     )
+    run.add_argument("--max-eval-samples", type=int, help="Cap each Camelyon17 validation split.")
     check = commands.add_parser(
         "check", help="Train every task and diagnose each run against the healthy one."
     )
@@ -749,7 +764,7 @@ def main(argv: list[str] | None = None) -> int:
         report = run_workspace(
             args.workspace,
             args.output,
-            data_builder(args.data, args.config),
+            data_builder(args.data, args.config, args.max_eval_samples),
             epochs=args.epochs,
             seed=args.seed,
             device=resolve_device(args.device),

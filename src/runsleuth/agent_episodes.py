@@ -7,7 +7,8 @@ five conditions, each adding one thing to what the agent can use:
     C1  bounded training runs, with their metrics and errors
     C2  C1 and the raw mechanism evidence of each run, without any verdict
     C3  C2 and the matcher's diagnosis against a healthy reference run
-    C4  C3 and the verifier's decision on each run
+    C4  C3 and the verifier's decision on each run, with its triage: whether an
+        accepted run is the reference's run or differs from it, and where
 
 Afterwards the final script is trained on a fuller budget, and three things are
 recorded apart: what the agent claimed; whether the script meets the task statement,
@@ -17,6 +18,10 @@ beside episode.json); and what each acceptance criterion decides
 contract tests without overriding them: what the source alone settles (the same
 program as the healthy script, or an untouched script), and reviews (agent_review).
 
+Both later records can be made again for episodes that exist, without asking a model
+or training: score runs the contract tests, and verify applies the current verifier
+to the runs in the store (verification.json beside episode.json).
+
 Runs are cached by script, budget and seed, so the healthy reference and scripts an
 agent left unchanged are trained once.
 
@@ -25,6 +30,8 @@ agent left unchanged are trained once.
     python -m runsleuth.agent_episodes pilot --output artifacts/agent_pilot/pilot-1 \\
         --data camelyon --config configs/camelyon17_clean.json
     python -m runsleuth.agent_episodes score artifacts/agent_pilot/pilot-1
+    python -m runsleuth.agent_episodes verify --output artifacts/agent_pilot/pilot-1 \\
+        --data camelyon --config configs/camelyon17_clean.json
     python -m runsleuth.agent_episodes review artifacts/agent_pilot/pilot-1
     python -m runsleuth.agent_episodes summarize artifacts/agent_pilot/pilot-1
 """
@@ -44,7 +51,12 @@ from typing import Any
 from runsleuth import agent_review, agent_tasks
 from runsleuth.agent_loop import run_agent
 from runsleuth.agent_tasks import FAULTS, HEALTHY, SCRIPT_NAME, TASKS
-from runsleuth.agent_verification import trajectory_text, verify_repair_run
+from runsleuth.agent_verification import (
+    TRIAGE,
+    TRIAGE_MEANING,
+    trajectory_text,
+    verify_repair_run,
+)
 from runsleuth.signature_matching import diagnose, extract_evidence, load_library
 
 
@@ -87,6 +99,8 @@ PILOT_TASKS = (
     HEALTHY,
 )
 OUTPUT_TAIL = 1500
+# Raised when a condition shows an agent something else than before.
+PRESENTATION_VERSION = 2
 
 
 def _sha256(text: str) -> str:
@@ -113,8 +127,11 @@ class RunStore:
         self.seed, self.device, self.timeout, self.runner = seed, device, timeout, runner
         self.trained = 0
 
-    def run(self, source: str, budget: Budget) -> dict[str, Any]:
-        """The outcome of training a script on a budget: status, problems, output, report."""
+    def run(self, source: str, budget: Budget, *, train: bool = True) -> dict[str, Any] | None:
+        """The outcome of training a script on a budget: status, problems, output, report.
+
+        With train off, nothing is trained: an outcome the store does not hold is None.
+        """
         settings = {
             "script": _sha256(source),
             "budget": asdict(budget),
@@ -126,6 +143,8 @@ class RunStore:
         saved = directory / "outcome.json"
         if saved.is_file():
             return json.loads(saved.read_text(encoding="utf-8"))
+        if not train:
+            return None
         if directory.exists():
             shutil.rmtree(directory)  # An interrupted run left no outcome.
         workspace = directory / "workspace"
@@ -220,6 +239,7 @@ def present(
             shown["verification"] = {
                 "decision": "rejected",
                 "reasons": ["the run or its healthy reference did not complete"],
+                "triage": "reject",
             }
         else:
             verified = verify_repair_run(report, healthy, before())
@@ -227,6 +247,9 @@ def present(
                 "decision": verified["decision"],
                 "reasons": verified["reasons"],
                 "trajectory": trajectory_text(verified["trajectory"]),
+                "triage": verified["triage"],
+                "meaning": TRIAGE_MEANING[verified["triage"]],
+                "differences_from_reference": verified["differences"],
             }
     return _rounded(shown)
 
@@ -248,6 +271,41 @@ def semantic_label(task: str, initial: str, final: str, healthy: str) -> tuple[b
     if same_program(final, initial):
         return task not in FAULTS, "unchanged_script"
     return None, "needs_review"
+
+
+VERIFICATION_FIELDS = (
+    "decision",
+    "reasons",
+    "re_diagnosis",
+    "criteria",
+    "trajectory",
+    "triage",
+    "differences",
+)
+
+
+def final_verification(
+    store: RunStore, final: str, healthy: str, initial: str, budget: Budget, *, train: bool = True
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Train a final script on a budget and verify it against the healthy script.
+
+    Returns the final run's outcome and the verification record, which is None when the
+    final run or the reference did not complete. With train off, the runs must be in
+    the store already; LookupError names the first that is not.
+    """
+
+    def run(name: str, source: str) -> dict[str, Any]:
+        outcome = store.run(source, budget, train=train)
+        if outcome is None:
+            raise LookupError(f"the run of the {name} script is not in the store")
+        return outcome
+
+    outcome, reference = run("final", final), run("healthy", healthy)["report"]
+    report = outcome["report"]
+    if report is None or report["status"] != "completed" or reference is None:
+        return outcome, None
+    verified = verify_repair_run(report, reference, run("task's", initial)["report"])
+    return outcome, {name: verified[name] for name in VERIFICATION_FIELDS}
 
 
 def run_episode(
@@ -288,17 +346,8 @@ def run_episode(
     )
     final = script.read_text(encoding="utf-8")
     correct, basis = semantic_label(task, initial, final, healthy)
-    outcome, reference = store.run(final, full), store.run(healthy, full)["report"]
-    report, verification = outcome["report"], None
-    if report is not None and report["status"] == "completed" and reference is not None:
-        verified = verify_repair_run(report, reference, store.run(initial, full)["report"])
-        verification = {
-            "decision": verified["decision"],
-            "reasons": verified["reasons"],
-            "re_diagnosis": verified["re_diagnosis"],
-            "criteria": verified["criteria"],
-            "trajectory": verified["trajectory"],
-        }
+    outcome, verification = final_verification(store, final, healthy, initial, full)
+    report = outcome["report"]
     claim = agent["claim"]
     episode = {
         "schema_version": 1,
@@ -309,6 +358,7 @@ def run_episode(
         "task_is_correct": task not in FAULTS,
         "expected_diagnosis": agent_tasks.expected_diagnosis(task),
         "statement_sha256": hashlib.sha256(agent_tasks.STATEMENT.encode("utf-8")).hexdigest(),
+        "presentation_version": PRESENTATION_VERSION,
         "budgets": {"quick": asdict(quick), "full": asdict(full)},
         "claimed_correct": None if claim is None else claim["training_is_correct"],
         "semantically_correct": correct,
@@ -353,9 +403,19 @@ def load_episode(directory: Path) -> dict[str, Any]:
     """An episode with its name and, if it was scored, the contract tests' result."""
     directory = Path(directory)
     episode = json.loads((directory / "episode.json").read_text(encoding="utf-8"))
-    scored = directory / "contract.json"
+    scored, verified = directory / "contract.json", directory / "verification.json"
     contract = json.loads(scored.read_text(encoding="utf-8")) if scored.is_file() else None
+    if verified.is_file():  # The verifier was applied again after the episode was run.
+        episode["verification"] = json.loads(verified.read_text(encoding="utf-8"))["verification"]
     return {**episode, "name": directory.name, "contract": contract}
+
+
+def triage(episode: dict[str, Any]) -> str | None:
+    """accept, review or reject; None for an episode verified before triage existed."""
+    verification = episode["verification"]
+    if verification is None:
+        return "reject"  # The final script did not run to the end: nothing to accept.
+    return verification.get("triage")
 
 
 def meets_contract(episode: dict[str, Any]) -> bool | None:
@@ -375,14 +435,20 @@ CRITERIA = (
     "reference_metrics",
     "mechanism_check",
     "mechanism_check_and_reference_metrics",
+    "checks_and_same_run_as_reference",
 )
 
 
 def acceptances(episode: dict[str, Any]) -> dict[str, bool]:
     """Which acceptance criteria accept the final script; one that cannot decide does not."""
     computed = (episode["verification"] or {}).get("criteria", {})
-    accepted = {name: computed.get(name) is True for name in CRITERIA[1:]}
-    return {"agent_claim": episode["claimed_correct"] is True, **accepted}
+    accepted = {name: computed.get(name) is True for name in CRITERIA[1:-1]}
+    return {
+        "agent_claim": episode["claimed_correct"] is True,
+        **accepted,
+        # The verifier's acceptance without a reviewer: triage accept.
+        CRITERIA[-1]: triage(episode) == "accept",
+    }
 
 
 def summarize(
@@ -453,6 +519,18 @@ def summarize(
             "input_tokens": sum(episode["agent"]["input_tokens"] for episode in group),
             "output_tokens": sum(episode["agent"]["output_tokens"] for episode in group),
         }
+    triaged = {
+        name: {
+            "episodes": sum(triage(e) == name for e in episodes),
+            "contract_passed": sum(
+                triage(e) == name and e["meets_contract"] is True for e in episodes
+            ),
+            "contract_failed": sum(
+                triage(e) == name and e["meets_contract"] is False for e in episodes
+            ),
+        }
+        for name in TRIAGE
+    }
     scored = [episode for episode in episodes if episode["meets_contract"] is not None]
     by_source = [e for e in scored if e["semantically_correct"] is not None]
     by_review = [
@@ -475,6 +553,8 @@ def summarize(
         "failed_clauses": failed_clauses,
         "conditions": rows,
         "criteria": criteria,
+        "triage": triaged,
+        "untriaged": sum(triage(episode) is None for episode in episodes),
         "checks": {
             "source": {
                 "episodes": len(by_source),
@@ -524,6 +604,17 @@ def summary_text(summary: dict[str, Any]) -> str:
     for name, row in summary["criteria"].items():
         lines.append(
             f"{name.replace('_', ' '):<38}" + "  ".join(f"{row[key]:>13}" for key, _ in counts)
+        )
+    lines += ["", f"{'verifier triage':<38}" + f"{'episodes':>13}  {'passes':>13}  {'fails':>13}"]
+    for name, row in summary["triage"].items():
+        lines.append(
+            f"{name:<38}{row['episodes']:>13}  {row['contract_passed']:>13}  "
+            f"{row['contract_failed']:>13}"
+        )
+    if summary["untriaged"]:
+        lines.append(
+            f"{summary['untriaged']} episodes were verified before triage existed; "
+            "the verify command applies the current verifier to them."
         )
     versions = ", ".join(str(version) for version in summary["contract_versions"]) or "none"
     clauses = ", ".join(f"{name} {count}" for name, count in summary["failed_clauses"].items())
@@ -576,6 +667,51 @@ def score_episodes(
             progress(f"{path.parent.name}: {result['status']} {', '.join(result['failed'])}")
             scored += 1
     return scored
+
+
+def verify_episodes(
+    directory: Path,
+    store: RunStore,
+    *,
+    progress: Callable[[str], None] = lambda _line: None,
+) -> int:
+    """Apply the current verifier to the episodes of a pilot directory; train nothing.
+
+    Each episode's final script, its task's script and the healthy script must have
+    their full-budget runs in the store, as they do after the episode was run. The
+    result goes to verification.json, which load_episode prefers over the record made
+    when the episode was run. Returns how many episodes were verified.
+    """
+    healthy, verified = agent_tasks.task_source(HEALTHY), 0
+    for path in sorted(Path(directory).glob("episodes/*/episode.json")):
+        episode, name = json.loads(path.read_text(encoding="utf-8")), path.parent.name
+        initial = agent_tasks.task_source(episode["repair_task"])
+        if _sha256(initial) != episode["agent"]["initial_script_sha256"]:
+            progress(f"{name}: skipped, the task's script has changed since the episode")
+            continue
+        try:
+            _, verification = final_verification(
+                store,
+                episode["final_script"],
+                healthy,
+                initial,
+                Budget(**episode["budgets"]["full"]),
+                train=False,
+            )
+        except LookupError as missing:
+            progress(f"{name}: skipped, {missing}")
+            continue
+        record = {
+            "schema_version": 1,
+            "task": "agent_episode_verification",
+            "verification": verification,
+        }
+        (path.parent / "verification.json").write_text(
+            json.dumps(record, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+        )
+        progress(f"{name}: {'no verification' if verification is None else verification['triage']}")
+        verified += 1
+    return verified
 
 
 def run_pilot(
@@ -669,15 +805,19 @@ def build_parser() -> argparse.ArgumentParser:
         "prepare", help="Train the runs every episode needs; no model is called."
     )
     pilot = commands.add_parser("pilot", help="Run tasks under conditions with one model.")
-    for command in (prepare, pilot):
+    verify = commands.add_parser(
+        "verify", help="Apply the current verifier to a pilot's episodes; trains nothing."
+    )
+    for command in (prepare, pilot, verify):
         command.add_argument(
             "--output", type=Path, required=True, help="Directory; reused to resume."
         )
         command.add_argument("--data", choices=("synthetic", "camelyon"), required=True)
         command.add_argument("--config", type=Path, help="Camelyon17 config file.")
-        command.add_argument("--tasks", nargs="+", choices=TASKS, default=list(PILOT_TASKS))
         command.add_argument("--seed", type=int, default=7)
         command.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    for command in (prepare, pilot):
+        command.add_argument("--tasks", nargs="+", choices=TASKS, default=list(PILOT_TASKS))
     pilot.add_argument("--provider", default="gemini", help="gemini, ollama or openai.")
     pilot.add_argument("--model", help="Defaults to the provider's environment variable.")
     pilot.add_argument(
@@ -732,6 +872,9 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         device=args.device,
     )
+    if args.command == "verify":
+        verify_episodes(args.output, store, progress=lambda line: print(line, flush=True))
+        return 0
     if args.command == "prepare":
         rows = prepare_runs(store, tuple(args.tasks), progress=lambda line: print(line, flush=True))
         return 0 if all(row["status"] == "completed" for row in rows) else 1

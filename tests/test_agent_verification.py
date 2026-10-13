@@ -1,4 +1,4 @@
-"""Tests for repair verification: trajectory comparison and the acceptance criteria."""
+"""Tests for repair verification: trajectories, acceptance criteria and triage."""
 
 import contextlib
 import copy
@@ -167,6 +167,98 @@ class AcceptanceCriteriaTests(unittest.TestCase):
         self.assertIn("Decision: accepted", text)
         self.assertIn("mechanism check and reference metrics: accepts", text)
         self.assertIn("Trajectory against the reference: not comparable", text)
+        # Without recorded states an acceptance cannot be shown to be the reference's run.
+        self.assertEqual(result["triage"], "review")
+        self.assertEqual(
+            result["differences"],
+            ["model states: not comparable: a run recorded no model states"],
+        )
+        self.assertIn("Triage: review\n  differs in model states: not comparable", text)
+
+    def workspace_runs(self):
+        """The clean example twice, as two workspace runs with the same recorded states."""
+        runs = []
+        for _ in range(2):
+            run = example("clean")
+            # The harness logs every epoch's metrics, and the monitor its learning rate.
+            for number, row in enumerate(run["parameter_group_epochs"], start=1):
+                row["metrics"] = {
+                    name: value
+                    for name, value in run["final_metrics"].items()
+                    if "validation" in name
+                }
+                rate = 1e-4 / number
+                row["learning_rate"] = dict.fromkeys(("first", "last", "min", "max"), rate)
+                row["learning_rate"].update(changes=0, rebounds=0)
+            run["workspace"] = {
+                **recorded()["workspace"],
+                "initialization_metrics": {"id_validation_accuracy": 0.5},
+                "data": {"training_hospitals": [0, 3, 4], "training_samples": 24},
+            }
+            runs.append(run)
+        return runs
+
+    def test_an_acceptance_is_accept_only_when_the_run_is_the_references_run(self):
+        candidate, reference = self.workspace_runs()
+        same = verification.verify_repair_run(candidate, reference, optimizer_name="AdamW")
+        self.assertEqual(
+            (same["decision"], same["triage"], same["differences"]), ("accepted", "accept", [])
+        )
+        self.assertIn("Triage: accept", verification.repair_text(same))
+        self.assertEqual(set(verification.TRIAGE_MEANING), set(verification.TRIAGE))
+
+        # A later epoch ends in other weights, at another learning rate: no known fault,
+        # metrics inside the gate, and still not the reference's run.
+        late, _ = self.workspace_runs()
+        late["workspace"].update(epoch_state_sha256=["s3", "x"], final_state_sha256="x")
+        rate = late["parameter_group_epochs"][-1]["learning_rate"]
+        expected = dict(rate)
+        rate.update({end: value * 2 for end, value in rate.items()})
+        result = verification.verify_repair_run(late, reference, optimizer_name="AdamW")
+        self.assertEqual((result["decision"], result["triage"]), ("accepted", "review"))
+        epoch = late["parameter_group_epochs"][-1]["epoch"]
+        self.assertEqual(
+            result["differences"],
+            [
+                "model states: diverged at epoch 2",
+                f"learning rate: epoch {epoch} runs from {rate['first']:.6g} to {rate['last']:.6g}, "
+                f"where the reference runs from {expected['first']:.6g} to {expected['last']:.6g}",
+            ],
+        )
+
+    def test_review_names_evaluation_and_data_that_are_not_the_references(self):
+        candidate, reference = self.workspace_runs()
+        metrics = candidate["parameter_group_epochs"][-1]["metrics"]
+        split = next(name for name in metrics if name.endswith("validation_accuracy"))
+        metrics[split] -= 0.001
+        result = verification.verify_repair_run(candidate, reference, optimizer_name="AdamW")
+        self.assertEqual(result["trajectory"]["outcome"], "identical_full_run")
+        self.assertEqual((result["decision"], result["triage"]), ("accepted", "review"))
+        self.assertEqual(
+            result["differences"],
+            ["evaluation: validation metrics differ although the model states agree"],
+        )
+        self.assertFalse(verification.same_evaluation(candidate, reference))
+        self.assertFalse(verification.same_evaluation({}, {}))
+
+        other, _ = self.workspace_runs()
+        other["workspace"].update(step_state_sha256=["x", "y", "z", "w"], steps_per_epoch=4)
+        other["workspace"]["data"] = {"training_hospitals": [0, 1, 3, 4], "training_samples": 32}
+        trajectory = verification.compare_trajectories(other, reference)
+        self.assertEqual(
+            verification.differences(other, reference, trajectory),
+            [
+                "model states: diverged at step 1",
+                "training data: 32 samples from hospitals [0, 1, 3, 4], where the reference "
+                "has 24 from [0, 3, 4]",
+                "steps per epoch: 4, where the reference has 3",
+            ],
+        )
+
+    def test_a_rejection_is_reject_whatever_the_trajectory(self):
+        faulty = example("frozen_head")
+        result = self.verify(copy.deepcopy(faulty), faulty)
+        self.assertEqual((result["decision"], result["triage"]), ("rejected", "reject"))
 
     def test_command_line_exits_with_one_when_the_repair_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:

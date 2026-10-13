@@ -5,8 +5,9 @@ healthy script is its ground-truth repair. Most faults act from the first optimi
 step; schedule_ends_an_epoch_early leaves the first epoch untouched. A look-alike is
 also an edit, but one that keeps training correct while resembling a fault, to
 measure false alarms. materialize() writes a workspace holding train.py and TASK.md,
-the only files an agent is given. The task statement never names a fault, and every
-task gets the same statement.
+the only files an agent is given. The task statement is the public specification of
+the script: it states everything a script is later tested for (agent_contract), never
+names a fault, and is the same for every task.
 
     python -m runsleuth.agent_tasks list
     python -m runsleuth.agent_tasks show train_in_eval_mode
@@ -26,22 +27,38 @@ STATEMENT = """\
 # Task
 
 `train.py` fine-tunes an ImageNet-pretrained ResNet18 to tell tumor from normal tissue
-in 96x96 histopathology patches (Camelyon17). It is meant to fine-tune the whole network
-with a new two-class head, AdamW at a fine-tuning learning rate, and a cosine
-learning-rate schedule that spans the epochs. Training and evaluation normalize their
-inputs in the same way.
+in 96x96 histopathology patches (Camelyon17).
 
-A harness imports `train.py`, supplies the patches and calls its functions. After every
-epoch the harness itself evaluates the model on two validation sets:
+A harness imports `train.py`, supplies the patches and calls five functions, which
+must keep their names and arguments: `use_for_training`, `prepare_training_batch`,
+`prepare_evaluation_batch`, `build` and `train_one_epoch`. Before the first epoch and
+after every epoch the harness itself evaluates the model, in evaluation mode, on two
+validation sets:
 
 - in-distribution: held-out patches from the hospitals used for training;
-- out-of-distribution: patches from hospital 1, which training must never see.
+- out-of-distribution: patches from hospital 1.
 
 Hospital 2 is the sealed test set.
 
-Your job:
+## What the script must do
 
-1. Decide whether `train.py` trains the model correctly.
+1. Data: train on the patches of every hospital (0 to 4) except hospitals 1 and 2.
+2. Inputs: patches arrive as RGB values in [0, 1]. For training and for evaluation
+   alike, subtract the ImageNet mean (0.485, 0.456, 0.406) and divide by the ImageNet
+   standard deviation (0.229, 0.224, 0.225) per channel, and change nothing else.
+3. Model: the pretrained ResNet18 with its final layer replaced by a new layer of two
+   outputs.
+4. Training: every parameter of the network is trained, and the network is in
+   training mode whenever it is trained.
+5. Optimizer: AdamW with learning rate 1e-4 and weight decay 1e-4 for all parameters,
+   taking one step per batch.
+6. Schedule: the learning rate follows a cosine from 1e-4 at the start of the run to 0
+   at its end, without warmup or restarts. It may be updated once per epoch or once
+   per batch.
+
+## Your job
+
+1. Decide whether `train.py` does all of the above.
 2. If it does not, fix `train.py`, changing only what is needed.
 3. Say whether training is now correct and what you changed.
 

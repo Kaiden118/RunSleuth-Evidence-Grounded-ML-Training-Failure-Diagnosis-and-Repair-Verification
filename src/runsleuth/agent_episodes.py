@@ -319,6 +319,7 @@ def run_episode(
     quick: Budget = QUICK,
     full: Budget = FULL,
     contract: Callable[[Path], dict[str, Any]] | None = None,
+    provider: str | None = None,
     **agent_options: Any,
 ) -> dict[str, Any]:
     """Run one agent on one task under one condition and save episode.json.
@@ -355,9 +356,10 @@ def run_episode(
         "repair_task": task,
         "condition": condition,
         "model": model,
+        "provider": provider,
         "task_is_correct": task not in FAULTS,
         "expected_diagnosis": agent_tasks.expected_diagnosis(task),
-        "statement_sha256": hashlib.sha256(agent_tasks.STATEMENT.encode("utf-8")).hexdigest(),
+        "statement_sha256": _sha256(agent_tasks.STATEMENT),
         "presentation_version": PRESENTATION_VERSION,
         "budgets": {"quick": asdict(quick), "full": asdict(full)},
         "claimed_correct": None if claim is None else claim["training_is_correct"],
@@ -547,6 +549,7 @@ def summarize(
         "task": "agent_episode_summary",
         "scope": "development pilot; injected faults, one seed, small samples",
         "episodes": len(episodes),
+        "models": sorted({episode["model"] for episode in episodes}),
         "provider_failures": failures,
         "unscored": len(episodes) - len(scored),
         "contract_versions": sorted({e["contract"]["contract_version"] for e in scored}),
@@ -620,6 +623,7 @@ def summary_text(summary: dict[str, Any]) -> str:
     clauses = ", ".join(f"{name} {count}" for name, count in summary["failed_clauses"].items())
     lines += [
         "",
+        f"model: {', '.join(summary['models']) or 'none'}",
         f"passes and fails are the contract tests' (version {versions}); "
         f"{summary['unscored']} episodes have no result.",
         f"failed clauses: {clauses or 'none'}",
@@ -721,6 +725,28 @@ def verify_episodes(
     return verified
 
 
+def check_pilot_setup(output_dir: Path, setup: dict[str, Any]) -> None:
+    """Refuse a directory whose episodes were run under another setup.
+
+    A pilot directory is one model on one task statement, one presentation of the
+    conditions and one pair of budgets; anything else belongs in another directory.
+    An episode from before the statement or the presentation was recorded was run under
+    another one. A provider that was not recorded is not held against an episode.
+    """
+    for episode in load_episodes(output_dir):
+        if provider_failed(episode):
+            continue  # It is run again under the current setup.
+        for field, value in setup.items():
+            recorded = episode.get(field)
+            if recorded is None and field != "provider":
+                recorded = "an unrecorded one"
+            if recorded is not None and recorded != value:
+                raise ValueError(
+                    f"{output_dir} holds episodes with {field.replace('_', ' ')} "
+                    f"{str(recorded)[:60]!r}, not {str(value)[:60]!r}; use another directory"
+                )
+
+
 def run_pilot(
     output_dir: Path,
     client: Any,
@@ -739,8 +765,22 @@ def run_pilot(
     Episodes that already have an episode.json are kept, except those the provider
     failed, which are run again. A provider failure stops the pilot, since the next
     episode would meet it too. The summary is written to pilot_report.json in output_dir.
+    A directory that holds episodes of another model or setup is refused.
     """
     output_dir = Path(output_dir)
+    check_pilot_setup(
+        output_dir,
+        {
+            "model": model,
+            "provider": options.get("provider"),
+            "statement_sha256": _sha256(agent_tasks.STATEMENT),
+            "presentation_version": PRESENTATION_VERSION,
+            "budgets": {
+                "quick": asdict(options.get("quick", QUICK)),
+                "full": asdict(options.get("full", FULL)),
+            },
+        },
+    )
     # Most episodes end in a script another episode ended in.
     options["contract"] = scored_once(options.get("contract") or score_script)
     plan = [
@@ -827,7 +867,9 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     for command in (prepare, pilot):
         command.add_argument("--tasks", nargs="+", choices=TASKS, default=list(PILOT_TASKS))
-    pilot.add_argument("--provider", default="gemini", help="gemini, ollama or openai.")
+    pilot.add_argument(
+        "--provider", default="gemini", help="gemini, ollama, openai or compatible (llm_client)."
+    )
     pilot.add_argument("--model", help="Defaults to the provider's environment variable.")
     pilot.add_argument(
         "--conditions", nargs="+", choices=tuple(CONDITIONS), default=list(CONDITIONS)
@@ -900,6 +942,7 @@ def main(argv: list[str] | None = None) -> int:
         repetitions=args.repetitions,
         reviews=_reviews(args.reviews),
         progress=lambda line: print(line, flush=True),
+        provider=args.provider,
         pause=args.pause,
         error_wait=args.error_wait,
         max_api_errors=5,

@@ -1,4 +1,8 @@
-"""LLM clients through Chat Completions APIs: Gemini, a local Ollama, or OpenAI."""
+"""LLM clients through Chat Completions APIs.
+
+Gemini, a local Ollama and OpenAI have their own settings. Any other service that
+speaks the same API (provider "compatible") is named by its endpoint.
+"""
 
 import os
 
@@ -6,7 +10,14 @@ from openai import OpenAI
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
-PROVIDERS = ("gemini", "ollama", "openai")
+PROVIDERS = ("gemini", "ollama", "openai", "compatible")
+
+
+def _setting(name: str, purpose: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Set {name} {purpose}")
+    return value
 
 
 def create_llm_client(provider: str = "gemini", model: str | None = None) -> tuple[OpenAI, str]:
@@ -35,4 +46,9 @@ def create_llm_client(provider: str = "gemini", model: str | None = None) -> tup
         if not model:
             raise RuntimeError("Set OPENAI_MODEL or pass a model")
         return OpenAI(api_key=api_key, timeout=120.0, max_retries=0), model
+    if provider == "compatible":
+        base_url = _setting("LLM_BASE_URL", "to the provider's OpenAI-compatible endpoint")
+        api_key = _setting("LLM_API_KEY", "to the key for LLM_BASE_URL")
+        model = model or _setting("LLM_MODEL", "or pass a model")
+        return OpenAI(api_key=api_key, base_url=base_url, timeout=120.0, max_retries=0), model
     raise ValueError(f"Unknown provider {provider!r}; expected one of {PROVIDERS}")

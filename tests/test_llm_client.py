@@ -53,6 +53,23 @@ class LLMClientTests(unittest.TestCase):
         client, _ = self.create({"OLLAMA_BASE_URL": "http://gpu-box:11434/v1"}, "ollama", "m")
         self.assertEqual(str(client.base_url).rstrip("/"), "http://gpu-box:11434/v1")
 
+    def test_a_compatible_provider_is_named_by_its_endpoint(self):
+        settings = {
+            "LLM_BASE_URL": "https://models.example.com/v1",
+            "LLM_API_KEY": "test-key",
+            "LLM_MODEL": "some-model",
+        }
+        for missing in settings:
+            environment = {name: value for name, value in settings.items() if name != missing}
+            with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, missing):
+                self.create(environment, "compatible")
+        client, model = self.create(settings, "compatible")
+        self.assertEqual(model, "some-model")
+        self.assertEqual(str(client.base_url).rstrip("/"), "https://models.example.com/v1")
+        del settings["LLM_MODEL"]
+        self.assertEqual(self.create(settings, "compatible", "other-model")[1], "other-model")
+        self.assertIn("compatible", llm_client.PROVIDERS)
+
     def test_unknown_provider_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unknown provider"):
             self.create({}, "other")

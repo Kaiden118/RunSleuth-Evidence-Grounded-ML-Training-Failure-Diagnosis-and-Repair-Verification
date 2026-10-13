@@ -527,6 +527,7 @@ class EpisodeTests(unittest.TestCase):
             **options,
         )
         self.assertEqual(summary["episodes"], 4)
+        self.assertEqual(summary["models"], ["scripted-model"])
         # The four episodes end in two scripts, and each is tested once.
         self.assertEqual(scored, [tiny_source("stale_head"), tiny_source(HEALTHY)])
         zero, one = summary["conditions"]["C0"], summary["conditions"]["C1"]
@@ -555,6 +556,56 @@ class EpisodeTests(unittest.TestCase):
             self.assertEqual(agent_episodes.main(["summarize", str(output)]), 0)
         self.assertIn("false claims", printed.getvalue())
         self.assertRegex(printed.getvalue(), r"C0\s+2\s+2\s+2")
+        self.assertIn("model: scripted-model", printed.getvalue())
+
+    def test_a_pilot_directory_holds_one_model_and_one_setup(self):
+        options = {
+            "tasks": (HEALTHY,),
+            "conditions": ("C0",),
+            "repetitions": 1,
+            "quick": BUDGET,
+            "full": BUDGET,
+            "contract": contract,
+            "sleep": lambda _seconds: None,
+        }
+        output = self.root / "pilot"
+
+        def pilot(model, **changes):
+            client = Scripted(finish(True, "none"))
+            agent_episodes.run_pilot(output, client, model, self.store, **{**options, **changes})
+            return client
+
+        pilot("model-a", provider="gemini")
+        (episode,) = agent_episodes.load_episodes(output)
+        self.assertEqual((episode["model"], episode["provider"]), ("model-a", "gemini"))
+        with self.assertRaisesRegex(ValueError, "episodes with model 'model-a', not 'model-b'"):
+            pilot("model-b", provider="gemini")
+        with self.assertRaisesRegex(ValueError, "provider 'gemini', not 'compatible'"):
+            pilot("model-a", provider="compatible")
+        with self.assertRaisesRegex(ValueError, "episodes with budgets"):
+            pilot("model-a", provider="gemini", full=Budget(3, None, None))
+        with (
+            patch.object(agent_episodes, "PRESENTATION_VERSION", 99),
+            self.assertRaisesRegex(ValueError, "presentation version"),
+        ):
+            pilot("model-a", provider="gemini")
+        with (
+            patch.object(agent_episodes.agent_tasks, "STATEMENT", "Another task."),
+            self.assertRaisesRegex(ValueError, "statement sha256"),
+        ):
+            pilot("model-a", provider="gemini")
+        # The same setup resumes, and a provider that was not recorded is no obstacle.
+        self.assertEqual(len(pilot("model-a", provider="gemini").requests), 0)
+        saved = output / "episodes" / "healthy-C0-1" / "episode.json"
+        record = json.loads(saved.read_text(encoding="utf-8"))
+        del record["provider"]
+        saved.write_text(json.dumps(record), encoding="utf-8")
+        self.assertEqual(len(pilot("model-a", provider="compatible").requests), 0)
+        # An episode from before the statement was recorded saw another statement.
+        del record["statement_sha256"]
+        saved.write_text(json.dumps(record), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "statement sha256 'an unrecorded one'"):
+            pilot("model-a", provider="gemini")
 
     def test_a_pilot_stops_at_a_provider_failure_and_runs_that_episode_again(self):
         options = {

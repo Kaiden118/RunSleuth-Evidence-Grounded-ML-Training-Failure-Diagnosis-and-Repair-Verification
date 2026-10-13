@@ -50,7 +50,7 @@ from typing import Any
 
 from runsleuth import agent_review, agent_tasks
 from runsleuth.agent_loop import run_agent
-from runsleuth.agent_tasks import FAULTS, HEALTHY, SCRIPT_NAME, TASKS
+from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME, TASKS
 from runsleuth.agent_verification import (
     TRIAGE,
     TRIAGE_MEANING,
@@ -126,6 +126,18 @@ class RunStore:
         self.root, self.data, self.config = Path(root), data, config
         self.seed, self.device, self.timeout, self.runner = seed, device, timeout, runner
         self.trained = 0
+
+    def for_seed(self, seed: int) -> "RunStore":
+        """This store for another training seed; a run of one seed never serves another."""
+        return RunStore(
+            self.root,
+            data=self.data,
+            config=self.config,
+            seed=seed,
+            device=self.device,
+            timeout=self.timeout,
+            runner=self.runner,
+        )
 
     def run(self, source: str, budget: Budget, *, train: bool = True) -> dict[str, Any] | None:
         """The outcome of training a script on a budget: status, problems, output, report.
@@ -269,7 +281,7 @@ def semantic_label(task: str, initial: str, final: str, healthy: str) -> tuple[b
     if same_program(final, healthy):
         return True, "same_program_as_healthy_script"
     if same_program(final, initial):
-        return task not in FAULTS, "unchanged_script"
+        return not agent_tasks.is_faulty(task), "unchanged_script"
     return None, "needs_review"
 
 
@@ -357,7 +369,9 @@ def run_episode(
         "condition": condition,
         "model": model,
         "provider": provider,
-        "task_is_correct": task not in FAULTS,
+        "task_is_correct": not agent_tasks.is_faulty(task),
+        "task_kind": agent_tasks.kind(task),
+        "seed": store.seed,
         "expected_diagnosis": agent_tasks.expected_diagnosis(task),
         "statement_sha256": _sha256(agent_tasks.STATEMENT),
         "presentation_version": PRESENTATION_VERSION,
@@ -388,9 +402,15 @@ def score_script(script: Path) -> dict[str, Any]:
 def score_episode(
     directory: Path, contract: Callable[[Path], dict[str, Any]] = score_script
 ) -> dict[str, Any]:
-    """Run the contract tests on an episode's final script and save contract.json."""
+    """Run the contract tests on an episode's final script and save contract.json.
+
+    The tests belong to the task statement, so an episode run under another statement
+    keeps the result it has and is refused.
+    """
     directory = Path(directory)
     episode = json.loads((directory / "episode.json").read_text(encoding="utf-8"))
+    if episode.get("statement_sha256") != _sha256(agent_tasks.STATEMENT):
+        raise ValueError(f"{directory.name} was run under another task statement")
     with tempfile.TemporaryDirectory() as temporary:
         script = Path(temporary) / SCRIPT_NAME
         script.write_text(episode["final_script"], encoding="utf-8", newline="\n")
@@ -674,7 +694,11 @@ def score_episodes(
     once, scored = scored_once(contract), 0
     for path in sorted(Path(directory).glob("episodes/*/episode.json")):
         if redo or not (path.parent / "contract.json").is_file():
-            result = score_episode(path.parent, once)
+            try:
+                result = score_episode(path.parent, once)
+            except ValueError as refusal:
+                progress(f"skipped: {refusal}")
+                continue
             progress(f"{path.parent.name}: {result['status']} {', '.join(result['failed'])}")
             scored += 1
     return scored
@@ -756,11 +780,16 @@ def run_pilot(
     tasks: tuple[str, ...] = PILOT_TASKS,
     conditions: tuple[str, ...] = tuple(CONDITIONS),
     repetitions: int = 3,
+    seeds: tuple[int, ...] | None = None,
     reviews: dict[str, dict[str, Any]] | None = None,
     progress: Callable[[str], None] = lambda _line: None,
     **options: Any,
 ) -> dict[str, Any]:
     """Run every task under every condition, resuming after an interruption.
+
+    Repetitions share the store's training seed, so they differ only in what the model
+    answers. With seeds, there is one repetition per seed, trained and verified on
+    runs of that seed; a repetition is finished before the next begins.
 
     Episodes that already have an episode.json are kept, except those the provider
     failed, which are run again. A provider failure stops the pilot, since the next
@@ -783,13 +812,15 @@ def run_pilot(
     )
     # Most episodes end in a script another episode ended in.
     options["contract"] = scored_once(options.get("contract") or score_script)
+    stores = [store] * repetitions if seeds is None else [store.for_seed(seed) for seed in seeds]
     plan = [
         (task, condition, repetition)
+        for repetition in range(1, len(stores) + 1)
         for task in tasks
         for condition in conditions
-        for repetition in range(1, repetitions + 1)
     ]
     for number, (task, condition, repetition) in enumerate(plan, start=1):
+        store = stores[repetition - 1]
         directory = output_dir / "episodes" / f"{task}-{condition}-{repetition}"
         saved = directory / "episode.json"
         if saved.is_file() and not provider_failed(json.loads(saved.read_text(encoding="utf-8"))):
@@ -864,6 +895,12 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--data", choices=("synthetic", "camelyon"), required=True)
         command.add_argument("--config", type=Path, help="Camelyon17 config file.")
         command.add_argument("--seed", type=int, default=7)
+        command.add_argument(
+            "--seeds",
+            type=int,
+            nargs="+",
+            help="One repetition per training seed; overrides --seed.",
+        )
         command.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     for command in (prepare, pilot):
         command.add_argument("--tasks", nargs="+", choices=TASKS, default=list(PILOT_TASKS))
@@ -927,7 +964,14 @@ def main(argv: list[str] | None = None) -> int:
         verify_episodes(args.output, store, progress=lambda line: print(line, flush=True))
         return 0
     if args.command == "prepare":
-        rows = prepare_runs(store, tuple(args.tasks), progress=lambda line: print(line, flush=True))
+        rows = []
+        for seed in args.seeds or [args.seed]:
+            print(f"seed {seed}", flush=True)
+            rows += prepare_runs(
+                store.for_seed(seed),
+                tuple(args.tasks),
+                progress=lambda line: print(line, flush=True),
+            )
         return 0 if all(row["status"] == "completed" for row in rows) else 1
     from runsleuth.llm_client import create_llm_client
 
@@ -940,6 +984,7 @@ def main(argv: list[str] | None = None) -> int:
         tasks=tuple(args.tasks),
         conditions=tuple(args.conditions),
         repetitions=args.repetitions,
+        seeds=None if args.seeds is None else tuple(args.seeds),
         reviews=_reviews(args.reviews),
         progress=lambda line: print(line, flush=True),
         provider=args.provider,

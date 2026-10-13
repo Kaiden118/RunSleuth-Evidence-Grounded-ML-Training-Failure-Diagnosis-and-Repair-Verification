@@ -9,7 +9,7 @@ from torch import nn
 from torchvision.models import ResNet18_Weights, resnet18
 
 LEARNING_RATE = 1e-4
-WEIGHT_DECAY = 1e-4
+WEIGHT_DECAY = 1e-2
 VALIDATION_HOSPITAL = 1
 TEST_HOSPITAL = 2
 MEAN = (0.485, 0.456, 0.406)

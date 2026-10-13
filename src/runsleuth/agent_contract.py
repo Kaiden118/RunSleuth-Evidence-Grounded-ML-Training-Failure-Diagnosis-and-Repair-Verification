@@ -55,7 +55,7 @@ from runsleuth.agent_workspace import (
     synthetic_task_data,
 )
 
-CONTRACT_VERSION = 1
+CONTRACT_VERSION = 2
 CLAUSES = (
     "training_hospitals",
     "input_normalization",
@@ -68,7 +68,7 @@ CLAUSES = (
 HOSPITALS = range(5)
 TRAINING_HOSPITALS = [0, 3, 4]
 MEAN, STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
-LEARNING_RATE, WEIGHT_DECAY = 1e-4, 1e-4
+LEARNING_RATE, WEIGHT_DECAY = 1e-4, 1e-2
 # Epochs and batches per epoch of the short runs. Two different shapes, so that a
 # schedule written for one fixed length does not pass by coincidence.
 RUNS = ((3, 4), (2, 3))
@@ -421,11 +421,15 @@ FAULT_CLAUSES = {
     "scheduler_stepped_per_batch": "learning_rate_schedule",
     "validation_hospital_in_training": "training_hospitals",
     "schedule_ends_an_epoch_early": "learning_rate_schedule",
+    "schedule_period_in_steps_stepped_per_epoch": "learning_rate_schedule",
+    "learning_rate_halved": "optimizer",
+    "same_wrong_normalization_twice": "input_normalization",
+    "head_bias_left_frozen": "all_parameters_trained",
+    "head_frozen_from_the_second_epoch": "all_parameters_trained",
+    "weight_decay_dropped": "optimizer",
+    "training_hospital_left_out": "training_hospitals",
 }
 _HEAD = "    model.fc = nn.Linear(model.fc.in_features, 2)\n"
-_ADAMW = "torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)"
-_COSINE = "torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)"
-_LAMBDA = "torch.optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: "
 _TRAIN = "    model.train()\n    for images, labels in batches:\n"
 _LOOP = "    for images, labels in batches:\n"
 # Scripts beyond the tasks themselves, to see that the checks neither accept only the
@@ -441,91 +445,15 @@ CASES = {
             ),
         ),
     ),
-    "normalization_written_out": Case(
-        (),
-        "Evaluation normalizes with its own tensors instead of the shared function.",
-        (
-            (
-                '    """Turn RGB patches in [0, 1] into model inputs for evaluation."""\n'
-                "    return normalize(images)\n",
-                '    """Turn RGB patches in [0, 1] into model inputs for evaluation."""\n'
-                "    mean = torch.tensor([0.485, 0.456, 0.406], device=images.device)\n"
-                "    std = torch.tensor([0.229, 0.224, 0.225], device=images.device)\n"
-                "    return (images - mean.view(1, 3, 1, 1)) / std.view(1, 3, 1, 1)\n",
-            ),
-        ),
-    ),
     "head_moved_to_the_device_twice": Case(
         (),
         "The new head is moved to the device, then the whole model is.",
         ((_HEAD, _HEAD.replace("2)", "2).to(device)")),),
     ),
-    "two_parameter_groups": Case(
-        (),
-        "The head and the rest are separate optimizer groups with the same settings.",
-        (
-            (
-                _ADAMW,
-                "torch.optim.AdamW(\n"
-                "        [\n"
-                "            {'params': [p for n, p in model.named_parameters() "
-                "if not n.startswith('fc.')]},\n"
-                "            {'params': list(model.fc.parameters())},\n"
-                "        ],\n"
-                "        lr=LEARNING_RATE,\n"
-                "        weight_decay=WEIGHT_DECAY,\n"
-                "    )",
-            ),
-        ),
-    ),
-    "cosine_written_as_a_formula": Case(
-        (),
-        "The per-epoch cosine is a LambdaLR instead of CosineAnnealingLR.",
-        (
-            ("import torch\n", "import math\n\nimport torch\n"),
-            (_COSINE, _LAMBDA + "0.5 * (1 + math.cos(math.pi * epoch / epochs)))"),
-        ),
-    ),
     "training_mode_set_for_every_batch": Case(
         (),
         "model.train() is called inside the loop instead of before it.",
         ((_TRAIN, _LOOP + "        model.train()\n"),),
-    ),
-    "schedule_period_in_steps_stepped_per_epoch": Case(
-        ("learning_rate_schedule",),
-        "The period counts batches but the schedule is stepped per epoch, so the rate "
-        "hardly falls. An agent wrote this in the first pilot.",
-        (("T_max=epochs)", "T_max=epochs * steps_per_epoch)"),),
-    ),
-    "linear_decay": Case(
-        ("learning_rate_schedule",),
-        "The rate falls steadily to zero, but along a line instead of a cosine.",
-        ((_COSINE, _LAMBDA + "1 - epoch / epochs)"),),
-    ),
-    "same_wrong_normalization_twice": Case(
-        ("input_normalization",),
-        "Training and evaluation agree with each other but not with the ImageNet statistics.",
-        (
-            ("MEAN = (0.485, 0.456, 0.406)", "MEAN = (0.5, 0.5, 0.5)"),
-            ("STD = (0.229, 0.224, 0.225)", "STD = (0.5, 0.5, 0.5)"),
-        ),
-    ),
-    "head_bias_left_frozen": Case(
-        ("all_parameters_trained",),
-        "A partial repair of a frozen head: its weight trains, its bias does not.",
-        ((_HEAD, _HEAD + "    model.fc.bias.requires_grad_(False)\n"),),
-    ),
-    "head_frozen_from_the_second_epoch": Case(
-        ("all_parameters_trained",),
-        "The head trains in the first epoch only.",
-        (
-            (
-                _TRAIN,
-                "    model.train()\n"
-                "    if scheduler.last_epoch >= 1:\n"
-                "        model.fc.requires_grad_(False)\n" + _LOOP,
-            ),
-        ),
     ),
     "training_mode_set_only_when_built": Case(
         ("training_mode",),
@@ -540,20 +468,16 @@ CASES = {
         "model.train() is called in the first epoch only.",
         ((_TRAIN, "    if scheduler.last_epoch == 0:\n        model.train()\n" + _LOOP),),
     ),
-    "leak_repaired_and_a_training_hospital_dropped": Case(
-        ("training_hospitals",),
-        "Hospitals 1 and 2 are excluded, and so is hospital 0.",
-        (("hospital not in (VALIDATION_HOSPITAL, TEST_HOSPITAL)", "hospital in (3, 4)"),),
-    ),
-    "learning_rate_halved": Case(
-        ("optimizer",),
-        "A repair that also changed the learning rate.",
-        (("LEARNING_RATE = 1e-4", "LEARNING_RATE = 5e-5"),),
-    ),
-    "weight_decay_dropped": Case(
-        ("optimizer",),
-        "A repair that also removed weight decay.",
-        (("weight_decay=WEIGHT_DECAY", "weight_decay=0.0"),),
+    "linear_decay": Case(
+        ("learning_rate_schedule",),
+        "The rate falls to zero along a line instead of a cosine. Over two epochs the two "
+        "are the same schedule, which is why the checks also train for three.",
+        (
+            (
+                "torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)",
+                "torch.optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: 1 - epoch / epochs)",
+            ),
+        ),
     ),
     "sgd_instead_of_adamw": Case(
         ("optimizer",), "The optimizer is SGD.", (("torch.optim.AdamW", "torch.optim.SGD"),)
@@ -573,7 +497,7 @@ def expected_failures(name: str) -> tuple[str, ...]:
     """The clauses a task or case should fail; none for a correct script."""
     if name in CASES:
         return CASES[name].fails
-    return (FAULT_CLAUSES[name],) if name in FAULTS else ()
+    return (FAULT_CLAUSES[name],) if agent_tasks.is_faulty(name) else ()
 
 
 def case_source(name: str) -> str:

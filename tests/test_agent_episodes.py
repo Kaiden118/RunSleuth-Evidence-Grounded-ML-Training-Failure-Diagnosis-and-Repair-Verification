@@ -175,7 +175,16 @@ class EpisodeTests(unittest.TestCase):
         self.assertEqual(verification["decision"], "rejected")
         self.assertIn("frozen_head", verification["reasons"][0])
         self.assertTrue(verification["trajectory"].startswith("diverged at step"))
+        self.assertEqual(verification["triage"], "reject")
+        self.assertIn("known fault", verification["meaning"])
+        self.assertTrue(verification["differences_from_reference"][0].startswith("model states"))
         self.assertEqual(shown("C3"), {k: v for k, v in shown("C4").items() if k != "verification"})
+        # The healthy script's own run is the reference's run, and is told so.
+        outcome = self.store.run(tiny_source(HEALTHY), BUDGET)
+        same = shown("C4")["verification"]
+        self.assertEqual((same["decision"], same["triage"]), ("accepted", "accept"))
+        self.assertEqual(same["differences_from_reference"], [])
+        self.assertIn("same training run", same["meaning"])
         text = json.dumps(shown("C4"))
         self.assertLess(len(text), 6000, "a run's summary must stay small")
 
@@ -290,6 +299,22 @@ class EpisodeTests(unittest.TestCase):
         self.assertGreaterEqual(
             summary["criteria"]["before_and_after_metrics"]["rejected_passing"], 1
         )
+        # Triage: only a run that is the reference's run is accepted without a reviewer.
+        decided = [agent_episodes.triage(episode) for episode in episodes]
+        self.assertEqual(decided[2:], ["reject", "accept", "accept"])
+        self.assertEqual(set(decided[:2]) & {"accept"}, set(), "another learning rate")
+        self.assertEqual(
+            summary["triage"]["accept"],
+            {"episodes": 2, "contract_passed": 2, "contract_failed": 0},
+        )
+        self.assertEqual(summary["triage"]["review"]["contract_failed"], slower_accepted)
+        self.assertEqual(summary["untriaged"], 0)
+        self.assertEqual(
+            summary["criteria"]["checks_and_same_run_as_reference"],
+            {"accepted": 2, "accepted_failing": 0, "rejected_passing": 0},
+        )
+        for difference in episodes[0]["verification"]["differences"]:
+            self.assertRegex(difference, "^(model states|learning rate): ")
         # Where the source settles a label, the contract tests agree with it.
         self.assertEqual(summary["checks"]["source"], {"episodes": 2, "disagree": []})
         self.assertEqual(summary["checks"]["reviews"]["episodes"], 0)
@@ -349,10 +374,57 @@ class EpisodeTests(unittest.TestCase):
         table = printed("summarize", str(pilot), "--reviews", str(reviews_path))
         self.assertRegex(table, r"agent claim\s+4\s+3\s+1")
         self.assertIn("failed clauses: optimizer 2, all_parameters_trained 1", table)
+        self.assertRegex(table, r"checks and same run as reference\s+2\s+0\s+0")
+        self.assertRegex(table, r"accept\s+2\s+2\s+0")
         self.assertIn("what the source alone settles: 2 of 2 episodes agree", table)
         self.assertIn(
             "reviews: 2 of 3 episodes agree (3 reviewed blind to the verifier); disagree: e", table
         )
+
+    def test_the_verifier_can_be_applied_again_without_training(self):
+        episode = self.episode("stale_head", "C0", finish(True), name="pilot/episodes/a")[0]
+        pilot, directory = self.root / "pilot", self.root / "pilot" / "episodes" / "a"
+        self.assertEqual(episode["presentation_version"], agent_episodes.PRESENTATION_VERSION)
+        trained, lines = self.store.trained, []
+        # An episode from before triage: its record has neither triage nor differences.
+        saved = json.loads((directory / "episode.json").read_text(encoding="utf-8"))
+        current = dict(saved["verification"])
+        del saved["verification"]["triage"], saved["verification"]["differences"]
+        (directory / "episode.json").write_text(json.dumps(saved), encoding="utf-8")
+        (old,) = agent_episodes.load_episodes(pilot)
+        self.assertIsNone(agent_episodes.triage(old))
+        summary = agent_episodes.summarize([old])
+        self.assertEqual((summary["untriaged"], summary["triage"]["reject"]["episodes"]), (1, 0))
+        self.assertIn(
+            "1 episodes were verified before triage existed", agent_episodes.summary_text(summary)
+        )
+
+        self.assertEqual(
+            agent_episodes.verify_episodes(pilot, self.store, progress=lines.append), 1
+        )
+        self.assertEqual(lines, ["a: reject"])
+        self.assertEqual(self.store.trained, trained)
+        (again,) = agent_episodes.load_episodes(pilot)
+        self.assertEqual(again["verification"], current)
+        self.assertEqual(agent_episodes.summarize([again])["untriaged"], 0)
+        record = json.loads((directory / "verification.json").read_text(encoding="utf-8"))
+        self.assertEqual(record["task"], "agent_episode_verification")
+
+        # Another store holds none of the runs, and none is trained to make up for it.
+        empty = RunStore(self.root / "other", data="synthetic", seed=11, runner=run_in_process)
+        self.assertIsNone(empty.run(tiny_source(HEALTHY), BUDGET, train=False))
+        (directory / "verification.json").unlink()
+        self.assertEqual(agent_episodes.verify_episodes(pilot, empty, progress=lines.append), 0)
+        self.assertEqual(lines[-1], "a: skipped, the run of the final script is not in the store")
+        self.assertEqual(empty.trained, 0)
+        self.assertFalse((directory / "verification.json").exists())
+        # A task whose script has changed since cannot be verified again either.
+        saved["agent"]["initial_script_sha256"] = "0" * 64
+        (directory / "episode.json").write_text(json.dumps(saved), encoding="utf-8")
+        self.assertEqual(
+            agent_episodes.verify_episodes(pilot, self.store, progress=lines.append), 0
+        )
+        self.assertIn("the task's script has changed", lines[-1])
 
     def test_scoring_is_a_step_that_can_be_run_again(self):
         episode = self.episode("stale_head", "C0", finish(True), name="pilot/episodes/a")[0]

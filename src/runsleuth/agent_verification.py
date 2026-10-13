@@ -2,8 +2,8 @@
 
 verify_repair_run() decides as runsleuth verify does: a repair is accepted when
 re-diagnosis against the healthy reference finds no known fault (the mechanism check)
-and no validation metric regresses against that reference. It adds two records for
-studying how agents repair training code:
+and no validation metric regresses against that reference. It adds three records for
+studying how agents repair training code: criteria, trajectory and triage.
 
 - criteria: what four acceptance criteria would each decide on the same run, so the
   parts of verification can be compared. Metrics alone accept an unrepaired fault that
@@ -14,7 +14,17 @@ studying how agents repair training code:
   stopped early (stop_after_epochs) to make this a cheap, bounded check; agreement
   then covers only the optimizer steps and epoch ends both runs hashed. A fault that
   triggers later, or one that acts only on evaluation, agrees too, so the comparison
-  never decides by itself, and a correct repair need not agree at all.
+  never accepts or rejects by itself, and a correct repair need not agree at all.
+
+"No known fault" is not "correct": a fault outside the signature library with metrics
+inside the gate is accepted. triage therefore says how far an acceptance reaches:
+
+- accept: accepted, and the run is the reference's run. Every hashed model state
+  agrees through the final state of a full run, and so does every validation metric.
+- review: accepted, but the run is not the reference's, or that cannot be shown.
+  differences lists where the two runs part; whether the difference is harmless is
+  left to a reviewer. A correct repair written differently lands here too.
+- reject: rejected.
 
     python -m runsleuth.agent_verification --candidate runs/fixed/run_report.json \\
         --reference runs/healthy/run_report.json --faulty runs/faulty/run_report.json
@@ -22,11 +32,20 @@ studying how agents repair training code:
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from runsleuth.cli import validation_splits, verification_text, verify_runs
 
 NO_FAULT = "no_known_fault"
+TRIAGE = ("accept", "review", "reject")
+TRIAGE_MEANING = {
+    "accept": "No known fault, metrics as good as the reference's, and the same training "
+    "run as the reference.",
+    "review": "No known fault and metrics as good as the reference's, but the run is not "
+    "the reference's run. The differences are not verified.",
+    "reject": "A known fault was found, or a metric is worse than the reference's.",
+}
 # What the harness must have set alike for two runs' hashed states to be comparable. The
 # steps per epoch are left out: they follow from the data a script admits, so a script
 # that trains on other data simply diverges at its first step.
@@ -108,6 +127,64 @@ def trajectory_text(trajectory: dict) -> str:
     return f"identical over the checked steps only ({scope}); later steps are unknown"
 
 
+def same_evaluation(candidate: dict, reference: dict) -> bool:
+    """Whether two runs recorded exactly the same validation metrics, epoch by epoch."""
+
+    def metrics(run: dict) -> list:
+        before = (run.get("workspace") or {}).get("initialization_metrics")
+        return [before, *(row.get("metrics") for row in run.get("parameter_group_epochs", []))]
+
+    ours, theirs = metrics(candidate), metrics(reference)
+    return len(ours) > 1 and None not in ours[1:] and ours == theirs
+
+
+def differences(candidate: dict, reference: dict, trajectory: dict) -> list[str]:
+    """Where a run is not the reference's run, from what both run reports record."""
+    found = []
+    if trajectory["outcome"] != "identical_full_run":
+        found.append(f"model states: {trajectory_text(trajectory)}")
+    ours, theirs = candidate.get("workspace") or {}, reference.get("workspace") or {}
+    data, expected = ours.get("data") or {}, theirs.get("data") or {}
+    if any(
+        data.get(key) != expected.get(key)
+        for key in ("training_hospitals", "training_samples", "training_indices_sha256")
+    ):
+        found.append(
+            f"training data: {data.get('training_samples')} samples from hospitals "
+            f"{data.get('training_hospitals')}, where the reference has "
+            f"{expected.get('training_samples')} from {expected.get('training_hospitals')}"
+        )
+    if ours.get("steps_per_epoch") != theirs.get("steps_per_epoch"):
+        found.append(
+            f"steps per epoch: {ours.get('steps_per_epoch')}, where the reference has "
+            f"{theirs.get('steps_per_epoch')}"
+        )
+    rows = zip(
+        candidate.get("parameter_group_epochs", []),
+        reference.get("parameter_group_epochs", []),
+        strict=False,
+    )
+    for mine, yours in rows:
+        rate, expected_rate = mine.get("learning_rate") or {}, yours.get("learning_rate") or {}
+        ends = [(rate.get(end), expected_rate.get(end)) for end in ("first", "last")]
+        if any(
+            None not in pair and not math.isclose(*pair, rel_tol=1e-9, abs_tol=1e-15)
+            for pair in ends
+        ):
+            (first, first_expected), (last, last_expected) = (
+                tuple("unknown" if rate is None else f"{rate:.6g}" for rate in pair)
+                for pair in ends
+            )
+            found.append(
+                f"learning rate: epoch {mine.get('epoch')} runs from {first} to {last}, "
+                f"where the reference runs from {first_expected} to {last_expected}"
+            )
+            break
+    if trajectory["outcome"] == "identical_full_run" and not same_evaluation(candidate, reference):
+        found.append("evaluation: validation metrics differ although the model states agree")
+    return found
+
+
 def _accuracy(run: dict, splits: tuple[str, ...]) -> float:
     return sum(run["final_metrics"][f"{split}_validation_accuracy"] for split in splits) / len(
         splits
@@ -128,6 +205,11 @@ def verify_repair_run(
     before_and_after = None
     if faulty is not None and (splits := validation_splits(candidate, faulty)):
         before_and_after = _accuracy(candidate, splits) > _accuracy(faulty, splits)
+    trajectory = compare_trajectories(candidate, reference)
+    same_run = trajectory["outcome"] == "identical_full_run" and same_evaluation(
+        candidate, reference
+    )
+    accepted = result["decision"] == "accepted"
     return {
         **result,
         "criteria": {
@@ -136,7 +218,9 @@ def verify_repair_run(
             "mechanism_check": mechanism,
             "mechanism_check_and_reference_metrics": mechanism and metrics,
         },
-        "trajectory": compare_trajectories(candidate, reference),
+        "trajectory": trajectory,
+        "triage": "reject" if not accepted else "accept" if same_run else "review",
+        "differences": [] if same_run else differences(candidate, reference, trajectory),
     }
 
 
@@ -146,6 +230,8 @@ def repair_text(result: dict) -> str:
         verdict = "not available" if accepts is None else "accepts" if accepts else "rejects"
         lines.append(f"  {name.replace('_', ' ')}: {verdict}")
     lines.append(f"Trajectory against the reference: {trajectory_text(result['trajectory'])}")
+    lines.append(f"Triage: {result['triage']}")
+    lines += [f"  differs in {difference}" for difference in result["differences"]]
     return "\n".join(lines)
 
 

@@ -641,6 +641,21 @@ def load_episodes(directory: Path) -> list[dict[str, Any]]:
     return [load_episode(path.parent) for path in paths]
 
 
+def scored_once(
+    contract: Callable[[Path], dict[str, Any]],
+) -> Callable[[Path], dict[str, Any]]:
+    """A scorer that runs the contract tests once for scripts with the same text."""
+    results: dict[str, dict[str, Any]] = {}
+
+    def once(script: Path) -> dict[str, Any]:
+        source = script.read_text(encoding="utf-8")
+        if source not in results:
+            results[source] = contract(script)
+        return results[source]
+
+    return once
+
+
 def score_episodes(
     directory: Path,
     contract: Callable[[Path], dict[str, Any]] = score_script,
@@ -652,15 +667,7 @@ def score_episodes(
 
     Episodes that end in the same script text share one run of the tests.
     """
-    results: dict[str, dict[str, Any]] = {}
-
-    def once(script: Path) -> dict[str, Any]:
-        source = script.read_text(encoding="utf-8")
-        if source not in results:
-            results[source] = contract(script)
-        return results[source]
-
-    scored = 0
+    once, scored = scored_once(contract), 0
     for path in sorted(Path(directory).glob("episodes/*/episode.json")):
         if redo or not (path.parent / "contract.json").is_file():
             result = score_episode(path.parent, once)
@@ -734,6 +741,8 @@ def run_pilot(
     episode would meet it too. The summary is written to pilot_report.json in output_dir.
     """
     output_dir = Path(output_dir)
+    # Most episodes end in a script another episode ended in.
+    options["contract"] = scored_once(options.get("contract") or score_script)
     plan = [
         (task, condition, repetition)
         for task in tasks

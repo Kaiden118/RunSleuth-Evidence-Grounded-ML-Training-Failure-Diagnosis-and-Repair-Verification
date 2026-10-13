@@ -1,14 +1,17 @@
-"""Reviewed correctness labels for the scripts agents leave behind.
+"""Reviews of the scripts agents leave behind, as an audit of the contract tests.
 
-An episode decides from the source alone whether its final script is correct when
-that script is the healthy one or was left untouched (agent_episodes.semantic_label).
-Any other script has to be read by a reviewer. Those decisions are kept in a file,
-apart from the episodes and from the verifier, and are keyed by the program: one
-review labels every episode, model and repetition that ends in the same program.
+Whether a script meets the task statement is decided by contract tests
+(agent_contract). Tests can be wrong, so scripts are also read by a reviewer, above
+all those that are neither the healthy script nor left untouched: the differently
+written repairs a test is most likely to misjudge. A review never changes a label.
+The summary (agent_episodes.summarize) reports where reviews and tests disagree, and
+a disagreement is a reason to look at the test.
 
-A reviewer is shown only how a script differs from the healthy one, never the task
-it started from, the agent's claim or a verifier's decision. Each review says whether
-it was made that way (blind_to_verifier).
+Reviews are kept in a file, apart from the episodes and from the verifier, and are
+keyed by the program: one review covers every episode, model and repetition that ends
+in the same program. A reviewer is shown only how a script differs from the healthy
+one, never the task it started from, the agent's claim, a test result or a verifier's
+decision. Each review says whether it was made that way (blind_to_verifier).
 """
 
 import ast

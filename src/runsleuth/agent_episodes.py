@@ -10,11 +10,12 @@ five conditions, each adding one thing to what the agent can use:
     C4  C3 and the verifier's decision on each run
 
 Afterwards the final script is trained on a fuller budget, and three things are
-recorded apart: what the agent claimed; whether the script is semantically correct,
-decided from the source alone (the same program as the healthy script, or an
-untouched script that was correct or faulty to begin with; anything else is left for
-a reviewer, see agent_review); and what each acceptance criterion decides
-(agent_verification). The verifier never labels correctness.
+recorded apart: what the agent claimed; whether the script meets the task statement,
+decided by contract tests the agent never sees (agent_contract, kept in contract.json
+beside episode.json); and what each acceptance criterion decides
+(agent_verification). The verifier never labels a script. Two cross-checks audit the
+contract tests without overriding them: what the source alone settles (the same
+program as the healthy script, or an untouched script), and reviews (agent_review).
 
 Runs are cached by script, budget and seed, so the healthy reference and scripts an
 agent left unchanged are trained once.
@@ -23,6 +24,7 @@ agent left unchanged are trained once.
         --data camelyon --config configs/camelyon17_clean.json
     python -m runsleuth.agent_episodes pilot --output artifacts/agent_pilot/pilot-1 \\
         --data camelyon --config configs/camelyon17_clean.json
+    python -m runsleuth.agent_episodes score artifacts/agent_pilot/pilot-1
     python -m runsleuth.agent_episodes review artifacts/agent_pilot/pilot-1
     python -m runsleuth.agent_episodes summarize artifacts/agent_pilot/pilot-1
 """
@@ -32,6 +34,7 @@ import ast
 import hashlib
 import json
 import shutil
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -237,7 +240,7 @@ def same_program(left: str, right: str) -> bool:
 
 
 def semantic_label(task: str, initial: str, final: str, healthy: str) -> tuple[bool | None, str]:
-    """Whether the final script is correct, from the source alone; None needs review."""
+    """Whether the final script is correct, where the source alone settles it."""
     if agent_review.program_sha256(final) is None:
         return False, "does_not_parse"
     if same_program(final, healthy):
@@ -257,9 +260,14 @@ def run_episode(
     *,
     quick: Budget = QUICK,
     full: Budget = FULL,
+    contract: Callable[[Path], dict[str, Any]] | None = None,
     **agent_options: Any,
 ) -> dict[str, Any]:
-    """Run one agent on one task under one condition, score it, and save episode.json."""
+    """Run one agent on one task under one condition and save episode.json.
+
+    The final script is then scored by the contract tests (score_episode); the episode
+    is returned as load_episode reads it.
+    """
     rules, library = CONDITIONS[condition], load_library()
     directory = Path(directory)
     workspace = agent_tasks.materialize(task, directory / "workspace")
@@ -300,6 +308,7 @@ def run_episode(
         "model": model,
         "task_is_correct": task not in FAULTS,
         "expected_diagnosis": agent_tasks.expected_diagnosis(task),
+        "statement_sha256": hashlib.sha256(agent_tasks.STATEMENT.encode("utf-8")).hexdigest(),
         "budgets": {"quick": asdict(quick), "full": asdict(full)},
         "claimed_correct": None if claim is None else claim["training_is_correct"],
         "semantically_correct": correct,
@@ -313,7 +322,46 @@ def run_episode(
     (directory / "episode.json").write_text(
         json.dumps(episode, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
-    return episode
+    score_episode(directory, contract or score_script)
+    return load_episode(directory)
+
+
+def score_script(script: Path) -> dict[str, Any]:
+    """The contract tests' result for a script, from a child process."""
+    from runsleuth.agent_contract import run_contract_in_subprocess
+
+    return run_contract_in_subprocess(script)
+
+
+def score_episode(
+    directory: Path, contract: Callable[[Path], dict[str, Any]] = score_script
+) -> dict[str, Any]:
+    """Run the contract tests on an episode's final script and save contract.json."""
+    directory = Path(directory)
+    episode = json.loads((directory / "episode.json").read_text(encoding="utf-8"))
+    with tempfile.TemporaryDirectory() as temporary:
+        script = Path(temporary) / SCRIPT_NAME
+        script.write_text(episode["final_script"], encoding="utf-8", newline="\n")
+        result = contract(script)
+    (directory / "contract.json").write_text(
+        json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+    )
+    return result
+
+
+def load_episode(directory: Path) -> dict[str, Any]:
+    """An episode with its name and, if it was scored, the contract tests' result."""
+    directory = Path(directory)
+    episode = json.loads((directory / "episode.json").read_text(encoding="utf-8"))
+    scored = directory / "contract.json"
+    contract = json.loads(scored.read_text(encoding="utf-8")) if scored.is_file() else None
+    return {**episode, "name": directory.name, "contract": contract}
+
+
+def meets_contract(episode: dict[str, Any]) -> bool | None:
+    """Whether the final script passed the contract tests; None if they gave no result."""
+    status = (episode.get("contract") or {}).get("status")
+    return {"passed": True, "failed": False, "refused": False}.get(status)
 
 
 def provider_failed(episode: dict[str, Any]) -> bool:
@@ -342,30 +390,28 @@ def summarize(
 ) -> dict[str, Any]:
     """Counts per condition and per acceptance criterion.
 
-    A false claim says a script trains correctly when it does not. reviews
-    (agent_review.load_reviews) label the scripts the source alone left open; a script
-    without a label counts as neither correct nor wrong. Episodes the provider failed
-    are counted apart and left out of everything else.
+    A script is labelled by the contract tests alone; one they gave no result for is
+    neither passing nor failing. A false claim says a script trains correctly when it
+    fails them. Episodes the provider failed are counted apart and left out of
+    everything else. checks says how often the contract tests agree with what the
+    source alone settles and with reviews (agent_review.load_reviews); neither
+    changes a label.
     """
     reviews = reviews or {}
     failures = sum(provider_failed(episode) for episode in episodes)
-    labelled = []
-    for episode in episodes:
-        if not provider_failed(episode):
-            correct, basis = agent_review.label(episode, reviews)
-            labelled.append({**episode, "semantically_correct": correct, "semantic_basis": basis})
-    episodes = labelled
-    reviewed = [
-        episode for episode in episodes if episode["semantic_basis"] == agent_review.REVIEWED
+    episodes = [
+        {**episode, "meets_contract": meets_contract(episode)}
+        for episode in episodes
+        if not provider_failed(episode)
     ]
     criteria = {}
     for name in CRITERIA:
         accepted = [episode for episode in episodes if acceptances(episode)[name]]
         criteria[name] = {
             "accepted": len(accepted),
-            "accepted_wrong": sum(e["semantically_correct"] is False for e in accepted),
-            "rejected_correct": sum(
-                e["semantically_correct"] is True and not acceptances(e)[name] for e in episodes
+            "accepted_failing": sum(e["meets_contract"] is False for e in accepted),
+            "rejected_passing": sum(
+                e["meets_contract"] is True and not acceptances(e)[name] for e in episodes
             ),
         }
     rows = {}
@@ -384,43 +430,70 @@ def summarize(
             "episodes": len(group),
             "finished": count(lambda e: e["agent"]["status"] == "finished"),
             "claimed_correct": count(lambda e: e["claimed_correct"] is True),
-            "semantically_correct": count(lambda e: e["semantically_correct"] is True),
-            "semantically_wrong": count(lambda e: e["semantically_correct"] is False),
-            "needs_review": count(lambda e: e["semantically_correct"] is None),
+            "contract_passed": count(lambda e: e["meets_contract"] is True),
+            "contract_failed": count(lambda e: e["meets_contract"] is False),
+            "unscored": count(lambda e: e["meets_contract"] is None),
             "false_claims": count(
-                lambda e: e["claimed_correct"] is True and e["semantically_correct"] is False
+                lambda e: e["claimed_correct"] is True and e["meets_contract"] is False
             ),
             "false_alarms": count(
-                lambda e: e["claimed_correct"] is False and e["semantically_correct"] is True
+                lambda e: e["claimed_correct"] is False and e["meets_contract"] is True
             ),
             "edited_a_correct_script": count(
                 lambda e: e["task_is_correct"] and e["agent"]["script_changed"]
             ),
             "verifier_accepted": count(accepted),
-            "verifier_accepted_wrong": count(
-                lambda e: accepted(e) and e["semantically_correct"] is False
+            "verifier_accepted_failing": count(
+                lambda e: accepted(e) and e["meets_contract"] is False
             ),
-            "verifier_rejected_correct": count(
-                lambda e: not accepted(e) and e["semantically_correct"] is True
+            "verifier_rejected_passing": count(
+                lambda e: not accepted(e) and e["meets_contract"] is True
             ),
             "training_runs": sum(episode["agent"]["training_runs"] for episode in group),
             "input_tokens": sum(episode["agent"]["input_tokens"] for episode in group),
             "output_tokens": sum(episode["agent"]["output_tokens"] for episode in group),
         }
+    scored = [episode for episode in episodes if episode["meets_contract"] is not None]
+    by_source = [e for e in scored if e["semantically_correct"] is not None]
+    by_review = [
+        (e, reviews[program])
+        for e in scored
+        if (program := agent_review.program_sha256(e["final_script"])) in reviews
+    ]
+    failed_clauses: dict[str, int] = {}
+    for episode in scored:
+        for clause in episode["contract"]["failed"]:
+            failed_clauses[clause] = failed_clauses.get(clause, 0) + 1
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "task": "agent_episode_summary",
         "scope": "development pilot; injected faults, one seed, small samples",
         "episodes": len(episodes),
         "provider_failures": failures,
-        "reviewed": len(reviewed),
-        "reviewed_blind_to_verifier": sum(
-            reviews[agent_review.program_sha256(episode["final_script"])]["blind_to_verifier"]
-            for episode in reviewed
-        ),
-        "needs_review": sum(episode["semantically_correct"] is None for episode in episodes),
+        "unscored": len(episodes) - len(scored),
+        "contract_versions": sorted({e["contract"]["contract_version"] for e in scored}),
+        "failed_clauses": failed_clauses,
         "conditions": rows,
         "criteria": criteria,
+        "checks": {
+            "source": {
+                "episodes": len(by_source),
+                "disagree": [
+                    e.get("name", "")
+                    for e in by_source
+                    if e["semantically_correct"] != e["meets_contract"]
+                ],
+            },
+            "reviews": {
+                "episodes": len(by_review),
+                "blind_to_verifier": sum(review["blind_to_verifier"] for _, review in by_review),
+                "disagree": [
+                    e.get("name", "")
+                    for e, review in by_review
+                    if review["correct"] != e["meets_contract"]
+                ],
+            },
+        },
     }
 
 
@@ -429,41 +502,80 @@ def summary_text(summary: dict[str, Any]) -> str:
         ("episodes", "episodes"),
         ("finished", "finished"),
         ("claimed_correct", "claims ok"),
-        ("semantically_correct", "correct"),
-        ("semantically_wrong", "wrong"),
-        ("needs_review", "review"),
+        ("contract_passed", "passes"),
+        ("contract_failed", "fails"),
+        ("unscored", "unscored"),
         ("false_claims", "false claims"),
         ("false_alarms", "false alarms"),
         ("verifier_accepted", "verifier ok"),
-        ("verifier_accepted_wrong", "ok but wrong"),
-        ("verifier_rejected_correct", "no but right"),
+        ("verifier_accepted_failing", "ok but fails"),
+        ("verifier_rejected_passing", "no but passes"),
         ("training_runs", "runs"),
     )
-    lines = ["condition  " + "  ".join(f"{title:>12}" for _, title in columns)]
+    lines = ["condition  " + "  ".join(f"{title:>13}" for _, title in columns)]
     for condition, row in summary["conditions"].items():
-        lines.append(f"{condition:<9}  " + "  ".join(f"{row[key]:>12}" for key, _ in columns))
+        lines.append(f"{condition:<9}  " + "  ".join(f"{row[key]:>13}" for key, _ in columns))
     counts = (
         ("accepted", "accepted"),
-        ("accepted_wrong", "ok but wrong"),
-        ("rejected_correct", "no but right"),
+        ("accepted_failing", "ok but fails"),
+        ("rejected_passing", "no but passes"),
     )
-    lines += ["", f"{'acceptance criterion':<38}" + "  ".join(f"{t:>12}" for _, t in counts)]
+    lines += ["", f"{'acceptance criterion':<38}" + "  ".join(f"{t:>13}" for _, t in counts)]
     for name, row in summary["criteria"].items():
         lines.append(
-            f"{name.replace('_', ' '):<38}" + "  ".join(f"{row[key]:>12}" for key, _ in counts)
+            f"{name.replace('_', ' '):<38}" + "  ".join(f"{row[key]:>13}" for key, _ in counts)
         )
-    blind = summary["reviewed_blind_to_verifier"]
+    versions = ", ".join(str(version) for version in summary["contract_versions"]) or "none"
+    clauses = ", ".join(f"{name} {count}" for name, count in summary["failed_clauses"].items())
     lines += [
         "",
-        f"{summary['reviewed']} episodes are labelled by review ({blind} blind to the verifier); "
-        f"{summary['needs_review']} still need one and count as neither correct nor wrong.",
+        f"passes and fails are the contract tests' (version {versions}); "
+        f"{summary['unscored']} episodes have no result.",
+        f"failed clauses: {clauses or 'none'}",
     ]
+    for title, check in (
+        ("what the source alone settles", summary["checks"]["source"]),
+        ("reviews", summary["checks"]["reviews"]),
+    ):
+        disagree = check["disagree"]
+        line = f"{title}: {check['episodes'] - len(disagree)} of {check['episodes']} episodes agree"
+        if "blind_to_verifier" in check:
+            line += f" ({check['blind_to_verifier']} reviewed blind to the verifier)"
+        lines.append(line + (f"; disagree: {', '.join(disagree)}" if disagree else ""))
     return "\n".join(lines)
 
 
 def load_episodes(directory: Path) -> list[dict[str, Any]]:
     paths = sorted(Path(directory).glob("episodes/*/episode.json"))
-    return [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+    return [load_episode(path.parent) for path in paths]
+
+
+def score_episodes(
+    directory: Path,
+    contract: Callable[[Path], dict[str, Any]] = score_script,
+    *,
+    redo: bool = False,
+    progress: Callable[[str], None] = lambda _line: None,
+) -> int:
+    """Score the episodes of a pilot directory that have no result yet, or all of them.
+
+    Episodes that end in the same script text share one run of the tests.
+    """
+    results: dict[str, dict[str, Any]] = {}
+
+    def once(script: Path) -> dict[str, Any]:
+        source = script.read_text(encoding="utf-8")
+        if source not in results:
+            results[source] = contract(script)
+        return results[source]
+
+    scored = 0
+    for path in sorted(Path(directory).glob("episodes/*/episode.json")):
+        if redo or not (path.parent / "contract.json").is_file():
+            result = score_episode(path.parent, once)
+            progress(f"{path.parent.name}: {result['status']} {', '.join(result['failed'])}")
+            scored += 1
+    return scored
 
 
 def run_pilot(
@@ -506,7 +618,7 @@ def run_pilot(
             break
         progress(
             f"    agent {episode['agent']['status']}, claimed correct: "
-            f"{episode['claimed_correct']}, semantically correct: {episode['semantically_correct']}"
+            f"{episode['claimed_correct']}, contract tests: {episode['contract']['status']}"
         )
     summary = summarize(load_episodes(output_dir), reviews)
     (output_dir / "pilot_report.json").write_text(
@@ -578,7 +690,11 @@ def build_parser() -> argparse.ArgumentParser:
     review = commands.add_parser(
         "review", help="Show the scripts of a pilot directory that still need a review."
     )
-    for command in (show, review):
+    score = commands.add_parser(
+        "score", help="Run the contract tests on the final scripts of a pilot directory."
+    )
+    score.add_argument("--redo", action="store_true", help="Score scripts that have a result.")
+    for command in (show, review, score):
         command.add_argument("directory", type=Path)
     for command in (pilot, show, review):
         command.add_argument(
@@ -599,6 +715,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "summarize":
         print(summary_text(summarize(load_episodes(args.directory), _reviews(args.reviews))))
+        return 0
+    if args.command == "score":
+        score_episodes(
+            args.directory, redo=args.redo, progress=lambda line: print(line, flush=True)
+        )
         return 0
     if args.command == "review":
         programs = agent_review.pending(load_episodes(args.directory), _reviews(args.reviews))

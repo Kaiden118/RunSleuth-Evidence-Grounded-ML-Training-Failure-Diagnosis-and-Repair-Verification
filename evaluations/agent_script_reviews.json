@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "task": "agent_script_reviews",
-  "rubric": "A script is correct when it does everything TASK.md states: the whole network and a new two-class head are trained by AdamW at a fine-tuning learning rate, the cosine schedule spans the epochs, training and evaluation normalize their inputs alike, and no patch from hospital 1 or 2 is trained on. The decision is made by reading the source, shown as its difference from the healthy script.",
+  "rubric": "A script is correct when it does everything the task statement (TASK.md) requires. The decision is made by reading the source, shown as its difference from the healthy script. Reviews audit the contract tests and never change a label.",
   "reviews": [
     {
       "program_sha256": "b41edab501160ba5052bdf4dfddb5c4006f08cdd9eb954c118d142e6ca4254a9",

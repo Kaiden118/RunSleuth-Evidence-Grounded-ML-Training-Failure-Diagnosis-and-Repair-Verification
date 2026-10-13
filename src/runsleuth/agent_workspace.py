@@ -156,13 +156,17 @@ def restricted_builtins() -> dict[str, Any]:
 
 def load_script(path: Path) -> types.ModuleType:
     """Check a workspace script and execute it as a module with restricted builtins."""
-    source = Path(path).read_text(encoding="utf-8")
+    return load_source(Path(path).read_text(encoding="utf-8"), str(path))
+
+
+def load_source(source: str, name: str = SCRIPT_NAME) -> types.ModuleType:
+    """load_script for a script given as text; name is what tracebacks call it."""
     problems = check_script(source)
     if problems:
         raise ScriptRefused(problems)
     module = types.ModuleType("workspace_train")
     vars(module)["__builtins__"] = restricted_builtins()
-    exec(compile(source, str(path), "exec"), vars(module))
+    exec(compile(source, name, "exec"), vars(module))
     missing = [name for name in REQUIRED_FUNCTIONS if not callable(vars(module).get(name))]
     if missing:
         raise ScriptRefused([f"the script must define {name}()" for name in missing])

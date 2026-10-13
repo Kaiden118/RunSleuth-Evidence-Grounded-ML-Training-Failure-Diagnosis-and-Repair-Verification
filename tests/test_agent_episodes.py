@@ -21,7 +21,7 @@ except ModuleNotFoundError as error:
     torch = None
 
 if torch is not None:
-    from runsleuth import agent_episodes, agent_workspace
+    from runsleuth import agent_contract, agent_episodes, agent_workspace
     from runsleuth.agent_episodes import CONDITIONS, Budget, RunStore
 
     BUDGET = Budget(epochs=2, max_train_batches=None, max_eval_samples=None)
@@ -43,6 +43,11 @@ def run_in_process(workspace, run_dir, *, data, config, epochs, seed, **options)
         return {"status": "refused", "problems": refusal.problems, "report": None, "output": ""}
     status = json.loads(path.read_text(encoding="utf-8"))["status"]
     return {"status": status, "problems": [], "report": str(path), "output": ""}
+
+
+def contract(script):
+    """The contract tests without a child process, on patches the tiny network can take."""
+    return agent_contract.run_contract(script, patch_size=16)
 
 
 @unittest.skipIf(torch is None, "Install torch and torchvision for the episode tests")
@@ -67,6 +72,7 @@ class EpisodeTests(unittest.TestCase):
             self.store,
             quick=BUDGET,
             full=BUDGET,
+            contract=contract,
             sleep=lambda _seconds: None,
         )
         return result, client
@@ -98,9 +104,18 @@ class EpisodeTests(unittest.TestCase):
         self.assertNotIn("evidence", shown)
         # The repaired script is the healthy one, so two scripts were trained in all.
         self.assertEqual(self.store.trained, 2)
+        # The contract tests label the script, in a record of their own.
+        self.assertEqual(
+            (episode["contract"]["status"], episode["contract"]["failed"]), ("passed", [])
+        )
+        self.assertEqual(episode["name"], "episode")
+        self.assertEqual(agent_episodes.load_episode(self.root / "episode"), episode)
         saved = json.loads((self.root / "episode" / "episode.json").read_text(encoding="utf-8"))
-        self.assertEqual(saved, episode)
+        self.assertNotIn("contract", saved)
         self.assertEqual(saved["final_script"], tiny_source(HEALTHY))
+        self.assertEqual(len(saved["statement_sha256"]), 64)
+        scored = json.loads((self.root / "episode" / "contract.json").read_text(encoding="utf-8"))
+        self.assertEqual(scored, episode["contract"])
 
     def test_claiming_a_faulty_script_correct_is_recorded_apart_from_the_verifier(self):
         episode, _ = self.episode(
@@ -114,8 +129,10 @@ class EpisodeTests(unittest.TestCase):
         self.assertEqual(episode["verification"]["decision"], "rejected")
         self.assertEqual(episode["verification"]["re_diagnosis"], "stale_optimizer_binding")
         self.assertFalse(episode["verification"]["criteria"]["mechanism_check"])
+        self.assertEqual(episode["contract"]["failed"], ["all_parameters_trained"])
         summary = agent_episodes.summarize([episode])["conditions"]["C1"]
         self.assertEqual((summary["false_claims"], summary["verifier_accepted"]), (1, 0))
+        self.assertEqual((summary["contract_failed"], summary["verifier_accepted_failing"]), (1, 0))
 
     def test_without_runs_the_agent_reads_only_and_a_wrong_doubt_is_a_false_alarm(self):
         episode, client = self.episode(HEALTHY, "C0", finish(False, "the schedule looks wrong"))
@@ -210,6 +227,161 @@ class EpisodeTests(unittest.TestCase):
         )
         other = healthy.replace("LEARNING_RATE = 1e-4", "LEARNING_RATE = 5e-5")
         self.assertEqual(label("stale_head", stale, other, healthy), (None, "needs_review"))
+        self.assertEqual(
+            label("stale_head", stale, "def broken(:", healthy), (False, "does_not_parse")
+        )
+
+    def test_contract_tests_label_scripts_and_reviews_only_audit_them(self):
+        slower = {"old_text": "LEARNING_RATE = 1e-4", "new_text": "LEARNING_RATE = 5e-5"}
+        apart = {
+            "old_text": "hospital not in (VALIDATION_HOSPITAL, TEST_HOSPITAL)",
+            "new_text": "hospital != VALIDATION_HOSPITAL and hospital != TEST_HOSPITAL",
+        }
+        pilot = self.root / "pilot"
+
+        def run(name, task, *replies):
+            return self.episode(task, "C0", *replies, name=f"pilot/episodes/{name}")[0]
+
+        episodes = [
+            run("a", HEALTHY, reply(("edit_file", slower)), finish(True)),
+            run("b", HEALTHY, reply(("edit_file", slower)), finish(True)),
+            run("c", "stale_head", finish(True)),
+            run("d", HEALTHY, finish(False, "unsure")),
+            run("e", HEALTHY, reply(("edit_file", apart)), finish(True)),
+        ]
+        # The source alone settles neither edited script; the contract tests settle both.
+        self.assertEqual(
+            [episode["semantic_basis"] for episode in episodes],
+            [
+                "needs_review",
+                "needs_review",
+                "unchanged_script",
+                "same_program_as_healthy_script",
+                "needs_review",
+            ],
+        )
+        self.assertEqual(
+            [episode["contract"]["failed"] for episode in episodes],
+            [["optimizer"], ["optimizer"], ["all_parameters_trained"], [], []],
+        )
+        summary = agent_episodes.summarize(episodes)
+        row = summary["conditions"]["C0"]
+        self.assertEqual(
+            (row["contract_passed"], row["contract_failed"], row["unscored"]), (2, 3, 0)
+        )
+        self.assertEqual((row["false_claims"], row["false_alarms"]), (3, 1))
+        self.assertEqual(row["edited_a_correct_script"], 3)
+        self.assertEqual(
+            summary["criteria"]["agent_claim"],
+            {"accepted": 4, "accepted_failing": 3, "rejected_passing": 1},
+        )
+        self.assertEqual(summary["failed_clauses"], {"optimizer": 2, "all_parameters_trained": 1})
+        self.assertEqual(summary["contract_versions"], [agent_contract.CONTRACT_VERSION])
+        # The stale script fails the mechanism check and the healthy ones pass it; a script
+        # that was not changed cannot have better metrics than before.
+        mechanism = summary["criteria"]["mechanism_check"]
+        self.assertEqual(mechanism["rejected_passing"], 0)
+        slower_accepted = sum(
+            e["verification"]["criteria"]["mechanism_check"] for e in episodes[:2]
+        )
+        self.assertEqual(mechanism["accepted"], slower_accepted + 2)
+        self.assertEqual(mechanism["accepted_failing"], slower_accepted)
+        self.assertEqual(row["verifier_accepted_failing"], slower_accepted)
+        self.assertGreaterEqual(
+            summary["criteria"]["before_and_after_metrics"]["rejected_passing"], 1
+        )
+        # Where the source settles a label, the contract tests agree with it.
+        self.assertEqual(summary["checks"]["source"], {"episodes": 2, "disagree": []})
+        self.assertEqual(summary["checks"]["reviews"]["episodes"], 0)
+
+        program = agent_episodes.agent_review.program_sha256
+        reviews_path = self.root / "reviews.json"
+        review = {
+            "reason": "Read against the task statement.",
+            "reviewer": "a reviewer",
+            "blind_to_verifier": True,
+        }
+        reviews_path.write_text(
+            json.dumps(
+                {
+                    "reviews": [
+                        {
+                            **review,
+                            "program_sha256": program(episodes[0]["final_script"]),
+                            "correct": False,
+                        },
+                        {
+                            **review,
+                            "program_sha256": program(episodes[4]["final_script"]),
+                            "correct": False,
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        reviews = agent_episodes.agent_review.load_reviews(reviews_path)
+        audited = agent_episodes.summarize(episodes, reviews)
+        # A review that disagrees is reported, and changes no label.
+        self.assertEqual(
+            audited["checks"]["reviews"],
+            {"episodes": 3, "blind_to_verifier": 3, "disagree": ["e"]},
+        )
+        self.assertEqual(audited["conditions"], summary["conditions"])
+        self.assertEqual(audited["criteria"], summary["criteria"])
+
+        def printed(*arguments):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(agent_episodes.main(list(arguments)), 0)
+            return output.getvalue()
+
+        empty = self.root / "empty.json"
+        empty.write_text('{"reviews": []}', encoding="utf-8")
+        listing = printed("review", str(pilot), "--reviews", str(empty))
+        self.assertIn(f"program_sha256 {program(episodes[0]['final_script'])}  (ends 2", listing)
+        self.assertIn("+LEARNING_RATE = 5e-5", listing)
+        self.assertNotIn("optimizer", listing)
+        self.assertEqual(
+            printed("review", str(pilot), "--reviews", str(reviews_path)).strip(),
+            "No script needs a review.",
+        )
+        table = printed("summarize", str(pilot), "--reviews", str(reviews_path))
+        self.assertRegex(table, r"agent claim\s+4\s+3\s+1")
+        self.assertIn("failed clauses: optimizer 2, all_parameters_trained 1", table)
+        self.assertIn("what the source alone settles: 2 of 2 episodes agree", table)
+        self.assertIn(
+            "reviews: 2 of 3 episodes agree (3 reviewed blind to the verifier); disagree: e", table
+        )
+
+    def test_scoring_is_a_step_that_can_be_run_again(self):
+        episode = self.episode("stale_head", "C0", finish(True), name="pilot/episodes/a")[0]
+        pilot, scored = (
+            self.root / "pilot",
+            self.root / "pilot" / "episodes" / "a" / "contract.json",
+        )
+        calls = []
+
+        def other(script):
+            calls.append(script.read_text(encoding="utf-8"))
+            return {**contract(script), "contract_version": 99}
+
+        self.assertEqual(agent_episodes.score_episodes(pilot, other), 0, "already scored")
+        scored.unlink()
+        (unscored,) = agent_episodes.load_episodes(pilot)
+        self.assertIsNone(unscored["contract"])
+        summary = agent_episodes.summarize([unscored])
+        self.assertEqual((summary["unscored"], summary["conditions"]["C0"]["false_claims"]), (1, 0))
+        self.assertEqual(summary["criteria"]["agent_claim"]["accepted_failing"], 0)
+        lines = []
+        self.assertEqual(agent_episodes.score_episodes(pilot, other, progress=lines.append), 1)
+        self.assertEqual(lines, ["a: failed all_parameters_trained"])
+        self.assertEqual(calls, [episode["final_script"]])
+        self.assertEqual(agent_episodes.load_episodes(pilot)[0]["contract"]["contract_version"], 99)
+        self.assertEqual(agent_episodes.score_episodes(pilot, contract, redo=True), 1)
+        self.assertEqual(agent_episodes.load_episodes(pilot), [episode])
+        crashed = {**episode, "contract": {**episode["contract"], "status": "crashed"}}
+        self.assertIsNone(agent_episodes.meets_contract(crashed))
 
     def test_the_store_trains_a_script_once_per_budget_and_recovers_from_an_interruption(self):
         source = tiny_source(HEALTHY)
@@ -265,6 +437,7 @@ class EpisodeTests(unittest.TestCase):
             "repetitions": 1,
             "quick": BUDGET,
             "full": BUDGET,
+            "contract": contract,
             "sleep": lambda _seconds: None,
         }
         output = self.root / "pilot"
@@ -284,7 +457,8 @@ class EpisodeTests(unittest.TestCase):
         self.assertEqual(
             (one["claimed_correct"], one["false_claims"], one["training_runs"]), (1, 0, 1)
         )
-        self.assertEqual(zero["semantically_wrong"], 1)
+        self.assertEqual((zero["contract_failed"], zero["contract_passed"]), (1, 1))
+        self.assertIn("contract tests: failed", lines[1])
         self.assertEqual(len(lines), 8)
         self.assertEqual(json.loads((output / "pilot_report.json").read_text("utf-8")), summary)
         # Nothing is asked of the model again, except for an episode that was interrupted.
@@ -310,6 +484,7 @@ class EpisodeTests(unittest.TestCase):
             "repetitions": 2,
             "quick": BUDGET,
             "full": BUDGET,
+            "contract": contract,
             "sleep": lambda _seconds: None,
         }
         output, lines = self.root / "pilot", []

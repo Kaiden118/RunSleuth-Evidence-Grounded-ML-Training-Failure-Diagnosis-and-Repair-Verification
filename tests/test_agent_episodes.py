@@ -558,6 +558,54 @@ class EpisodeTests(unittest.TestCase):
         self.assertRegex(printed.getvalue(), r"C0\s+2\s+2\s+2")
         self.assertIn("model: scripted-model", printed.getvalue())
 
+    def test_with_seeds_each_repetition_trains_and_verifies_on_its_own_seed(self):
+        options = {
+            "tasks": ("stale_head", HEALTHY),
+            "conditions": ("C0",),
+            "quick": BUDGET,
+            "full": BUDGET,
+            "contract": contract,
+            "sleep": lambda _seconds: None,
+        }
+        output, lines = self.root / "pilot", []
+        client = Scripted(*[finish(True, "none")] * 4)
+        summary = agent_episodes.run_pilot(
+            output, client, "m", self.store, seeds=(21, 22), progress=lines.append, **options
+        )
+        self.assertEqual(summary["episodes"], 4)
+        # One repetition is finished before the next begins.
+        self.assertEqual(
+            [line.split("] ")[1] for line in lines[::2]],
+            [
+                "stale_head C0 repetition 1",
+                "healthy C0 repetition 1",
+                "stale_head C0 repetition 2",
+                "healthy C0 repetition 2",
+            ],
+        )
+        episodes = {episode["name"]: episode for episode in agent_episodes.load_episodes(output)}
+        self.assertEqual(
+            {name: episode["seed"] for name, episode in episodes.items()},
+            {"stale_head-C0-1": 21, "stale_head-C0-2": 22, "healthy-C0-1": 21, "healthy-C0-2": 22},
+        )
+        # The store holds each script once per seed, and neither seed is the store's own.
+        first, second = self.store.for_seed(21), self.store.for_seed(22)
+        healthy = tiny_source(HEALTHY)
+        runs = [store.run(healthy, BUDGET, train=False) for store in (first, second)]
+        self.assertNotIn(None, runs)
+        self.assertNotEqual(
+            runs[0]["report"]["workspace"]["final_state_sha256"],
+            runs[1]["report"]["workspace"]["final_state_sha256"],
+        )
+        self.assertIsNone(self.store.run(healthy, BUDGET, train=False))
+        self.assertEqual(episodes["healthy-C0-2"]["verification"]["triage"], "accept")
+        self.assertEqual(episodes["stale_head-C0-2"]["verification"]["triage"], "reject")
+        # Resuming asks the model nothing.
+        again = agent_episodes.run_pilot(
+            output, Scripted(), "m", self.store, seeds=(21, 22), **options
+        )
+        self.assertEqual(again, summary)
+
     def test_a_pilot_directory_holds_one_model_and_one_setup(self):
         options = {
             "tasks": (HEALTHY,),

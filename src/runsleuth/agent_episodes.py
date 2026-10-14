@@ -900,7 +900,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument(
             "--output", type=Path, required=True, help="Directory; reused to resume."
         )
-        command.add_argument("--data", choices=("synthetic", "camelyon"), required=True)
+        command.add_argument("--data", choices=("synthetic", "camelyon", "ham10000"), required=True)
         command.add_argument("--config", type=Path, help="Camelyon17 config file.")
         command.add_argument("--seed", type=int, default=7)
         command.add_argument(

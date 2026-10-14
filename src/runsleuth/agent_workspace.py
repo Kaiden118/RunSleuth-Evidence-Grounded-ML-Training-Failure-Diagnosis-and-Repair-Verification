@@ -40,7 +40,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from runsleuth import agent_tasks
+from runsleuth import agent_tasks, ham10000_data
 from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME, TASKS
 from runsleuth.agent_verification import compare_trajectories
 from runsleuth.camelyon_config import CamelyonConfig
@@ -352,19 +352,106 @@ def camelyon_task_data(config: CamelyonConfig) -> DataBuilder:
     return build
 
 
-DATA_SOURCES = ("synthetic", "camelyon")
+class ImageArray:
+    """Images held as uint8 (image, height, width, channel), served as [0, 1] tensors."""
+
+    def __init__(self, images, labels: list[int], indices: list[int]) -> None:
+        self.images, self.labels, self.indices = images, labels, list(indices)
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, position: int) -> tuple[torch.Tensor, int]:
+        index = self.indices[position]
+        image = torch.from_numpy(self.images[index].copy()).permute(2, 0, 1)
+        return image.float().div_(255), self.labels[index]
+
+
+def ham10000_task_data(config: ham10000_data.HamConfig) -> DataBuilder:
+    """HAM10000 images for workspace scripts; ham10000_data says how they are split.
+
+    The validation sets are fixed by the data. The training images follow the sources
+    the script admits and, once a script can say so, the key by which it holds images
+    out with the validation images; until then images are held out by lesion.
+    """
+
+    def build(
+        use_for_training: Callable[[int], bool],
+        device: torch.device,
+        seed: int,
+        held_out_key: Callable[[str, str], str] = ham10000_data.by_lesion,
+    ) -> TaskData:
+        data = ham10000_data.load(config)
+        rows = data.rows
+        labels = [row["label"] for row in rows]
+        evaluation = ham10000_data.evaluation_split(config, rows)
+        training = ham10000_data.training_split(config, rows, use_for_training, held_out_key)
+        if not training:
+            raise ValueError("the script admits no image for training")
+
+        def loader(indices: list[int], *, shuffle: bool = False):
+            return DataLoader(
+                ImageArray(data.images, labels, indices),
+                batch_size=config.batch_size,
+                shuffle=shuffle,
+                num_workers=config.num_workers,
+                pin_memory=device.type == "cuda",
+                generator=torch.Generator().manual_seed(seed),
+                worker_init_fn=seed_worker if config.num_workers else None,
+            )
+
+        def digest(indices: list[int]) -> str:
+            return hashlib.sha256(json.dumps(indices, separators=(",", ":")).encode()).hexdigest()
+
+        manifest = data.manifest
+        return TaskData(
+            train_loader=loader(training, shuffle=True),
+            evaluation_loaders={split: loader(indices) for split, indices in evaluation.items()},
+            holdouts=ham10000_data.holdouts(config, rows, training),
+            record={
+                "source": "ham10000",
+                "provenance": {
+                    key: manifest[key]
+                    for key in ("doi", "license", "published_md5", "images_sha256", "image_size")
+                },
+                "subset_seed": config.subset_seed,
+                "batch_size": config.batch_size,
+                "training_sources": sorted(
+                    {config.sources[rows[index]["source"]] for index in training}
+                ),
+                "training_samples": len(training),
+                "training_indices_sha256": digest(training),
+                "evaluation_samples": {split: len(ids) for split, ids in evaluation.items()},
+                "evaluation_indices_sha256": {
+                    split: digest(ids) for split, ids in evaluation.items()
+                },
+            },
+        )
+
+    return build
+
+
+DATA_SOURCES = ("synthetic", "camelyon", "ham10000")
 
 
 def data_builder(
     source: str, config: Path | None = None, max_eval_samples: int | None = None
 ) -> DataBuilder:
-    """The data source named on the command line; Camelyon17 needs its config file.
+    """The data source named on the command line; Camelyon17 and HAM10000 need a config.
 
-    max_eval_samples caps each Camelyon17 validation split, for quick runs whose
-    metrics may be noisier; the synthetic source is small already and ignores it.
+    max_eval_samples caps each Camelyon17 validation split, and HAM10000's
+    out-of-distribution one (its in-distribution split is whole lesions), for quick
+    runs whose metrics may be noisier; the synthetic source is small and ignores it.
     """
     if source == "synthetic":
         return synthetic_task_data
+    if source == "ham10000":
+        if config is None:
+            raise ValueError("HAM10000 data needs --config, for example configs/ham10000.json")
+        ham = ham10000_data.HamConfig.load(Path(config))
+        if max_eval_samples is not None:
+            ham = replace(ham, max_ood_val_samples=max_eval_samples)
+        return ham10000_task_data(ham)
     if source != "camelyon":
         raise ValueError(f"Unknown data source {source!r}; choose from {', '.join(DATA_SOURCES)}")
     if config is None:

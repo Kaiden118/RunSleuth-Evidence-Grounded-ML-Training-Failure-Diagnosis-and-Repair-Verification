@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "task": "agent_study_draw",
+  "drawn_at": "2026-10-14T02:16:26.308647+00:00",
+  "method": "secrets.randbelow(2147483648), skipping seeds already used",
+  "excluded_seeds": [
+    7,
+    11,
+    42,
+    2026,
+    85302029,
+    1219121115,
+    1439400887,
+    1948666596
+  ],
+  "seeds": [
+    663149837,
+    1605124868,
+    1112365671,
+    7426319,
+    951549023
+  ],
+  "code_commit": "f22bbdf8c54cf80497a5a9a8c04df6712bad4f0b",
+  "frozen": {
+    "task_statement_sha256": "27042d008cf9971c9b6378baa47da8a7d033ce13521cd284615b6c4a297e2cea",
+    "tasks": [
+      "healthy",
+      "head_replaced_after_moving",
+      "cosine_stepped_per_batch_over_the_run",
+      "two_parameter_groups",
+      "cosine_written_as_a_formula",
+      "normalization_written_out",
+      "stale_head",
+      "frozen_head",
+      "high_learning_rate",
+      "train_eval_normalization_mismatch",
+      "imagenet_head_kept",
+      "train_in_eval_mode",
+      "scheduler_stepped_per_batch",
+      "validation_hospital_in_training",
+      "schedule_ends_an_epoch_early",
+      "schedule_period_in_steps_stepped_per_epoch",
+      "learning_rate_halved",
+      "same_wrong_normalization_twice",
+      "head_bias_left_frozen",
+      "head_frozen_from_the_second_epoch",
+      "weight_decay_dropped",
+      "training_hospital_left_out"
+    ],
+    "task_scripts_sha256": "ade0951b1ba8cd84a2c0c488e6a620f906afd5f5bc00c5e6d4097f7da36c0c53",
+    "conditions": {
+      "C0": {
+        "runs": false,
+        "evidence": false,
+        "diagnosis": false,
+        "verification": false
+      },
+      "C1": {
+        "runs": true,
+        "evidence": false,
+        "diagnosis": false,
+        "verification": false
+      },
+      "C2": {
+        "runs": true,
+        "evidence": true,
+        "diagnosis": false,
+        "verification": false
+      },
+      "C3": {
+        "runs": true,
+        "evidence": true,
+        "diagnosis": true,
+        "verification": false
+      },
+      "C4": {
+        "runs": true,
+        "evidence": true,
+        "diagnosis": true,
+        "verification": true
+      }
+    },
+    "presentation_version": 3,
+    "agent": {
+      "prompt_version": 1,
+      "system_prompts_sha256": "166f7fefde2f169862bbbea073e1dbd2244dbd417c46a4f73440110560d43bea",
+      "tools_sha256": "a5298b9eb6551b06c2b4ac2e4a25b0a4648b2fce4fd1c4c9a8c7def496a1e6ea",
+      "max_tool_calls": 15,
+      "max_runs": 3,
+      "max_output_tokens": 4000
+    },
+    "budgets": {
+      "quick": {
+        "epochs": 2,
+        "max_train_batches": 100,
+        "max_eval_samples": 1000
+      },
+      "full": {
+        "epochs": 2,
+        "max_train_batches": 200,
+        "max_eval_samples": null
+      }
+    },
+    "contract": {
+      "version": 2,
+      "source_sha256": "cff021600614b70dea9e67ad49f478ccf56dd1ce81de711ec457d2bf613dfaac"
+    },
+    "failure_signatures_sha256": "b72a7ba6ea6b2274fc1fba237d5de431b77aea0344325890930b228336202508",
+    "verification_source_sha256": "7248d7a9239ec95afffa3c2eaf1d92468535c5abdc4f04b5721ee9b852d419fb",
+    "repair_gate": {
+      "version": 2,
+      "gating_comparator": "healthy reference of the same setup; the faulty run without one",
+      "faulty_run": "informational when a healthy reference gates",
+      "no_valid_comparator": "rejected"
+    },
+    "repair_policy": {
+      "max_accuracy_drop": 0.01,
+      "max_loss_ratio": 1.1
+    },
+    "data": {
+      "source": "camelyon",
+      "config_sha256": "cdbf25243641713bb026f385366668a8fd3d816affc102088d720171083b3d6b"
+    }
+  },
+  "sources": {
+    "__init__.py": "2a6ca2971e96e96edda1ed2d7c84ab84e186de37d56d352e39b51d60edaf9853",
+    "agent_analysis.py": "cba553e27bff08e8fe53f56abb01fe1361d4d7437ce136fef3890db7969c6489",
+    "agent_contract.py": "cff021600614b70dea9e67ad49f478ccf56dd1ce81de711ec457d2bf613dfaac",
+    "agent_episodes.py": "60abc3f7fcc9d8db717ca41b4e25090c745496b214c69d76afd266ba7d9c9e90",
+    "agent_loop.py": "91d7362a7837c1576de632a20cf9bc8792cbddece4fd73a32f05742bd71b99e1",
+    "agent_review.py": "071f331730fdc8c6e68073732d04d43ae5593468d38ffb58e5ed5d4ee016c1b2",
+    "agent_study.py": "4d8c4110ff8be4702675248672d4e3e8d0e7c66ac982e0296dc9e6612f063966",
+    "agent_task_template.py": "f084572057217a46ebc39dea8be3649babc9b7cb0ae1437fe09a946da634ccfc",
+    "agent_tasks.py": "f7adf9f5513cd00e310d2703f7a365f2a8fb934c38560769b3697cf82263c47d",
+    "agent_verification.py": "7248d7a9239ec95afffa3c2eaf1d92468535c5abdc4f04b5721ee9b852d419fb",
+    "agent_workspace.py": "b1b3407ebe64fdbc3b3bf001da40ad981431bc6ffe9ffe657098333f15f1bb62",
+    "camelyon.py": "920ef9229da93047f69b21d212df3e1970ec0378fabc424be4f5cf07f07d86d8",
+    "camelyon_config.py": "63a0916fdc124e4ef42d2342fc32ed5dedf8ab8200794b6b32ee50c1c515490e",
+    "camelyon_config_faults.py": "fa72177cddeffa0970aba453de885aaab7fe4d50f40ca2ee8587fdc469ca2c34",
+    "camelyon_data.py": "aded3fb9f129d7a00195effc6c84ea0c4cb5d093adb3f96805aac2ac81f9f7eb",
+    "camelyon_frozen_head_probe.py": "3015c7924d3a7217508b8ec6904c314c992329e7e36e92ece31c1f57b5681850",
+    "camelyon_frozen_head_training.py": "2adb49874e3eb5e5c40ee104abdb3ca99cfaf49e6256e0eaca265bc8dfeaf0a7",
+    "camelyon_loop_faults.py": "6c5693b07df55d339b5147ebe75f58aff8a5c12162ede17e0c2a42750b829b1d",
+    "camelyon_optimizer_probe.py": "0cf6902d8f03955ade9a4ff5cbc24dae3e89b903e70014e7199a80a02848108e",
+    "camelyon_optimizer_sweep.py": "e7bc4683550da1835a47fbefee7cf8cf368097eb3849a16cd2611994680de737",
+    "camelyon_optimizer_training.py": "3af189eb72d306fac7389dc9cdf926452bf442b9eeb12bcad8d1e8bb107314b7",
+    "camelyon_variant_runner.py": "6c3d6e3cf010bfde0b2379ed072ecc2a3e7af41c871ce61762f8ca9361b97b58",
+    "camelyon_vit.py": "2bfb811fb6c1f90aa1bdee11e15e5ef7fe6899c897933067d0ad897fa479d9ad",
+    "cli.py": "a0564676a4406951f89b3f36dc78b694cbc2ac8c9e0dc0c7dd8acd1c79024788",
+    "demo.py": "086efad0e3d7907e4d6744428692249f374b80e8806d22d372a17a7db2ea7cca",
+    "diagnose_run.py": "f658c20fb98f297f04d27549943d7a22fdf80a55dd95e93358503c409bb33426",
+    "failure_signatures.json": "b72a7ba6ea6b2274fc1fba237d5de431b77aea0344325890930b228336202508",
+    "frozen_head_probe.py": "9569555f3a4b01ea5a209f5977d0226e660e0af1d5c1bbffa0e8e6c27021a3b7",
+    "heldout.py": "b2fbdbaba5f7c874f7d74b0cb2f3acc7d2080521a07f5bf4ddaee9215375c03f",
+    "hf_callback.py": "cbecf45dc722bc3bc413ebf4ec5c9d3a9d6b5d3e107a2359c14c5fd5d7927cb3",
+    "llm_client.py": "e2bb138dc102e4a57f89a3d2f112504420fafb6954e56a2a3d91cb925c907243",
+    "llm_review_eval.py": "ad15d32149d3772ea0c7fadff3ea251d6e081d6e3916dfa4cc4a092fa65ab901",
+    "optimizer_evidence.py": "20cd6a1acad403e1e677122d4dd5c3970a5410de231df53a198ca04b5aa9e13f",
+    "optimizer_probe.py": "70a99df42fa7c0f3bbcaa71fc99f40d4ad97710dd8b8f2c1a97f60901259c214",
+    "parameter_group_monitor.py": "35e28982efb8ea3f7e5a11e2b663b441197e80572f1852c6606df2877df6df9a",
+    "rescore_repairs.py": "086dad748f47c72d302b187fbf5a744c79e902a0d06f332fb26221cbfd328336",
+    "run_monitor.py": "35a6d1052d29a4edcb08191689e2d60b04159a62d9c2fa0de09bb4a727403f88",
+    "signature_matching.py": "641e4027cd30bc13bdc488b41d2d65e4a07b52b07d63a465ce2def3fb2a7f2ab",
+    "train.py": "4c49e003545ee41692b4d45c5cf081d40355b9e3a6c087db70ec729a5799ec7d"
+  },
+  "episodes_per_model": 550,
+  "scope": "training seeds never used in development; one episode per task, condition and seed for each model"
+}

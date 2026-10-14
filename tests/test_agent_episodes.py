@@ -183,6 +183,11 @@ class EpisodeTests(unittest.TestCase):
         outcome = self.store.run(tiny_source(HEALTHY), BUDGET)
         same = shown("C4")["verification"]
         self.assertEqual((same["decision"], same["triage"]), ("accepted", "accept"))
+        # Finding no known fault is said for what it is, and is no clean bill of health.
+        clean = shown("C3")["diagnosis"]
+        self.assertEqual(clean["diagnosis"], "no_known_fault")
+        self.assertIn("does not show that the script is correct", clean["meaning"])
+        self.assertNotIn("repair", clean)
         self.assertEqual(same["differences_from_reference"], [])
         self.assertIn("same training run", same["meaning"])
         text = json.dumps(shown("C4"))

@@ -14,8 +14,9 @@ Commit the draw before training, so the history shows that it came first.
 prepare trains the healthy script and every task's script for every seed; no model is
 asked. run puts one model through the study, into a directory of its own, and can be
 repeated to resume. Both refuse to start when something frozen has changed since the
-draw. All models share one store of training runs, so a script is trained once per
-seed whichever model wrote it.
+draw, and name every file of the package that is no longer the one the draw recorded,
+so that a later fix is seen and can be accounted for. All models share one store of
+training runs, so a script is trained once per seed whichever model wrote it.
 
 The pilots (agent_episodes pilot) were development; nothing of them is a result.
 """
@@ -50,7 +51,8 @@ def _sha256(text: str) -> str:
 
 
 def _file_sha256(path: Path) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    """A file's hash whatever its line endings, which a checkout on Windows may rewrite."""
+    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def _git(*arguments: str) -> str:
@@ -68,6 +70,21 @@ def used_seeds(directory: Path = EVALUATIONS) -> list[int]:
             for key in ("seeds", "excluded_seeds"):
                 seeds.update(seed for seed in record.get(key) or [] if isinstance(seed, int))
     return sorted(seeds)
+
+
+def source_hashes() -> dict[str, str]:
+    """The hash of every source and data file of the package, as it is now.
+
+    frozen_components holds what must not change; these show whether anything else did.
+    """
+    files = sorted(Path(__file__).parent.iterdir())
+    return {path.name: _file_sha256(path) for path in files if path.suffix in (".py", ".json")}
+
+
+def changed_sources(draw: dict[str, Any]) -> list[str]:
+    """The files of the package that are no longer what the draw recorded."""
+    current = source_hashes()
+    return sorted(name for name, digest in draw["sources"].items() if current.get(name) != digest)
 
 
 def frozen_components(config: Path = CONFIG_PATH) -> dict[str, Any]:
@@ -94,6 +111,7 @@ def frozen_components(config: Path = CONFIG_PATH) -> dict[str, Any]:
             "tools_sha256": _sha256(json.dumps(agent_loop.tool_schemas(True), sort_keys=True)),
             "max_tool_calls": MAX_TOOL_CALLS,
             "max_runs": MAX_RUNS,
+            "max_output_tokens": agent_loop.MAX_OUTPUT_TOKENS,
         },
         "budgets": {"quick": asdict(QUICK), "full": asdict(FULL)},
         "contract": {
@@ -140,6 +158,7 @@ def draw_seeds(
         "seeds": seeds,
         "code_commit": git("rev-parse", "HEAD"),
         "frozen": frozen_components(config),
+        "sources": source_hashes(),
         "episodes_per_model": len(TASKS) * len(CONDITIONS) * count,
         "scope": "training seeds never used in development; one episode per task, "
         "condition and seed for each model",
@@ -263,6 +282,8 @@ def main(argv: list[str] | None = None) -> int:
         show(agent_episodes.summary_text(agent_episodes.summarize(episodes, reviews)))
         return 0
     draw, store = read_draw(args.draw), study_store(device=args.device)
+    if changed := changed_sources(draw):
+        show(f"Changed since the draw, to be accounted for: {', '.join(changed)}")
     if args.command == "prepare":
         rows = prepare_study(draw, store, progress=show)
         return 0 if all(row["status"] == "completed" for row in rows) else 1

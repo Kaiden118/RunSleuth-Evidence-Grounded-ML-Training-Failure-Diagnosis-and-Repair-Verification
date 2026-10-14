@@ -178,6 +178,18 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertIn("held_out_lesions", camelyon["failed"])
 
+    def test_the_structured_family_meets_the_same_clauses_with_cases_of_its_own(self):
+        rows = agent_contract.check_cases(
+            patch_size=PATCH_SIZE,
+            sources=lambda name: tiny(agent_contract.case_source(name, "camelyon_structured")),
+            family="camelyon_structured",
+        )
+        self.assertEqual([row["name"] for row in rows], [*TASKS, *agent_contract.STRUCTURED_CASES])
+        for row in rows:
+            with self.subTest(script=row["name"]):
+                self.assertEqual(sorted(row["failed"]), sorted(row["expected"]), row["details"])
+        self.assertEqual(agent_contract.SPECS["camelyon_structured"].clauses, CLAUSES)
+
     def test_the_checks_share_no_code_with_the_verifier(self):
         tree = ast.parse(Path(agent_contract.__file__).read_text(encoding="utf-8"))
         imported = set()

@@ -15,7 +15,8 @@ and that runs only after the agent has finished:
 Each task family (agent_tasks) has its statement, so its clauses differ where the
 statements do. The ham10000 family's first clause is training_sources, and it has one
 more, held_out_lesions: held_out_key gives the images of one lesion one key and the
-images of different lesions different keys.
+images of different lesions different keys. The camelyon_structured family states what
+the camelyon one does, so its clauses are the same.
 
 The checks call the script's functions the way the harness does: they build the model
 and train it for a few epochs of a few small batches on the CPU, putting the model in
@@ -94,6 +95,7 @@ SPECS = {
     "camelyon": Spec(CLAUSES, HOSPITALS, TRAINING_HOSPITALS, "hospitals", 96, True),
     "ham10000": Spec(HAM_CLAUSES, range(4), [0, 3], "sources", 128, False),
 }
+SPECS["camelyon_structured"] = SPECS["camelyon"]
 # Images and lesions as HAM10000 names them: two images of one lesion, and other lesions.
 SAME_LESION = (("ISIC_0024306", "HAM_0000118"), ("ISIC_0024307", "HAM_0000118"))
 OTHER_LESIONS = (("ISIC_0024308", "HAM_0002730"), ("ISIC_0024309", "HAM_0001466"))
@@ -598,8 +600,49 @@ HAM_CASES = {
         ),
     ),
 }
-FAULT_CLAUSES_BY_FAMILY = {"camelyon": FAULT_CLAUSES, "ham10000": HAM_FAULT_CLAUSES}
-CASES_BY_FAMILY = {"camelyon": CASES, "ham10000": HAM_CASES}
+STRUCTURED_CASES = {
+    "gradient_clipping_switched_on": Case(
+        (),
+        "The configuration clips gradients, which the statement neither asks for nor forbids.",
+        (
+            (
+                "    grad_clip_norm: float | None = None\n",
+                "    grad_clip_norm: float | None = 1.0\n",
+            ),
+        ),
+    ),
+    "warmup_switched_on": Case(
+        ("optimizer", "learning_rate_schedule"),
+        "The configuration adds a warmup epoch, which the statement rules out; it also "
+        "starts the run below the learning rate it asks for.",
+        (("    warmup_epochs: int = 0\n", "    warmup_epochs: int = 1\n"),),
+    ),
+    "backbone_frozen_by_the_configuration": Case(
+        ("all_parameters_trained",),
+        "The configuration freezes the backbone, so only the head trains.",
+        (("    freeze_backbone: bool = False\n", "    freeze_backbone: bool = True\n"),),
+    ),
+    "two_faults_at_once": Case(
+        ("training_hospitals", "learning_rate_schedule"),
+        "The validation hospital is trained on and the schedule ends an epoch early.",
+        (
+            *agent_tasks.family("camelyon_structured")
+            .faults["validation_hospital_in_training"]
+            .edits,
+            *agent_tasks.family("camelyon_structured").faults["schedule_ends_an_epoch_early"].edits,
+        ),
+    ),
+}
+FAULT_CLAUSES_BY_FAMILY = {
+    "camelyon": FAULT_CLAUSES,
+    "ham10000": HAM_FAULT_CLAUSES,
+    "camelyon_structured": FAULT_CLAUSES,
+}
+CASES_BY_FAMILY = {
+    "camelyon": CASES,
+    "ham10000": HAM_CASES,
+    "camelyon_structured": STRUCTURED_CASES,
+}
 
 
 def expected_failures(name: str, family: str = "camelyon") -> tuple[str, ...]:

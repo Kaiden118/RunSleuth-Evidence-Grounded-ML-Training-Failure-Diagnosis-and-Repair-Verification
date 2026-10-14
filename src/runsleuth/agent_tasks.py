@@ -15,8 +15,11 @@ names a fault, and is the same for every task.
 A family is one such set: a healthy script, its statement and its tasks. The camelyon
 family (the study's first stage) fine-tunes on Camelyon17 patches; the ham10000 family
 fine-tunes on HAM10000 skin-lesion images and adds a fault of its own, holding out
-images one by one instead of by lesion. Functions take the family's name and default
-to camelyon.
+images one by one instead of by lesion. The camelyon_structured family states the
+same requirements as camelyon, but its healthy script is written as a project would be,
+with a configuration, builder functions, a preprocessing class and an epoch runner, and
+each fault sits where such code would hold it. Functions take the family's name and
+default to camelyon.
 
     python -m runsleuth.agent_tasks list
     python -m runsleuth.agent_tasks show train_in_eval_mode
@@ -404,6 +407,228 @@ HAM_UNLISTED_FAULTS["training_source_left_out"] = Fault(
 HAM_LOOKALIKES = {name: _for_images(lookalike) for name, lookalike in LOOKALIKES.items()}
 
 
+STRUCTURED_TEMPLATE_PATH = Path(__file__).with_name("agent_task_template_structured.py")
+_BUILD = (
+    "    model = build_backbone()\n"
+    "    replace_head(model, CONFIG.num_classes)\n"
+    "    set_trainable(model, CONFIG.freeze_backbone)\n"
+    "    model.to(device)\n"
+    "    optimizer = make_optimizer(parameter_groups(model, CONFIG), CONFIG)\n"
+)
+_GROUPS = (
+    "    parameters = [p for p in model.parameters() if p.requires_grad]\n"
+    '    return [{"params": parameters, "weight_decay": config.weight_decay}]\n'
+)
+_PER_STEP = (
+    '            if self.config.scheduler_interval == "step":\n                scheduler.step()\n'
+)
+_PERIOD = '    per_epoch = 1 if config.scheduler_interval == "epoch" else steps_per_epoch\n'
+_COSINE_BUILT = (
+    "    cosine = torch.optim.lr_scheduler.CosineAnnealingLR(\n"
+    "        optimizer, T_max=(epochs - config.warmup_epochs) * per_epoch\n"
+    "    )\n"
+)
+STRUCTURED_FAULTS = {
+    "stale_head": Fault(
+        "stale_optimizer_binding",
+        "build() makes the optimizer before replace_head(), so it holds the old head.",
+        (
+            (
+                _BUILD,
+                "    model = build_backbone()\n"
+                "    set_trainable(model, CONFIG.freeze_backbone)\n"
+                "    model.to(device)\n"
+                "    optimizer = make_optimizer(parameter_groups(model, CONFIG), CONFIG)\n"
+                "    replace_head(model, CONFIG.num_classes)\n",
+            ),
+        ),
+    ),
+    "frozen_head": Fault(
+        "frozen_head",
+        "set_trainable() loses its parentheses and freezes the head instead of nothing.",
+        (
+            (
+                '        parameter.requires_grad = not (freeze_backbone and not name.startswith("fc."))\n',
+                '        parameter.requires_grad = not freeze_backbone and not name.startswith("fc.")\n',
+            ),
+        ),
+    ),
+    "high_learning_rate": Fault(
+        "high_learning_rate",
+        "The configuration's learning rate is 100 times the fine-tuning rate.",
+        (("    learning_rate: float = 1e-4\n", "    learning_rate: float = 1e-2\n"),),
+    ),
+    "train_eval_normalization_mismatch": Fault(
+        "train_eval_normalization_mismatch",
+        "Evaluation preprocessing normalizes with 0.5 while training uses the ImageNet statistics.",
+        (
+            (
+                "EVAL_PREPROCESS = Preprocess(IMAGENET_MEAN, IMAGENET_STD)\n",
+                "EVAL_PREPROCESS = Preprocess((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))\n",
+            ),
+        ),
+    ),
+    "imagenet_head_kept": Fault(
+        "classifier_size_mismatch",
+        "The configuration keeps ImageNet's 1000 classes, so the new head has 1000 outputs.",
+        (("    num_classes: int = 2\n", "    num_classes: int = 1000\n"),),
+    ),
+    "train_in_eval_mode": Fault(
+        "train_in_eval_mode",
+        "The epoch runner never calls model.train(), so training runs in eval mode after "
+        "an evaluation.",
+        (("        model.train()\n        for images, labels", "        for images, labels"),),
+    ),
+    "scheduler_stepped_per_batch": Fault(
+        "scheduler_stepped_per_batch",
+        "The epoch runner steps the per-epoch schedule after every batch as well.",
+        ((_PER_STEP, "            scheduler.step()\n"),),
+    ),
+    "validation_hospital_in_training": Fault(
+        "train_evaluation_group_overlap",
+        "The hospital roles mark the out-of-distribution validation hospital for training.",
+        (('1: "validation"', '1: "train"'),),
+    ),
+    "schedule_ends_an_epoch_early": Fault(
+        "zero_learning_rate_epoch",
+        "make_scheduler() subtracts one epoch too many, so the last epoch trains at a "
+        "learning rate of zero.",
+        (
+            (
+                "T_max=(epochs - config.warmup_epochs) * per_epoch",
+                "T_max=(epochs - config.warmup_epochs - 1) * per_epoch",
+            ),
+        ),
+    ),
+}
+STRUCTURED_UNLISTED_FAULTS = {
+    "schedule_period_in_steps_stepped_per_epoch": Fault(
+        None,
+        "make_scheduler() counts the period in batches although the schedule is stepped "
+        "per epoch, so the learning rate hardly falls.",
+        ((_PERIOD, "    per_epoch = steps_per_epoch\n"),),
+    ),
+    "learning_rate_halved": Fault(
+        None,
+        "The configuration's learning rate is half of what the statement asks for.",
+        (("    learning_rate: float = 1e-4\n", "    learning_rate: float = 5e-5\n"),),
+    ),
+    "same_wrong_normalization_twice": Fault(
+        None,
+        "Training and evaluation normalize alike, but not with the ImageNet statistics.",
+        (
+            ("IMAGENET_MEAN = (0.485, 0.456, 0.406)", "IMAGENET_MEAN = (0.5, 0.5, 0.5)"),
+            ("IMAGENET_STD = (0.229, 0.224, 0.225)", "IMAGENET_STD = (0.5, 0.5, 0.5)"),
+        ),
+    ),
+    "head_bias_left_frozen": Fault(
+        None,
+        "set_trainable() freezes the new head's bias after setting everything else.",
+        (
+            (
+                '        parameter.requires_grad = not (freeze_backbone and not name.startswith("fc."))\n',
+                '        parameter.requires_grad = not (freeze_backbone and not name.startswith("fc."))\n'
+                "    model.fc.bias.requires_grad_(False)\n",
+            ),
+        ),
+    ),
+    "head_frozen_from_the_second_epoch": Fault(
+        None,
+        "The configuration freezes the head after the first epoch.",
+        (
+            (
+                "    freeze_head_after_epochs: int | None = None\n",
+                "    freeze_head_after_epochs: int | None = 1\n",
+            ),
+        ),
+    ),
+    "weight_decay_dropped": Fault(
+        None,
+        "parameter_groups() exempts biases and normalization layers from weight decay.",
+        (
+            (
+                _GROUPS,
+                "    decay = [p for p in model.parameters() if p.requires_grad and p.ndim > 1]\n"
+                "    no_decay = [p for p in model.parameters() if p.requires_grad and p.ndim <= 1]\n"
+                "    return [\n"
+                '        {"params": decay, "weight_decay": config.weight_decay},\n'
+                '        {"params": no_decay, "weight_decay": 0.0},\n'
+                "    ]\n",
+            ),
+        ),
+    ),
+    "training_hospital_left_out": Fault(
+        None,
+        "The hospital roles leave hospital 0 out of training.",
+        (('{0: "train"', '{0: "unused"'),),
+    ),
+}
+STRUCTURED_LOOKALIKES = {
+    "head_replaced_after_moving": Lookalike(
+        "stale_head",
+        "build() moves the backbone to the device before replacing the head, yet makes the "
+        "optimizer after both: the same training as the healthy script.",
+        (
+            (
+                _BUILD,
+                "    model = build_backbone()\n"
+                "    model.to(device)\n"
+                "    replace_head(model, CONFIG.num_classes)\n"
+                "    set_trainable(model, CONFIG.freeze_backbone)\n"
+                "    optimizer = make_optimizer(parameter_groups(model, CONFIG), CONFIG)\n",
+            ),
+        ),
+    ),
+    "cosine_stepped_per_batch_over_the_run": Lookalike(
+        "scheduler_stepped_per_batch",
+        "The configuration steps the schedule after every batch, and its period counts "
+        "batches: a correct per-step cosine.",
+        (('    scheduler_interval: str = "epoch"\n', '    scheduler_interval: str = "step"\n'),),
+    ),
+    "two_parameter_groups": Lookalike(
+        "stale_head",
+        "parameter_groups() puts the head and the backbone in two groups with the same settings.",
+        (
+            (
+                _GROUPS,
+                '    head = [p for n, p in model.named_parameters() if n.startswith("fc.")]\n'
+                '    rest = [p for n, p in model.named_parameters() if not n.startswith("fc.")]\n'
+                "    return [\n"
+                '        {"params": rest, "weight_decay": config.weight_decay},\n'
+                '        {"params": head, "weight_decay": config.weight_decay},\n'
+                "    ]\n",
+            ),
+        ),
+    ),
+    "cosine_written_as_a_formula": Lookalike(
+        "schedule_ends_an_epoch_early",
+        "make_scheduler() writes the cosine out as a LambdaLR.",
+        (
+            ("from typing import NamedTuple\n", "import math\nfrom typing import NamedTuple\n"),
+            (
+                _COSINE_BUILT,
+                "    total = (epochs - config.warmup_epochs) * per_epoch\n"
+                "    cosine = torch.optim.lr_scheduler.LambdaLR(\n"
+                "        optimizer, lambda step: 0.5 * (1 + math.cos(math.pi * step / total))\n"
+                "    )\n",
+            ),
+        ),
+    ),
+    "normalization_written_out": Lookalike(
+        "train_eval_normalization_mismatch",
+        "Evaluation normalizes with its own tensors instead of the shared preprocessing.",
+        (
+            (
+                "    return EVAL_PREPROCESS.apply(images)\n",
+                "    mean = torch.tensor([0.485, 0.456, 0.406], device=images.device)\n"
+                "    std = torch.tensor([0.229, 0.224, 0.225], device=images.device)\n"
+                "    return (images - mean.view(1, 3, 1, 1)) / std.view(1, 3, 1, 1)\n",
+            ),
+        ),
+    ),
+}
+
+
 @dataclass(frozen=True, slots=True)
 class Family:
     """A task set: a healthy script, its statement, and the edits that make its tasks."""
@@ -435,6 +660,14 @@ FAMILIES = {
             HAM_FAULTS,
             HAM_UNLISTED_FAULTS,
             HAM_LOOKALIKES,
+        ),
+        Family(
+            "camelyon_structured",
+            STRUCTURED_TEMPLATE_PATH,
+            STATEMENT,
+            STRUCTURED_FAULTS,
+            STRUCTURED_UNLISTED_FAULTS,
+            STRUCTURED_LOOKALIKES,
         ),
     )
 }

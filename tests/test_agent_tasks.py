@@ -162,6 +162,38 @@ class TaskSourceTests(unittest.TestCase):
             )
             self.assertEqual((workspace / "TASK.md").read_text(encoding="utf-8"), statement)
 
+    def test_the_structured_family_states_the_same_and_is_written_otherwise(self):
+        structured = agent_tasks.family("camelyon_structured")
+        self.assertEqual(structured.statement, agent_tasks.STATEMENT)
+        self.assertEqual(structured.tasks, TASKS)
+        healthy = agent_tasks.healthy_source("camelyon_structured")
+        self.assertGreater(
+            len(healthy.splitlines()), 2 * len(agent_tasks.healthy_source().splitlines())
+        )
+        for name in (
+            "class TrainingConfig",
+            "class EpochRunner",
+            "def make_scheduler",
+            "HOSPITAL_ROLES",
+        ):
+            self.assertIn(name, healthy)
+        sources = {task: agent_tasks.task_source(task, "camelyon_structured") for task in TASKS}
+        self.assertEqual(len(set(sources.values())), len(TASKS), "tasks must differ")
+        for task, source in sources.items():
+            with self.subTest(task=task):
+                compile(source, agent_tasks.SCRIPT_NAME, "exec")
+                self.assertEqual(
+                    agent_tasks.expected_diagnosis(task, "camelyon_structured"),
+                    agent_tasks.expected_diagnosis(task),
+                )
+                self.assertEqual(
+                    agent_tasks.kind(task, "camelyon_structured"), agent_tasks.kind(task)
+                )
+        # The stale binding is an order of calls here, not a line placed after the optimizer.
+        diff = agent_tasks.source_diff("stale_head", "camelyon_structured")
+        self.assertIn("-    replace_head(model, CONFIG.num_classes)", diff)
+        self.assertIn("+    replace_head(model, CONFIG.num_classes)", diff)
+
     def test_command_line_lists_and_shows_tasks(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):

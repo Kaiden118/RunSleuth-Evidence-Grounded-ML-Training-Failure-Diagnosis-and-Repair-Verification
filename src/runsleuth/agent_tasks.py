@@ -12,14 +12,21 @@ the only files an agent is given. The task statement is the public specification
 the script: it states everything a script is later tested for (agent_contract), never
 names a fault, and is the same for every task.
 
+A family is one such set: a healthy script, its statement and its tasks. The camelyon
+family (the study's first stage) fine-tunes on Camelyon17 patches; the ham10000 family
+fine-tunes on HAM10000 skin-lesion images and adds a fault of its own, holding out
+images one by one instead of by lesion. Functions take the family's name and default
+to camelyon.
+
     python -m runsleuth.agent_tasks list
     python -m runsleuth.agent_tasks show train_in_eval_mode
     python -m runsleuth.agent_tasks write stale_head workspaces/stale_head
+    python -m runsleuth.agent_tasks --family ham10000 show held_out_by_image
 """
 
 import argparse
 import difflib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 TEMPLATE_PATH = Path(__file__).with_name("agent_task_template.py")
@@ -310,41 +317,173 @@ TASKS = (HEALTHY, *LOOKALIKES, *FAULTS, *UNLISTED_FAULTS)
 NO_FAULT = "no_known_fault"
 
 
-def is_faulty(task: str) -> bool:
+HAM_TEMPLATE_PATH = Path(__file__).with_name("agent_task_template_ham.py")
+HAM_STATEMENT = """\
+# Task
+
+`train.py` fine-tunes an ImageNet-pretrained ResNet18 to tell malignant from benign skin
+lesions in 128x128 dermatoscopic images (HAM10000).
+
+A harness imports `train.py`, supplies the images and calls six functions, which must
+keep their names and arguments: `use_for_training`, `held_out_key`,
+`prepare_training_batch`, `prepare_evaluation_batch`, `build` and `train_one_epoch`.
+Before the first epoch and after every epoch the harness itself evaluates the model, in
+evaluation mode, on two validation sets:
+
+- in-distribution: one image of each of a set of held-out lesions from the sources used
+  for training;
+- out-of-distribution: images from source 1.
+
+Source 2 is the sealed test set. A lesion may have several images.
+
+## What the script must do
+
+1. Data: train on the images of every source (0 to 3) except sources 1 and 2, and on
+   no image of a lesion that has an image in a validation set. held_out_key(image_id,
+   lesion_id) decides this: it must give every image of one lesion the same key, and
+   images of different lesions different keys.
+2. Inputs: images arrive as RGB values in [0, 1]. For training and for evaluation
+   alike, subtract the ImageNet mean (0.485, 0.456, 0.406) and divide by the ImageNet
+   standard deviation (0.229, 0.224, 0.225) per channel, and change nothing else.
+3. Model: the pretrained ResNet18 with its final layer replaced by a new layer of two
+   outputs, benign (0) and malignant (1).
+4. Training: every parameter of the network is trained, and the network is in
+   training mode whenever it is trained.
+5. Optimizer: AdamW with learning rate 1e-4 and weight decay 1e-2 for all parameters,
+   taking one step per batch.
+6. Schedule: the learning rate follows a cosine from 1e-4 at the start of the run to 0
+   at its end, without warmup or restarts. It may be updated once per epoch or once
+   per batch.
+
+## Your job
+
+1. Decide whether `train.py` does all of the above.
+2. If it does not, fix `train.py`, changing only what is needed.
+3. Say whether training is now correct and what you changed.
+
+The script may already be correct.
+"""
+
+
+def _for_images(item):
+    """The same edit of the HAM10000 script, whose docstrings speak of images."""
+    edits = tuple(
+        tuple(part.replace("RGB patches", "RGB images") for part in edit) for edit in item.edits
+    )
+    return replace(item, edits=edits)
+
+
+_SOURCES = "    return source not in (VALIDATION_SOURCE, TEST_SOURCE)\n"
+HAM_FAULTS = {
+    name: _for_images(fault)
+    for name, fault in FAULTS.items()
+    if name != "validation_hospital_in_training"
+}
+HAM_FAULTS["validation_source_in_training"] = Fault(
+    "train_evaluation_group_overlap",
+    "Only the test source is kept out of training, so the out-of-distribution "
+    "validation source is trained on.",
+    ((_SOURCES, "    return source != TEST_SOURCE\n"),),
+)
+HAM_FAULTS["held_out_by_image"] = Fault(
+    "train_evaluation_group_overlap",
+    "Images are held out one by one instead of by lesion, so the other images of the "
+    "validation lesions are trained on.",
+    (("    return lesion_id\n", "    return image_id\n"),),
+)
+HAM_UNLISTED_FAULTS = {
+    name: _for_images(fault)
+    for name, fault in UNLISTED_FAULTS.items()
+    if name != "training_hospital_left_out"
+}
+HAM_UNLISTED_FAULTS["training_source_left_out"] = Fault(
+    None,
+    "Source 0 is kept out of training along with the two held-out sources.",
+    ((_SOURCES, "    return source == 3\n"),),
+)
+HAM_LOOKALIKES = {name: _for_images(lookalike) for name, lookalike in LOOKALIKES.items()}
+
+
+@dataclass(frozen=True, slots=True)
+class Family:
+    """A task set: a healthy script, its statement, and the edits that make its tasks."""
+
+    name: str
+    template: Path
+    statement: str
+    faults: dict[str, Fault]
+    unlisted_faults: dict[str, Fault]
+    lookalikes: dict[str, Lookalike]
+
+    @property
+    def all_faults(self) -> dict[str, Fault]:
+        return {**self.faults, **self.unlisted_faults}
+
+    @property
+    def tasks(self) -> tuple[str, ...]:
+        return (HEALTHY, *self.lookalikes, *self.faults, *self.unlisted_faults)
+
+
+FAMILIES = {
+    family.name: family
+    for family in (
+        Family("camelyon", TEMPLATE_PATH, STATEMENT, FAULTS, UNLISTED_FAULTS, LOOKALIKES),
+        Family(
+            "ham10000",
+            HAM_TEMPLATE_PATH,
+            HAM_STATEMENT,
+            HAM_FAULTS,
+            HAM_UNLISTED_FAULTS,
+            HAM_LOOKALIKES,
+        ),
+    )
+}
+
+
+def family(name: str) -> Family:
+    if name not in FAMILIES:
+        raise ValueError(f"Unknown task family {name!r}; choose from {', '.join(FAMILIES)}")
+    return FAMILIES[name]
+
+
+def is_faulty(task: str, family_name: str = "camelyon") -> bool:
     """Whether a task's script has a fault, with or without a signature of its own."""
-    return task in ALL_FAULTS
+    return task in family(family_name).all_faults
 
 
-def kind(task: str) -> str:
+def kind(task: str, family_name: str = "camelyon") -> str:
     """healthy, lookalike, listed_fault or unlisted_fault."""
-    if task in FAULTS:
+    tasks = family(family_name)
+    if task in tasks.faults:
         return "listed_fault"
-    if task in UNLISTED_FAULTS:
+    if task in tasks.unlisted_faults:
         return "unlisted_fault"
-    return "lookalike" if task in LOOKALIKES else HEALTHY
+    return "lookalike" if task in tasks.lookalikes else HEALTHY
 
 
-def expected_diagnosis(task: str) -> str:
+def expected_diagnosis(task: str, family_name: str = "camelyon") -> str:
     """The signature a task's run should be diagnosed with.
 
     None is expected for a correct script, and for a fault the library has no
     signature for.
     """
-    return (ALL_FAULTS[task].signature if task in ALL_FAULTS else None) or NO_FAULT
+    faults = family(family_name).all_faults
+    return (faults[task].signature if task in faults else None) or NO_FAULT
 
 
-def healthy_source() -> str:
-    return TEMPLATE_PATH.read_text(encoding="utf-8")
+def healthy_source(family_name: str = "camelyon") -> str:
+    return family(family_name).template.read_text(encoding="utf-8")
 
 
-def task_source(task: str) -> str:
+def task_source(task: str, family_name: str = "camelyon") -> str:
     """The script for a task: the healthy script, or it with the task's edits applied."""
-    source = healthy_source()
+    tasks = family(family_name)
+    source = healthy_source(family_name)
     if task == HEALTHY:
         return source
-    variants = {**LOOKALIKES, **ALL_FAULTS}
+    variants = {**tasks.lookalikes, **tasks.all_faults}
     if task not in variants:
-        raise ValueError(f"Unknown task {task!r}; choose from {', '.join(TASKS)}")
+        raise ValueError(f"Unknown task {task!r}; choose from {', '.join(tasks.tasks)}")
     for old, new in variants[task].edits:
         if source.count(old) != 1:
             raise ValueError(f"{task}: every edit must match the script exactly once")
@@ -352,52 +491,57 @@ def task_source(task: str) -> str:
     return source
 
 
-def source_diff(task: str) -> str:
+def source_diff(task: str, family_name: str = "camelyon") -> str:
     """Unified diff from the healthy script to a task's script."""
     return "".join(
         difflib.unified_diff(
-            healthy_source().splitlines(keepends=True),
-            task_source(task).splitlines(keepends=True),
+            healthy_source(family_name).splitlines(keepends=True),
+            task_source(task, family_name).splitlines(keepends=True),
             f"{HEALTHY}/{SCRIPT_NAME}",
             f"{task}/{SCRIPT_NAME}",
         )
     )
 
 
-def materialize(task: str, directory: Path) -> Path:
+def materialize(task: str, directory: Path, family_name: str = "camelyon") -> Path:
     """Write a fresh workspace for a task and return it; the directory must not exist."""
-    source = task_source(task)
+    source = task_source(task, family_name)
     directory = Path(directory)
     directory.mkdir(parents=True)
     (directory / SCRIPT_NAME).write_text(source, encoding="utf-8", newline="\n")
-    (directory / STATEMENT_NAME).write_text(STATEMENT, encoding="utf-8", newline="\n")
+    (directory / STATEMENT_NAME).write_text(
+        family(family_name).statement, encoding="utf-8", newline="\n"
+    )
     return directory
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Agent repair tasks.")
+    parser.add_argument("--family", choices=tuple(FAMILIES), default="camelyon")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list", help="Name every task with its ground truth.")
     show = commands.add_parser("show", help="Print a task's diff from the healthy script.")
-    show.add_argument("task", choices=TASKS)
+    show.add_argument("task", help="A task of the family; list names them.")
     write = commands.add_parser("write", help="Write a task's workspace to a new directory.")
-    write.add_argument("task", choices=TASKS)
+    write.add_argument("task", help="A task of the family; list names them.")
     write.add_argument("directory", type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+    tasks = family(args.family)
     if args.command == "list":
         print(f"{HEALTHY}: the healthy script, used as a control")
-        for name, lookalike in LOOKALIKES.items():
+        for name, lookalike in tasks.lookalikes.items():
             print(f"{name}: {lookalike.summary} [correct; resembles {lookalike.resembles}]")
-        for name, fault in ALL_FAULTS.items():
+        for name, fault in tasks.all_faults.items():
             print(f"{name}: {fault.summary} [{fault.signature or 'no signature'}]")
     elif args.command == "show":
-        print(source_diff(args.task) or "No difference: this is the healthy script.", end="")
+        diff = source_diff(args.task, args.family)
+        print(diff or "No difference: this is the healthy script.", end="")
     else:
-        print(materialize(args.task, args.directory))
+        print(materialize(args.task, args.directory, args.family))
 
 
 if __name__ == "__main__":

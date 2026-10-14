@@ -61,7 +61,8 @@ def rows(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         labelled.append(
             {
                 "task": episode["repair_task"],
-                "kind": agent_tasks.kind(episode["repair_task"]),
+                "kind": episode.get("task_kind")
+                or agent_tasks.kind(episode["repair_task"], episode.get("family", "camelyon")),
                 "condition": episode["condition"],
                 "passes": passes,
                 "claims_correct": episode["claimed_correct"] is True,

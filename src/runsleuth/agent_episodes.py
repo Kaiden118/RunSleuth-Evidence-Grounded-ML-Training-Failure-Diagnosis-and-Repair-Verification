@@ -50,7 +50,7 @@ from typing import Any
 
 from runsleuth import agent_review, agent_tasks
 from runsleuth.agent_loop import run_agent
-from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME, TASKS
+from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME
 from runsleuth.agent_verification import (
     TRIAGE,
     TRIAGE_MEANING,
@@ -282,14 +282,16 @@ def same_program(left: str, right: str) -> bool:
         return False
 
 
-def semantic_label(task: str, initial: str, final: str, healthy: str) -> tuple[bool | None, str]:
+def semantic_label(
+    task: str, initial: str, final: str, healthy: str, family: str = "camelyon"
+) -> tuple[bool | None, str]:
     """Whether the final script is correct, where the source alone settles it."""
     if agent_review.program_sha256(final) is None:
         return False, "does_not_parse"
     if same_program(final, healthy):
         return True, "same_program_as_healthy_script"
     if same_program(final, initial):
-        return not agent_tasks.is_faulty(task), "unchanged_script"
+        return not agent_tasks.is_faulty(task, family), "unchanged_script"
     return None, "needs_review"
 
 
@@ -338,8 +340,9 @@ def run_episode(
     *,
     quick: Budget = QUICK,
     full: Budget = FULL,
-    contract: Callable[[Path], dict[str, Any]] | None = None,
+    contract: Callable[..., dict[str, Any]] | None = None,
     provider: str | None = None,
+    family: str = "camelyon",
     **agent_options: Any,
 ) -> dict[str, Any]:
     """Run one agent on one task under one condition and save episode.json.
@@ -349,9 +352,10 @@ def run_episode(
     """
     rules, library = CONDITIONS[condition], load_library()
     directory = Path(directory)
-    workspace = agent_tasks.materialize(task, directory / "workspace")
+    workspace = agent_tasks.materialize(task, directory / "workspace", family)
     script = workspace / SCRIPT_NAME
-    initial, healthy = agent_tasks.task_source(task), agent_tasks.task_source(HEALTHY)
+    initial = agent_tasks.task_source(task, family)
+    healthy = agent_tasks.task_source(HEALTHY, family)
 
     def train(_workspace: Path) -> dict[str, Any]:
         return present(
@@ -366,7 +370,7 @@ def run_episode(
         client, model, workspace, run_training=train if rules.runs else None, **agent_options
     )
     final = script.read_text(encoding="utf-8")
-    correct, basis = semantic_label(task, initial, final, healthy)
+    correct, basis = semantic_label(task, initial, final, healthy, family)
     outcome, verification = final_verification(store, final, healthy, initial, full)
     report = outcome["report"]
     claim = agent["claim"]
@@ -377,11 +381,12 @@ def run_episode(
         "condition": condition,
         "model": model,
         "provider": provider,
-        "task_is_correct": not agent_tasks.is_faulty(task),
-        "task_kind": agent_tasks.kind(task),
+        "family": family,
+        "task_is_correct": not agent_tasks.is_faulty(task, family),
+        "task_kind": agent_tasks.kind(task, family),
         "seed": store.seed,
-        "expected_diagnosis": agent_tasks.expected_diagnosis(task),
-        "statement_sha256": _sha256(agent_tasks.STATEMENT),
+        "expected_diagnosis": agent_tasks.expected_diagnosis(task, family),
+        "statement_sha256": _sha256(agent_tasks.family(family).statement),
         "presentation_version": PRESENTATION_VERSION,
         "budgets": {"quick": asdict(quick), "full": asdict(full)},
         "claimed_correct": None if claim is None else claim["training_is_correct"],
@@ -400,15 +405,15 @@ def run_episode(
     return load_episode(directory)
 
 
-def score_script(script: Path) -> dict[str, Any]:
-    """The contract tests' result for a script, from a child process."""
+def score_script(script: Path, family: str = "camelyon") -> dict[str, Any]:
+    """The contract tests' result for a script of a task family, from a child process."""
     from runsleuth.agent_contract import run_contract_in_subprocess
 
-    return run_contract_in_subprocess(script)
+    return run_contract_in_subprocess(script, family=family)
 
 
 def score_episode(
-    directory: Path, contract: Callable[[Path], dict[str, Any]] = score_script
+    directory: Path, contract: Callable[..., dict[str, Any]] = score_script
 ) -> dict[str, Any]:
     """Run the contract tests on an episode's final script and save contract.json.
 
@@ -417,12 +422,13 @@ def score_episode(
     """
     directory = Path(directory)
     episode = json.loads((directory / "episode.json").read_text(encoding="utf-8"))
-    if episode.get("statement_sha256") != _sha256(agent_tasks.STATEMENT):
+    family = episode.get("family", "camelyon")
+    if episode.get("statement_sha256") != _sha256(agent_tasks.family(family).statement):
         raise ValueError(f"{directory.name} was run under another task statement")
     with tempfile.TemporaryDirectory() as temporary:
         script = Path(temporary) / SCRIPT_NAME
         script.write_text(episode["final_script"], encoding="utf-8", newline="\n")
-        result = contract(script)
+        result = contract(script, family)
     (directory / "contract.json").write_text(
         json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
@@ -673,17 +679,15 @@ def load_episodes(directory: Path) -> list[dict[str, Any]]:
     return [load_episode(path.parent) for path in paths]
 
 
-def scored_once(
-    contract: Callable[[Path], dict[str, Any]],
-) -> Callable[[Path], dict[str, Any]]:
+def scored_once(contract: Callable[..., dict[str, Any]]) -> Callable[..., dict[str, Any]]:
     """A scorer that runs the contract tests once for scripts with the same text."""
-    results: dict[str, dict[str, Any]] = {}
+    results: dict[tuple[str, str], dict[str, Any]] = {}
 
-    def once(script: Path) -> dict[str, Any]:
-        source = script.read_text(encoding="utf-8")
-        if source not in results:
-            results[source] = contract(script)
-        return results[source]
+    def once(script: Path, family: str = "camelyon") -> dict[str, Any]:
+        key = (script.read_text(encoding="utf-8"), family)
+        if key not in results:
+            results[key] = contract(script, family)
+        return results[key]
 
     return once
 
@@ -725,10 +729,12 @@ def verify_episodes(
     result goes to verification.json, which load_episode prefers over the record made
     when the episode was run. Returns how many episodes were verified.
     """
-    healthy, verified = agent_tasks.task_source(HEALTHY), 0
+    verified = 0
     for path in sorted(Path(directory).glob("episodes/*/episode.json")):
         episode, name = json.loads(path.read_text(encoding="utf-8")), path.parent.name
-        initial = agent_tasks.task_source(episode["repair_task"])
+        family = episode.get("family", "camelyon")
+        healthy = agent_tasks.task_source(HEALTHY, family)
+        initial = agent_tasks.task_source(episode["repair_task"], family)
         if _sha256(initial) != episode["agent"]["initial_script_sha256"]:
             progress(f"{name}: skipped, the task's script has changed since the episode")
             continue
@@ -790,10 +796,11 @@ def run_pilot(
     repetitions: int = 3,
     seeds: tuple[int, ...] | None = None,
     reviews: dict[str, dict[str, Any]] | None = None,
+    family: str = "camelyon",
     progress: Callable[[str], None] = lambda _line: None,
     **options: Any,
 ) -> dict[str, Any]:
-    """Run every task under every condition, resuming after an interruption.
+    """Run every task of a family under every condition, resuming after an interruption.
 
     Repetitions share the store's training seed, so they differ only in what the model
     answers. With seeds, there is one repetition per seed, trained and verified on
@@ -810,7 +817,8 @@ def run_pilot(
         {
             "model": model,
             "provider": options.get("provider"),
-            "statement_sha256": _sha256(agent_tasks.STATEMENT),
+            "family": family,
+            "statement_sha256": _sha256(agent_tasks.family(family).statement),
             "presentation_version": PRESENTATION_VERSION,
             "budgets": {
                 "quick": asdict(options.get("quick", QUICK)),
@@ -836,7 +844,9 @@ def run_pilot(
         if directory.exists():
             shutil.rmtree(directory)  # An interrupted or failed episode is run again.
         progress(f"[{number}/{len(plan)}] {task} {condition} repetition {repetition}")
-        episode = run_episode(client, model, task, condition, directory, store, **options)
+        episode = run_episode(
+            client, model, task, condition, directory, store, family=family, **options
+        )
         if provider_failed(episode):
             progress(f"    stopped, the provider failed: {episode['agent']['api_errors'][-1]}")
             break
@@ -857,6 +867,7 @@ def prepare_runs(
     *,
     quick: Budget = QUICK,
     full: Budget = FULL,
+    family: str = "camelyon",
     progress: Callable[[str], None] = lambda _line: None,
 ) -> list[dict[str, Any]]:
     """Train the healthy script and every task's original script on both budgets.
@@ -864,8 +875,8 @@ def prepare_runs(
     Every episode needs these runs and none needs a model for them, so they can be
     trained ahead of the agents; episodes then find them in the store.
     """
-    sources = {HEALTHY: agent_tasks.task_source(HEALTHY)}
-    sources.update({task: agent_tasks.task_source(task) for task in tasks})
+    sources = {HEALTHY: agent_tasks.task_source(HEALTHY, family)}
+    sources.update({task: agent_tasks.task_source(task, family) for task in tasks})
     rows = []
     for task, source in sources.items():
         for name, budget in (("quick", quick), ("full", full)):
@@ -911,7 +922,12 @@ def build_parser() -> argparse.ArgumentParser:
         )
         command.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     for command in (prepare, pilot):
-        command.add_argument("--tasks", nargs="+", choices=TASKS, default=list(PILOT_TASKS))
+        command.add_argument(
+            "--tasks",
+            nargs="+",
+            help="Tasks of the family; the pilot's four for camelyon if unset.",
+        )
+        command.add_argument("--family", choices=tuple(agent_tasks.FAMILIES), default="camelyon")
     pilot.add_argument(
         "--provider", default="gemini", help="gemini, ollama, openai or compatible (llm_client)."
     )
@@ -971,13 +987,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "verify":
         verify_episodes(args.output, store, progress=lambda line: print(line, flush=True))
         return 0
+    if args.command in ("prepare", "pilot"):
+        tasks = tuple(
+            args.tasks
+            or (PILOT_TASKS if args.family == "camelyon" else agent_tasks.family(args.family).tasks)
+        )
     if args.command == "prepare":
         rows = []
         for seed in args.seeds or [args.seed]:
             print(f"seed {seed}", flush=True)
             rows += prepare_runs(
                 store.for_seed(seed),
-                tuple(args.tasks),
+                tasks,
+                family=args.family,
                 progress=lambda line: print(line, flush=True),
             )
         return 0 if all(row["status"] == "completed" for row in rows) else 1
@@ -989,7 +1011,8 @@ def main(argv: list[str] | None = None) -> int:
         client,
         model,
         store,
-        tasks=tuple(args.tasks),
+        tasks=tasks,
+        family=args.family,
         conditions=tuple(args.conditions),
         repetitions=args.repetitions,
         seeds=None if args.seeds is None else tuple(args.seeds),

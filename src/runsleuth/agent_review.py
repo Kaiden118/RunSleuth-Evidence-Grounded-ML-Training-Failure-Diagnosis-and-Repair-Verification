@@ -37,9 +37,9 @@ def program_sha256(source: str) -> str | None:
     return hashlib.sha256(tree.encode("utf-8")).hexdigest()
 
 
-def difference(source: str) -> list[str]:
-    """The lines in which a script differs from the healthy one, as a unified diff."""
-    healthy = agent_tasks.task_source(HEALTHY).splitlines()
+def difference(source: str, family: str = "camelyon") -> list[str]:
+    """The lines in which a script differs from its family's healthy one, as a unified diff."""
+    healthy = agent_tasks.task_source(HEALTHY, family).splitlines()
     return list(difflib.unified_diff(healthy, source.splitlines(), lineterm="", n=1))[2:]
 
 
@@ -81,7 +81,12 @@ def pending(
         source = episode["final_script"]
         program = program_sha256(source)
         entry = programs.setdefault(
-            program, {"program_sha256": program, "episodes": 0, "diff": difference(source)}
+            program,
+            {
+                "program_sha256": program,
+                "episodes": 0,
+                "diff": difference(source, episode.get("family", "camelyon")),
+            },
         )
         entry["episodes"] += 1
     return list(programs.values())

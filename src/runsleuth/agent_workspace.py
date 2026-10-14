@@ -41,7 +41,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from runsleuth import agent_tasks, ham10000_data
-from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME, TASKS
+from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME
 from runsleuth.agent_verification import compare_trajectories
 from runsleuth.camelyon_config import CamelyonConfig
 from runsleuth.camelyon_data import (
@@ -696,7 +696,8 @@ def check_tasks(
     device: str = "auto",
     max_train_batches: int | None = None,
     timeout: float = 3600.0,
-    tasks: tuple[str, ...] = TASKS,
+    tasks: tuple[str, ...] | None = None,
+    family: str = "camelyon",
     run: Callable[..., dict[str, Any]] = run_in_subprocess,
     progress: Callable[[str], None] = lambda _line: None,
 ) -> dict[str, Any]:
@@ -708,6 +709,7 @@ def check_tasks(
     stops if the healthy run does not complete. The result is also written to
     check_report.json in output_dir, which must be new.
     """
+    tasks = agent_tasks.family(family).tasks if tasks is None else tasks
     if HEALTHY not in tasks:
         raise ValueError("The healthy task is the reference and must be checked")
     output_dir = Path(output_dir)
@@ -716,7 +718,7 @@ def check_tasks(
     ordered = (HEALTHY, *(name for name in tasks if name != HEALTHY))
     for number, task in enumerate(ordered, start=1):
         progress(f"[{number}/{len(ordered)}] training {task}")
-        workspace = agent_tasks.materialize(task, output_dir / "workspaces" / task)
+        workspace = agent_tasks.materialize(task, output_dir / "workspaces" / task, family)
         outcome = run(
             workspace,
             output_dir / "runs" / task,
@@ -730,7 +732,7 @@ def check_tasks(
         )
         row = {
             "task": task,
-            "expected": agent_tasks.expected_diagnosis(task),
+            "expected": agent_tasks.expected_diagnosis(task, family),
             "status": outcome["status"],
             "diagnosis": None,
             "as_expected": False,
@@ -830,10 +832,9 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument(
         "--tasks",
         nargs="+",
-        choices=TASKS,
-        default=list(TASKS),
-        help="Tasks to check; healthy is the reference and must be among them.",
+        help="Tasks to check, all of the family's if unset; healthy must be among them.",
     )
+    check.add_argument("--family", choices=tuple(agent_tasks.FAMILIES), default="camelyon")
     for command in (run, check):
         command.add_argument("--data", choices=DATA_SOURCES, required=True)
         command.add_argument("--config", type=Path, help="Camelyon17 config file.")
@@ -860,7 +861,8 @@ def main(argv: list[str] | None = None) -> int:
             device=args.device,
             max_train_batches=args.max_train_batches,
             timeout=args.timeout,
-            tasks=tuple(args.tasks),
+            tasks=None if args.tasks is None else tuple(args.tasks),
+            family=args.family,
             progress=lambda line: print(line, flush=True),
         )
         print(check_text(result))

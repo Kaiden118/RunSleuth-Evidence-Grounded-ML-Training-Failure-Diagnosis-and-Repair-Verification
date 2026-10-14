@@ -675,7 +675,11 @@ class TaskCheckTests(unittest.TestCase):
             patch("builtins.print") as printed,
         ):
             self.assertEqual(agent_workspace.main(arguments), 1)
-            self.assertEqual(check.call_args.kwargs["tasks"], TASKS)
+            # Without --tasks the check takes every task of the family.
+            self.assertEqual(check.call_args.kwargs["tasks"], None)
+            self.assertEqual(check.call_args.kwargs["family"], "camelyon")
+            agent_workspace.main([*arguments, "--family", "ham10000"])
+            self.assertEqual(check.call_args.kwargs["family"], "ham10000")
             selected = [*arguments, "--tasks", HEALTHY, "stale_head"]
             agent_workspace.main(selected)
             self.assertEqual(check.call_args.kwargs["tasks"], (HEALTHY, "stale_head"))

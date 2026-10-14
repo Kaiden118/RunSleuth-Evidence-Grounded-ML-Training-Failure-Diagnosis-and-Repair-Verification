@@ -12,6 +12,11 @@ and that runs only after the agent has finished:
     optimizer               5. AdamW, its learning rate and weight decay, a step per batch
     learning_rate_schedule  6. a cosine over the run, updated per epoch or per batch
 
+Each task family (agent_tasks) has its statement, so its clauses differ where the
+statements do. The ham10000 family's first clause is training_sources, and it has one
+more, held_out_lesions: held_out_key gives the images of one lesion one key and the
+images of different lesions different keys.
+
 The checks call the script's functions the way the harness does: they build the model
 and train it for a few epochs of a few small batches on the CPU, putting the model in
 evaluation mode between epochs as the harness's evaluation does. They require only
@@ -45,7 +50,7 @@ import torch
 from torch import nn
 
 from runsleuth import agent_tasks
-from runsleuth.agent_tasks import FAULTS, HEALTHY, TASKS
+from runsleuth.agent_tasks import FAULTS, HEALTHY
 from runsleuth.agent_workspace import (
     ScriptRefused,
     check_script,
@@ -67,6 +72,31 @@ CLAUSES = (
 )
 HOSPITALS = range(5)
 TRAINING_HOSPITALS = [0, 3, 4]
+# The clauses that need the model trained; a script that cannot be trained fails them.
+TRAINED_CLAUSES = CLAUSES[2:]
+HAM_CLAUSES = ("training_sources", "held_out_lesions", *CLAUSES[1:])
+
+
+@dataclass(frozen=True, slots=True)
+class Spec:
+    """Where a family's statement asks for something other than the camelyon one."""
+
+    clauses: tuple[str, ...]
+    groups: range
+    training_groups: list[int]
+    group_name: str
+    patch_size: int
+    # Whether the harness's synthetic training set numbers groups as this family does.
+    harness_check: bool
+
+
+SPECS = {
+    "camelyon": Spec(CLAUSES, HOSPITALS, TRAINING_HOSPITALS, "hospitals", 96, True),
+    "ham10000": Spec(HAM_CLAUSES, range(4), [0, 3], "sources", 128, False),
+}
+# Images and lesions as HAM10000 names them: two images of one lesion, and other lesions.
+SAME_LESION = (("ISIC_0024306", "HAM_0000118"), ("ISIC_0024307", "HAM_0000118"))
+OTHER_LESIONS = (("ISIC_0024308", "HAM_0002730"), ("ISIC_0024309", "HAM_0001466"))
 MEAN, STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 LEARNING_RATE, WEIGHT_DECAY = 1e-4, 1e-2
 # Epochs and batches per epoch of the short runs. Two different shapes, so that a
@@ -89,14 +119,27 @@ def _some(names: list[str]) -> str:
     return ", ".join(names[:3]) + (f" and {len(names) - 3} more" if len(names) > 3 else "")
 
 
-def _training_hospitals(module: types.ModuleType) -> dict[str, Any]:
-    admitted = [hospital for hospital in HOSPITALS if module.use_for_training(hospital)]
-    if admitted != TRAINING_HOSPITALS:
-        return _failed(f"trains on hospitals {admitted}, not on {TRAINING_HOSPITALS}")
-    # The harness builds its training set from this function alone; look at that set too.
-    used = synthetic_task_data(module.use_for_training, torch.device("cpu"), 0).record
-    if used["training_hospitals"] != TRAINING_HOSPITALS:
-        return _failed(f"the harness's training set holds hospitals {used['training_hospitals']}")
+def _training_groups(module: types.ModuleType, spec: Spec) -> dict[str, Any]:
+    admitted = [group for group in spec.groups if module.use_for_training(group)]
+    if admitted != spec.training_groups:
+        return _failed(f"trains on {spec.group_name} {admitted}, not on {spec.training_groups}")
+    if spec.harness_check:
+        # The harness builds its training set from this function alone; look at it too.
+        used = synthetic_task_data(module.use_for_training, torch.device("cpu"), 0).record
+        if used["training_hospitals"] != spec.training_groups:
+            return _failed(
+                f"the harness's training set holds hospitals {used['training_hospitals']}"
+            )
+    return _passed()
+
+
+def _held_out_lesions(module: types.ModuleType) -> dict[str, Any]:
+    keys = {pair: module.held_out_key(*pair) for pair in (*SAME_LESION, *OTHER_LESIONS)}
+    first, second = (keys[pair] for pair in SAME_LESION)
+    if first != second:
+        return _failed("two images of one lesion get different keys")
+    if len(set(keys.values())) != 1 + len(OTHER_LESIONS):
+        return _failed("images of different lesions share a key")
     return _passed()
 
 
@@ -299,9 +342,15 @@ def _learning_rate_schedule(seen: dict[str, Any]) -> dict[str, Any]:
 
 
 def contract_result(
-    module: types.ModuleType, reference: types.ModuleType, *, patch_size: int = PATCH_SIZE
+    module: types.ModuleType,
+    reference: types.ModuleType,
+    *,
+    patch_size: int | None = None,
+    family: str = "camelyon",
 ) -> dict[str, Any]:
     """Check a loaded script against every clause; reference is the healthy script."""
+    spec = SPECS[family]
+    patch_size = patch_size or spec.patch_size
     clauses: dict[str, dict[str, Any]] = {}
 
     def check(name: str, test, *arguments) -> None:
@@ -312,7 +361,9 @@ def contract_result(
         except Exception as error:
             clauses[name] = _failed(f"the check failed with {type(error).__name__}: {error}"[:300])
 
-    check("training_hospitals", _training_hospitals, module)
+    check(spec.clauses[0], _training_groups, module, spec)
+    if "held_out_lesions" in spec.clauses:
+        check("held_out_lesions", _held_out_lesions, module)
     check("input_normalization", _input_normalization, module, patch_size)
     for epochs, steps in RUNS:
         try:
@@ -320,7 +371,7 @@ def contract_result(
             expected = build(reference, epochs, steps)[3]
         except Exception as error:
             failure = _failed(f"training failed with {type(error).__name__}: {error}"[:300])
-            for name in CLAUSES[2:]:
+            for name in TRAINED_CLAUSES:
                 if name not in clauses or clauses[name]["passed"]:
                     clauses[name] = failure
             break
@@ -329,61 +380,70 @@ def contract_result(
         check("training_mode", _training_mode, seen)
         check("optimizer", _optimizer, seen)
         check("learning_rate_schedule", _learning_rate_schedule, seen)
-    failed = [name for name in CLAUSES if not clauses[name]["passed"]]
+    failed = [name for name in spec.clauses if not clauses[name]["passed"]]
     return {
         "schema_version": 1,
         "task": "agent_contract",
         "contract_version": CONTRACT_VERSION,
+        "family": family,
         "status": "failed" if failed else "passed",
         "failed": failed,
-        "clauses": {name: clauses[name] for name in CLAUSES},
+        "clauses": {name: clauses[name] for name in spec.clauses},
     }
 
 
-def _refused(problems: list[str]) -> dict[str, Any]:
+def _refused(problems: list[str], family: str = "camelyon") -> dict[str, Any]:
     return {
         "schema_version": 1,
         "task": "agent_contract",
         "contract_version": CONTRACT_VERSION,
+        "family": family,
         "status": "refused",
-        "failed": list(CLAUSES),
+        "failed": list(SPECS[family].clauses),
         "clauses": {},
         "problems": problems,
     }
 
 
 def run_contract(
-    script: Path, reference: Path | None = None, *, patch_size: int = PATCH_SIZE
+    script: Path,
+    reference: Path | None = None,
+    *,
+    patch_size: int | None = None,
+    family: str = "camelyon",
 ) -> dict[str, Any]:
     """Check a script file in this process; a script the harness refuses fails."""
     try:
         module = load_script(script)
     except ScriptRefused as refusal:
-        return _refused(refusal.problems)
+        return _refused(refusal.problems, family)
     healthy = (
-        load_source(agent_tasks.task_source(HEALTHY))
+        load_source(agent_tasks.task_source(HEALTHY, family))
         if reference is None
         else load_script(reference)
     )
-    return contract_result(module, healthy, patch_size=patch_size)
+    return contract_result(module, healthy, patch_size=patch_size, family=family)
 
 
 def run_contract_in_subprocess(
     script: Path,
     reference: Path | None = None,
     *,
-    patch_size: int = PATCH_SIZE,
+    patch_size: int | None = None,
+    family: str = "camelyon",
     timeout: float = 900.0,
 ) -> dict[str, Any]:
     """Check a script in a child process without credentials; status may be crashed or timeout."""
     problems = check_script(Path(script).read_text(encoding="utf-8"))
     if problems:
-        return _refused(problems)
+        return _refused(problems, family)
     command = [sys.executable, "-m", "runsleuth.agent_contract", "run"]
-    command += ["--script", str(Path(script).resolve()), "--patch-size", str(patch_size)]
+    command += ["--script", str(Path(script).resolve()), "--family", family]
+    if patch_size is not None:
+        command += ["--patch-size", str(patch_size)]
     if reference is not None:
         command += ["--reference", str(Path(reference).resolve())]
-    unfinished = {**_refused([]), "status": "crashed"}
+    unfinished = {**_refused([], family), "status": "crashed"}
     try:
         completed = subprocess.run(
             command,
@@ -493,36 +553,92 @@ CASES = {
 }
 
 
-def expected_failures(name: str) -> tuple[str, ...]:
+_SOURCE_LINE = "source not in (VALIDATION_SOURCE, TEST_SOURCE)"
+_GENERAL_CASES = (
+    "head_moved_to_the_device_twice",
+    "training_mode_set_for_every_batch",
+    "training_mode_set_only_when_built",
+    "training_mode_lost_after_the_first_epoch",
+    "sgd_instead_of_adamw",
+    "linear_decay",
+)
+HAM_FAULT_CLAUSES = {
+    **{
+        name: clause
+        for name, clause in FAULT_CLAUSES.items()
+        if name in agent_tasks.family("ham10000").all_faults
+    },
+    "validation_source_in_training": "training_sources",
+    "held_out_by_image": "held_out_lesions",
+    "training_source_left_out": "training_sources",
+}
+HAM_CASES = {
+    **{name: CASES[name] for name in _GENERAL_CASES},
+    "sources_listed_one_by_one": Case(
+        (),
+        "The training sources are listed instead of the held-out ones.",
+        ((_SOURCE_LINE, "source in (0, 3)"),),
+    ),
+    "lesion_key_with_a_prefix": Case(
+        (),
+        "The key is built from the lesion, with a prefix of its own.",
+        (("    return lesion_id\n", '    return "lesion " + lesion_id\n'),),
+    ),
+    "one_key_for_every_lesion": Case(
+        ("held_out_lesions",),
+        "Every image shares one key, so every image is held out with the validation set.",
+        (("    return lesion_id\n", '    return "held out"\n'),),
+    ),
+    "two_leaks_at_once": Case(
+        ("training_sources", "held_out_lesions"),
+        "The validation source is trained on and images are held out one by one.",
+        (
+            *agent_tasks.family("ham10000").faults["validation_source_in_training"].edits,
+            *agent_tasks.family("ham10000").faults["held_out_by_image"].edits,
+        ),
+    ),
+}
+FAULT_CLAUSES_BY_FAMILY = {"camelyon": FAULT_CLAUSES, "ham10000": HAM_FAULT_CLAUSES}
+CASES_BY_FAMILY = {"camelyon": CASES, "ham10000": HAM_CASES}
+
+
+def expected_failures(name: str, family: str = "camelyon") -> tuple[str, ...]:
     """The clauses a task or case should fail; none for a correct script."""
-    if name in CASES:
-        return CASES[name].fails
-    return (FAULT_CLAUSES[name],) if agent_tasks.is_faulty(name) else ()
+    if name in CASES_BY_FAMILY[family]:
+        return CASES_BY_FAMILY[family][name].fails
+    faulty = agent_tasks.is_faulty(name, family)
+    return (FAULT_CLAUSES_BY_FAMILY[family][name],) if faulty else ()
 
 
-def case_source(name: str) -> str:
+def case_source(name: str, family: str = "camelyon") -> str:
     """The script of a task or of a case."""
-    if name in TASKS:
-        return agent_tasks.task_source(name)
-    source = agent_tasks.healthy_source()
-    for old, new in CASES[name].edits:
+    if name in agent_tasks.family(family).tasks:
+        return agent_tasks.task_source(name, family)
+    source = agent_tasks.healthy_source(family)
+    for old, new in CASES_BY_FAMILY[family][name].edits:
         if source.count(old) != 1:
             raise ValueError(f"{name}: every edit must match the script exactly once")
         source = source.replace(old, new)
     return source
 
 
-def check_cases(*, patch_size: int = PATCH_SIZE, sources=case_source) -> list[dict[str, Any]]:
+def check_cases(
+    *, patch_size: int | None = None, sources=None, family: str = "camelyon"
+) -> list[dict[str, Any]]:
     """Run the contract on every task and case and compare with what each should fail."""
+    sources = sources or (lambda name: case_source(name, family))
+    tasks = agent_tasks.family(family).tasks
     reference = load_source(sources(HEALTHY))
     rows = []
-    for name in (*TASKS, *CASES):
-        result = contract_result(load_source(sources(name)), reference, patch_size=patch_size)
-        expected = list(expected_failures(name))
+    for name in (*tasks, *CASES_BY_FAMILY[family]):
+        result = contract_result(
+            load_source(sources(name)), reference, patch_size=patch_size, family=family
+        )
+        expected = list(expected_failures(name, family))
         rows.append(
             {
                 "name": name,
-                "kind": "task" if name in TASKS else "case",
+                "kind": "task" if name in tasks else "case",
                 "expected": expected,
                 "failed": result["failed"],
                 "as_expected": sorted(result["failed"]) == sorted(expected),
@@ -555,17 +671,20 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--reference", type=Path, help="The healthy script; the template if unset.")
     check = commands.add_parser("check", help="Check every task and case against expectations.")
     for command in (run, check):
-        command.add_argument("--patch-size", type=int, default=PATCH_SIZE)
+        command.add_argument("--patch-size", type=int, help="The family's size if unset.")
+        command.add_argument("--family", choices=tuple(SPECS), default="camelyon")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "run":
-        result = run_contract(args.script, args.reference, patch_size=args.patch_size)
+        result = run_contract(
+            args.script, args.reference, patch_size=args.patch_size, family=args.family
+        )
         print(json.dumps(result))
         return 0
-    rows = check_cases(patch_size=args.patch_size)
+    rows = check_cases(patch_size=args.patch_size, family=args.family)
     print(cases_text(rows))
     return 0 if all(row["as_expected"] for row in rows) else 1
 

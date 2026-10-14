@@ -211,7 +211,8 @@ class Ham10000DataTests(unittest.TestCase):
 
     def test_the_harness_serves_the_images_and_reports_the_held_out_groups(self):
         build = agent_workspace.ham10000_task_data(self.config)
-        data = build(admit_training, torch.device("cpu"), 7)
+        by_lesion = ham10000_data.by_lesion
+        data = build(admit_training, torch.device("cpu"), 7, by_lesion)
         images, labels = next(iter(data.train_loader))
         self.assertEqual(tuple(images.shape[1:]), (3, 8, 8))
         self.assertEqual(images.dtype, torch.float32)
@@ -222,23 +223,27 @@ class Ham10000DataTests(unittest.TestCase):
         self.assertEqual((record["source"], record["training_sources"]), ("ham10000", [0, 3]))
         self.assertEqual(record["provenance"]["license"], "CC BY-NC 4.0")
         self.assertEqual(data.holdouts["id"]["held_out_by"], "lesion")
-        again = build(admit_training, torch.device("cpu"), 7).record
+        again = build(admit_training, torch.device("cpu"), 7, by_lesion).record
         self.assertEqual(again["training_indices_sha256"], record["training_indices_sha256"])
         leaky = build(admit_training, torch.device("cpu"), 7, by_image)
         self.assertGreater(leaky.holdouts["id"]["training_samples_in_evaluation_groups"], 0)
         self.assertGreater(leaky.record["training_samples"], record["training_samples"])
         with self.assertRaisesRegex(ValueError, "admits no image"):
-            build(lambda _number: False, torch.device("cpu"), 7)
+            build(lambda _number: False, torch.device("cpu"), 7, by_lesion)
+        with self.assertRaisesRegex(ValueError, "must define held_out_key"):
+            build(admit_training, torch.device("cpu"), 7)
 
     def test_a_workspace_script_trains_on_it_and_a_leak_is_diagnosed(self):
         config_path = self.root / "config.json"
         values = {name: getattr(self.config, name) for name in HamConfig.__dataclass_fields__}
         config_path.write_text(json.dumps({**values, "image_size": 8}), encoding="utf-8")
         reports = {}
-        for task in (HEALTHY, "validation_hospital_in_training"):
+        tasks = (HEALTHY, "validation_source_in_training", "held_out_by_image")
+        for task in tasks:
             workspace = self.root / "workspaces" / task
             workspace.mkdir(parents=True)
-            (workspace / "train.py").write_text(tiny_source(task), encoding="utf-8")
+            source = tiny_source(task, "ham10000")
+            (workspace / "train.py").write_text(source, encoding="utf-8")
             path = agent_workspace.run_workspace(
                 workspace,
                 self.root / "runs" / task,
@@ -248,7 +253,7 @@ class Ham10000DataTests(unittest.TestCase):
                 device=torch.device("cpu"),
             )
             reports[task] = json.loads(path.read_text(encoding="utf-8"))
-        healthy, leaky = reports[HEALTHY], reports["validation_hospital_in_training"]
+        healthy, leaky = reports[HEALTHY], reports["validation_source_in_training"]
         self.assertEqual(healthy["status"], "completed")
         self.assertEqual(healthy["workspace"]["data"]["source"], "ham10000")
         self.assertIn("ood_validation_accuracy", healthy["final_metrics"])
@@ -261,7 +266,19 @@ class Ham10000DataTests(unittest.TestCase):
             diagnose(extract_evidence(leaky), library)["diagnosis"],
             "train_evaluation_group_overlap",
         )
-        self.assertEqual(agent_tasks.task_source(HEALTHY).count("VALIDATION_HOSPITAL = 1"), 1)
+        # Keyed by image, the script trains on the other images of validation lesions,
+        # and the run says that too.
+        by_image = reports["held_out_by_image"]
+        self.assertGreater(
+            by_image["evaluation_holdouts"]["id"]["training_samples_in_evaluation_groups"], 0
+        )
+        self.assertEqual(
+            diagnose(extract_evidence(by_image), library)["diagnosis"],
+            "train_evaluation_group_overlap",
+        )
+        self.assertEqual(
+            agent_tasks.task_source(HEALTHY, "ham10000").count("VALIDATION_SOURCE = 1"), 1
+        )
 
 
 if __name__ == "__main__":

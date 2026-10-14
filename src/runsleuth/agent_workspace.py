@@ -189,11 +189,17 @@ class TaskData:
     record: dict[str, Any]
 
 
-DataBuilder = Callable[[Callable[[int], bool], torch.device, int], TaskData]
+# build(use_for_training, device, seed, held_out_key=None) -> TaskData; held_out_key is
+# the script's, if it has one, for data whose validation images hold out more than
+# themselves (HAM10000's lesions).
+DataBuilder = Callable[..., TaskData]
 
 
 def synthetic_task_data(
-    use_for_training: Callable[[int], bool], device: torch.device, seed: int
+    use_for_training: Callable[[int], bool],
+    device: torch.device,
+    seed: int,
+    held_out_key: Callable[[str, str], str] | None = None,
 ) -> TaskData:
     """Random patches from four hospitals: a smoke test of the harness, not a benchmark.
 
@@ -256,7 +262,12 @@ def camelyon_task_data(config: CamelyonConfig) -> DataBuilder:
     hospital trains on its slides without ever seeing an evaluation patch itself.
     """
 
-    def build(use_for_training: Callable[[int], bool], device: torch.device, seed: int):
+    def build(
+        use_for_training: Callable[[int], bool],
+        device: torch.device,
+        seed: int,
+        held_out_key: Callable[[str, str], str] | None = None,
+    ):
         from torchvision import transforms
 
         dataset = load_camelyon_mirror(config, download=False)
@@ -371,16 +382,18 @@ def ham10000_task_data(config: ham10000_data.HamConfig) -> DataBuilder:
     """HAM10000 images for workspace scripts; ham10000_data says how they are split.
 
     The validation sets are fixed by the data. The training images follow the sources
-    the script admits and, once a script can say so, the key by which it holds images
-    out with the validation images; until then images are held out by lesion.
+    the script admits and the key by which it holds images out with the validation
+    images, which a HAM10000 script must define.
     """
 
     def build(
         use_for_training: Callable[[int], bool],
         device: torch.device,
         seed: int,
-        held_out_key: Callable[[str, str], str] = ham10000_data.by_lesion,
+        held_out_key: Callable[[str, str], str] | None = None,
     ) -> TaskData:
+        if held_out_key is None:
+            raise ValueError("a HAM10000 script must define held_out_key(image_id, lesion_id)")
         data = ham10000_data.load(config)
         rows = data.rows
         labels = [row["label"] for row in rows]
@@ -491,7 +504,9 @@ def run_workspace(
     """
     script = Path(workspace) / SCRIPT_NAME
     module = load_script(script)
-    data = build_data(module.use_for_training, device, seed)
+    data = build_data(
+        module.use_for_training, device, seed, held_out_key=vars(module).get("held_out_key")
+    )
     steps_per_epoch = len(data.train_loader)
     if max_train_batches is not None:
         steps_per_epoch = min(steps_per_epoch, max_train_batches)

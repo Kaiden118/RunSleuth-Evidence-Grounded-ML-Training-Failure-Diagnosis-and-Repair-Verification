@@ -137,6 +137,47 @@ class AgentContractTests(unittest.TestCase):
         for name in (*ALL_FAULTS, *(fault.signature for fault in FAULTS.values())):
             self.assertNotIn(name, statement)
 
+    def test_the_ham10000_family_has_its_own_clauses_and_cases(self):
+        rows = agent_contract.check_cases(
+            patch_size=PATCH_SIZE,
+            sources=lambda name: tiny(agent_contract.case_source(name, "ham10000")),
+            family="ham10000",
+        )
+        tasks = agent_tasks.family("ham10000").tasks
+        self.assertEqual([row["name"] for row in rows], [*tasks, *agent_contract.HAM_CASES])
+        for row in rows:
+            with self.subTest(script=row["name"]):
+                self.assertEqual(sorted(row["failed"]), sorted(row["expected"]), row["details"])
+        clauses = agent_contract.SPECS["ham10000"].clauses
+        self.assertEqual(clauses[:2], ("training_sources", "held_out_lesions"))
+        failed = {clause for row in rows for clause in row["expected"]}
+        self.assertEqual(failed, set(clauses))
+        script = self.write(
+            "image_key", tiny(agent_tasks.task_source("held_out_by_image", "ham10000"))
+        )
+        reference = self.write("ham", tiny(agent_tasks.task_source(HEALTHY, "ham10000")))
+        result = agent_contract.run_contract(
+            script, reference, patch_size=PATCH_SIZE, family="ham10000"
+        )
+        self.assertEqual((result["family"], result["failed"]), ("ham10000", ["held_out_lesions"]))
+        self.assertEqual(
+            result["clauses"]["held_out_lesions"]["detail"],
+            "two images of one lesion get different keys",
+        )
+        self.assertEqual(tuple(result["clauses"]), clauses)
+        refused = agent_contract.run_contract_in_subprocess(
+            self.write("bad", "import os\n"), family="ham10000"
+        )
+        self.assertEqual((refused["status"], refused["failed"]), ("refused", list(clauses)))
+        # A camelyon script has no held_out_key, which the ham10000 contract requires.
+        camelyon = agent_contract.run_contract(
+            self.write("camelyon", tiny(agent_tasks.task_source(HEALTHY))),
+            reference,
+            patch_size=PATCH_SIZE,
+            family="ham10000",
+        )
+        self.assertIn("held_out_lesions", camelyon["failed"])
+
     def test_the_checks_share_no_code_with_the_verifier(self):
         tree = ast.parse(Path(agent_contract.__file__).read_text(encoding="utf-8"))
         imported = set()
@@ -149,7 +190,6 @@ class AgentContractTests(unittest.TestCase):
                 "runsleuth.agent_tasks",
                 "runsleuth.agent_tasks.FAULTS",
                 "runsleuth.agent_tasks.HEALTHY",
-                "runsleuth.agent_tasks.TASKS",
                 "runsleuth.agent_workspace.ScriptRefused",
                 "runsleuth.agent_workspace.check_script",
                 "runsleuth.agent_workspace.clean_environment",

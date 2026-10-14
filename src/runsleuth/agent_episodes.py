@@ -100,7 +100,13 @@ PILOT_TASKS = (
 )
 OUTPUT_TAIL = 1500
 # Raised when a condition shows an agent something else than before.
-PRESENTATION_VERSION = 2
+PRESENTATION_VERSION = 3
+# A known fault comes with what it means; so must finding none. In a pilot an agent
+# read the bare verdict as "all checks passed" on a fault the library has no signature for.
+NO_FAULT_MEANING = (
+    "No signature of the library matched this run. This does not show that the script is "
+    "correct: a fault the library has no signature for is not found."
+)
 
 
 def _sha256(text: str) -> str:
@@ -246,6 +252,8 @@ def present(
             shown["diagnosis"].update(
                 meaning=signature["description"], repair=signature["repair"]["description"]
             )
+        elif found["diagnosis"] == agent_tasks.NO_FAULT:
+            shown["diagnosis"]["meaning"] = NO_FAULT_MEANING
     if condition.verification:
         if report["status"] != "completed" or healthy is None:
             shown["verification"] = {

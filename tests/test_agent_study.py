@@ -85,8 +85,20 @@ class AgentStudyTests(unittest.TestCase):
             "verification_source_sha256",
         ):
             self.assertRegex(frozen[name], r"^[0-9a-f]{64}$")
+        self.assertEqual(frozen["agent"]["max_output_tokens"], 4000)
+        for name in ("agent_loop.py", "agent_contract.py", "failure_signatures.json", "cli.py"):
+            self.assertRegex(record["sources"][name], r"^[0-9a-f]{64}$")
+        self.assertEqual(agent_study.changed_sources(record), [])
+        altered = {**record, "sources": {**record["sources"], "agent_loop.py": "0" * 64}}
+        self.assertEqual(agent_study.changed_sources(altered), ["agent_loop.py"])
         self.assertEqual(json.loads(self.draw_path.read_text(encoding="utf-8")), record)
         self.assertEqual(self.read(), record)
+        # A checkout that rewrites line endings changes nothing that is frozen.
+        self.config.write_bytes(b'{\r\n"seed": 7\r\n}\r\n')
+        windows = agent_study.frozen_components(self.config)["data"]
+        self.config.write_bytes(b'{\n"seed": 7\n}\n')
+        self.assertEqual(agent_study.frozen_components(self.config)["data"], windows)
+        self.config.write_text('{"seed": 7}', encoding="utf-8")
         # A later draw would exclude these seeds too.
         self.assertIn(555, agent_study.used_seeds(self.evaluations))
 

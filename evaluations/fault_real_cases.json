@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "task": "fault_real_cases",
+  "searched_on": "2026-10-14",
+  "method": "Web search for each task's fault, then each candidate thread, issue or paper opened and read; only what the page itself shows is recorded. A forum thread whose cause turned out to be something else is left out.",
+  "statuses": {
+    "public_instance": "someone's own code had this mistake, and the page shows the mechanism",
+    "literature": "published studies show the mistake occurs and changes results",
+    "discussion_only": "the confusion is discussed, but no instance of it was found",
+    "not_found": "nothing found yet"
+  },
+  "faults": [
+    {
+      "task": "stale_head",
+      "kind": "listed_fault",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "PyTorch forum",
+          "title": "Loss is changing but the weights are not",
+          "url": "https://discuss.pytorch.org/t/loss-is-changing-but-the-weights-are-not/120936",
+          "date": "2021-05-11",
+          "matches": "A new Parameter was assigned to a layer's weight after the optimizer was built, so the optimizer kept updating the old one; the loss still changed because the bias was updated.",
+          "caveat": "One layer's weight was replaced, not a whole classification head."
+        }
+      ]
+    },
+    {
+      "task": "frozen_head",
+      "kind": "listed_fault",
+      "status": "not_found",
+      "cases": [],
+      "note": "Related but not silent: a head attached to the wrong attribute with every layer frozen raises an error (https://discuss.pytorch.org/t/element-0-of-tensors-does-not-require-grad-and-does-not-have-a-grad-fn/32908)."
+    },
+    {
+      "task": "high_learning_rate",
+      "kind": "listed_fault",
+      "status": "discussion_only",
+      "cases": [
+        {
+          "source": "PyTorch forum",
+          "title": "Pytorch not converge but keras did",
+          "url": "https://discuss.pytorch.org/t/pytorch-not-converge-but-keras-did/46750",
+          "matches": "Learning rate 0.1 against Keras's 0.001, with a rising training loss; a reply named the rate as the likely cause.",
+          "caveat": "Not confirmed in the thread; lower rates did not fix it at once."
+        }
+      ]
+    },
+    {
+      "task": "train_eval_normalization_mismatch",
+      "kind": "listed_fault",
+      "status": "not_found",
+      "cases": [],
+      "note": "A candidate thread (discuss.pytorch.org/t/177425) turned out to be a label-mapping error and is left out."
+    },
+    {
+      "task": "imagenet_head_kept",
+      "kind": "listed_fault",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "PyTorch forum",
+          "title": "Resnet50 Model with more outputs that feature labels trained without error",
+          "url": "https://discuss.pytorch.org/t/resnet50-model-with-more-outputs-that-feature-labels-trained-without-error/33041",
+          "date": "2018-12-25",
+          "matches": "The new layer went to model.fc1, so the ResNet kept its 1000-output ImageNet head, trained on three classes without an error and reached 68% accuracy.",
+          "caveat": "The head was kept by a wrong attribute name, not by a class count in a configuration."
+        }
+      ]
+    },
+    {
+      "task": "train_in_eval_mode",
+      "kind": "listed_fault",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "PyTorch forum",
+          "title": "Training with model.eval() works while in model.train() the model overfits in one epoch",
+          "url": "https://discuss.pytorch.org/t/training-with-model-eval-works-while-in-model-train-the-model-overfits-in-one-epoch/88533",
+          "date": "2020-07-09",
+          "matches": "model.train() was called once outside the epoch loop, so after the first validation the model trained in eval mode.",
+          "caveat": "The thread's reply looked for another cause; the code pattern, not its effect, is what matches."
+        }
+      ]
+    },
+    {
+      "task": "scheduler_stepped_per_batch",
+      "kind": "listed_fault",
+      "status": "discussion_only",
+      "cases": [
+        {
+          "source": "PyTorch forum",
+          "title": "Scheduler.step() after each epoch or after each minibatch",
+          "url": "https://discuss.pytorch.org/t/scheduler-step-after-each-epoch-or-after-each-minibatch/111249",
+          "matches": "A user asks where to step; the answer warns that stepping a per-epoch schedule every minibatch lowers the learning rate too fast.",
+          "caveat": "A question, not a report of the mistake in someone's training."
+        }
+      ]
+    },
+    {
+      "task": "validation_hospital_in_training",
+      "kind": "listed_fault",
+      "status": "literature",
+      "cases": [
+        {
+          "source": "ICPR 2021 workshops (LNCS 12661)",
+          "title": "AI Slipping on Tiles: Data Leakage in Digital Pathology (Bussola et al.)",
+          "url": "https://arxiv.org/abs/1909.06539",
+          "matches": "Tiles of one patient in both training and validation inflate pathology classifiers' accuracy by up to 41%.",
+          "caveat": "Patient-level leakage; the task leaks a whole hospital."
+        },
+        {
+          "source": "Scientific Reports 11, 22544 (2021)",
+          "title": "Effect of data leakage in brain MRI classification using 2D convolutional neural networks (Yagis et al.)",
+          "url": "https://doi.org/10.1038/s41598-021-01681-w",
+          "matches": "Splitting by slice instead of by subject leaks subjects into evaluation and inflates accuracy.",
+          "caveat": "Neuroimaging, slice-level."
+        }
+      ]
+    },
+    {
+      "task": "schedule_ends_an_epoch_early",
+      "kind": "listed_fault",
+      "status": "not_found",
+      "cases": []
+    },
+    {
+      "task": "schedule_period_in_steps_stepped_per_epoch",
+      "kind": "unlisted_fault",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "PyTorch forum",
+          "title": "How to fix my learning rate",
+          "url": "https://discuss.pytorch.org/t/how-to-fix-my-learning-rate/92027",
+          "date": "2020-08-07",
+          "matches": "CosineAnnealingLR with T_max = len(train_loader), stepped once per epoch, so the rate changed very little; the reply was to step per iteration.",
+          "caveat": null
+        }
+      ]
+    },
+    {
+      "task": "learning_rate_halved",
+      "kind": "unlisted_fault",
+      "status": "not_found",
+      "cases": [],
+      "note": "A rate other than the one asked for; real reports of it are not expected to be distinguishable from tuning."
+    },
+    {
+      "task": "same_wrong_normalization_twice",
+      "kind": "unlisted_fault",
+      "status": "discussion_only",
+      "cases": [
+        {
+          "source": "PyTorch forum",
+          "title": "Should we use our normalization for training a pretrained model?",
+          "url": "https://discuss.pytorch.org/t/should-we-use-our-normalization-for-training-a-pretrained-model/34905",
+          "matches": "Whether to keep ImageNet statistics when fine-tuning is debated; some find their own statistics work as well or better.",
+          "caveat": "This task breaks the statement's requirement; in practice it need not harm training."
+        }
+      ]
+    },
+    {
+      "task": "head_bias_left_frozen",
+      "kind": "unlisted_fault",
+      "status": "not_found",
+      "cases": []
+    },
+    {
+      "task": "head_frozen_from_the_second_epoch",
+      "kind": "unlisted_fault",
+      "status": "not_found",
+      "cases": []
+    },
+    {
+      "task": "weight_decay_dropped",
+      "kind": "unlisted_fault",
+      "status": "not_found",
+      "cases": [],
+      "note": "The camelyon_structured version, no decay on biases and normalization layers, is a common recommended practice; it breaks the statement, not good training."
+    },
+    {
+      "task": "training_hospital_left_out",
+      "kind": "unlisted_fault",
+      "status": "not_found",
+      "cases": []
+    },
+    {
+      "task": "held_out_by_image",
+      "kind": "listed_fault",
+      "family": "ham10000",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "GitHub issue",
+          "title": "woodman718/capsnets #4",
+          "url": "https://github.com/woodman718/capsnets/issues/4",
+          "date": "2024-02-10",
+          "matches": "A user asks whether images of the same lesion_id sit in both the train and test sets of a published HAM10000 project; validation excluded multi-image lesions, the test split did not.",
+          "caveat": "Unanswered; the overlap is raised, not measured."
+        },
+        {
+          "source": "Medical Image Analysis 75, 102305 (2022)",
+          "title": "Analysis of the ISIC image datasets: Usage, benchmarks and recommendations (Cassidy et al.)",
+          "url": "https://e-space.mmu.ac.uk/631025",
+          "matches": "Duplicates within and between the ISIC releases, some spread across training and test sets; the authors propose a deduplicated set.",
+          "caveat": "Duplicate images across ISIC releases rather than one lesion's photographs."
+        }
+      ]
+    }
+  ]
+}

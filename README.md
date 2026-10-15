@@ -4,11 +4,13 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python\&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch\&logoColor=white)
 ![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?logo=huggingface\&logoColor=black)
-![LLM](https://img.shields.io/badge/LLM-ChatGPT%20%7C%20Gemini%20%7C%20Ollama-8E75B2)
+![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20OpenAI--compatible%20%7C%20Ollama-8E75B2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 RunSleuth finds silent bugs in PyTorch training runs, the kind that never crash and
-barely move accuracy, and accepts a fix only after retraining verifies it.
+barely move accuracy, and accepts a fix only after retraining verifies it. It also
+checks LLM agents that repair medical-imaging training code: an agent's "fixed" counts
+only when the evidence agrees.
 
 ![How RunSleuth works](docs/pipeline.svg)
 
@@ -126,22 +128,46 @@ seeds were drawn at random after signatures, prompt and thresholds were frozen.
 Numbers come from the JSON [records](evaluations/results). Faults were injected by the
 author and thresholds are development choices; this is not a statistical benchmark.
 
+## Agent Study
+
+When an LLM agent repairs a training script and says it is fixed, is it? And does
+RunSleuth's evidence help the agent, or catch it?
+
+- **Tasks:** 22 Camelyon17 scripts (ResNet18): 9 faults RunSleuth knows, 7 it does
+  not, 5 correct scripts that look faulty, 1 healthy.
+- **Conditions:** each adds one thing: code only, training runs, raw evidence,
+  diagnosis, a verdict on the agent's own runs.
+- **Labels:** hidden contract tests written from the task statement, independent of
+  RunSleuth.
+- **Verdict:** every final script is retrained, then accepted, reviewed or rejected.
+
+Tasks, conditions, five held-out seeds and the analysis were frozen on 2026-10-13,
+before the first episode ran. The first model is running; there are no results yet.
+Agent-edited scripts run in a subprocess under a Python-level guard, not in a container.
+
+```bash
+python -m runsleuth.agent_tasks list
+python -m runsleuth.agent_study run --name <model> --provider gemini
+python -m runsleuth.agent_analysis artifacts/agent_study/<model>
+```
+
 ## Roadmap
 
-| Task                                                 | Status |
-| ---------------------------------------------------- | :----: |
-| Training monitor, first fault on Camelyon17          |    ☑   |
-| Nine faults, signature library, ResNet18 and DeiT    |    ☑   |
-| Repair verification, held-out seeds, LLM explanation |    ☑   |
-| Command line, CI, Docker                             |    ☑   |
-| Repair tasks and harness for LLM agents              |    ☑   |
-| LLM agent that repairs training code, pilot study    |    ☐   |
-| Main agent experiments and baselines                 |    ☐   |
-| Second dataset (HAM10000)                            |    ☐   |
-| Report and release                                   |    ☐   |
+| Task                                                             | Status |
+| ---------------------------------------------------------------- | :----: |
+| Training monitor, first fault on Camelyon17                      |   ☑    |
+| Nine faults, signature library, ResNet18 and DeiT                |   ☑    |
+| Repair verification, held-out seeds, LLM explanation             |   ☑    |
+| Command line, CI, Docker                                         |   ☑    |
+| Repair tasks and harness for LLM agents                          |   ☑    |
+| Agent loop, contract tests, pilot studies                        |   ☑    |
+| Agent study frozen: 22 tasks, 5 conditions, 5 held-out seeds     |   ☑    |
+| Agent study runs on several LLMs                                 |   ◐    |
+| Second dataset (HAM10000) and a second script structure          |   ◐    |
+| External agent with and without RunSleuth, LLM-reviewer baseline |   ☐    |
+| Report and release                                               |   ☐    |
 
-
-The agent work measures how often an LLM agent declares a silent fault repaired when it is not. Its tasks are ready: `python -m runsleuth.agent_tasks list`.
+☑ done · ◐ in progress · ☐ planned
 
 ## Reproduce
 
@@ -164,12 +190,9 @@ python -m runsleuth.heldout run --reference-run <baseline-run>
 
 ## Tests
 
-```bash
-python -m pytest
-```
-
-Tiny models and synthetic data, no GPU. [GitHub Actions](.github/workflows/ci.yml)
-runs them on every push and repeats them inside the [Docker image](Dockerfile).
+`python -m pytest` runs on CPU with tiny models and synthetic data.
+[GitHub Actions](.github/workflows/ci.yml) runs it on every push and inside the
+[Docker image](Dockerfile).
 
 ## License
 

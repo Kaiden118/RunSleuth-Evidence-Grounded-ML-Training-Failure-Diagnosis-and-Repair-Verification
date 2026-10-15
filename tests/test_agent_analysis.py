@@ -29,7 +29,16 @@ CRITERIA = (
 
 
 def episode(
-    task, condition, passes, *, claims=True, triage="accept", edited=False, status="finished"
+    task,
+    condition,
+    passes,
+    *,
+    claims=True,
+    triage="accept",
+    edited=False,
+    status="finished",
+    found=None,
+    expected=None,
 ):
     """An episode as load_episode reads it, with only what the analysis uses."""
     accepted = triage != "reject"
@@ -38,11 +47,13 @@ def episode(
         "condition": condition,
         "model": "made-up",
         "claimed_correct": claims,
+        "expected_diagnosis": expected,
         "agent": {"status": status, "script_changed": edited},
         "contract": None if passes is None else {"status": "passed" if passes else "failed"},
         "verification": {
             "decision": "accepted" if accepted else "rejected",
             "triage": triage,
+            "re_diagnosis": found,
             "criteria": dict.fromkeys(CRITERIA, accepted),
         },
     }
@@ -133,6 +144,83 @@ class AgentAnalysisTests(unittest.TestCase):
         self.assertAlmostEqual(correct["edited"]["mean"], 1 / 3)
         self.assertAlmostEqual(correct["false_alarm"]["mean"], 1 / 3)
 
+    def test_secondary_comparisons_are_reported_apart_from_the_planned_ones(self):
+        episodes = []
+        for task in LISTED:  # Repaired under C1 and C4, not under C2 and C3.
+            episodes += [episode(task, "C1", True), episode(task, "C4", True)]
+            episodes += [episode(task, name, False, triage="reject") for name in ("C2", "C3")]
+        result = agent_analysis.analyze(episodes)
+        planned = {(item["from"], item["to"]) for item in result["planned_comparisons"]}
+        self.assertEqual(planned, {("C0", "C2"), ("C2", "C3")})
+        secondary = result["secondary_comparisons"]
+        self.assertEqual(secondary["added"], "2026-10-14")
+        found = {
+            (item["from"], item["to"], item["outcome"]): item["difference"]["mean"]
+            for item in secondary["comparisons"]
+        }
+        self.assertEqual(found[("C1", "C2", "repaired")], -1.0)
+        self.assertEqual(found[("C3", "C4", "repaired")], 1.0)
+        self.assertEqual(found[("C3", "C4", "false_claim")], -1.0)
+
+    def test_the_verifier_is_judged_on_c0_to_c3_and_review_is_counted(self):
+        episodes = [
+            episode("stale_head", "C1", False, triage="reject"),
+            episode("weight_decay_dropped", "C1", False, triage="review"),
+            episode("learning_rate_halved", "C2", False, triage="accept"),
+            episode("healthy", "C2", True),
+            episode("cosine_stepped_per_batch_over_the_run", "C3", True, triage="review"),
+            # C4 is left out of the pooled figures and only reported on its own.
+            episode("learning_rate_halved", "C4", False, triage="accept"),
+        ]
+        judged = agent_analysis.analyze(episodes)["verifier"]
+        self.assertEqual(judged["pooled_conditions"], ["C1", "C2", "C3"])
+        triage = judged["pooled"]["checks_and_same_run_as_reference"]
+        self.assertEqual(
+            triage,
+            {
+                "false_acceptance": [1, 3],
+                "failing_among_accepted": [1, 2],
+                "accepted_without_review": [2, 5],
+                "sent_to_review": [2, 5],
+            },
+        )
+        two_way = judged["pooled"]["mechanism_check_and_reference_metrics"]
+        self.assertEqual(two_way["false_acceptance"], [2, 3])
+        self.assertEqual(two_way["accepted_without_review"], [4, 5])
+        self.assertEqual(two_way["sent_to_review"], [0, 5], "a two-way decision reviews nothing")
+        claim = judged["pooled"]["agent_claim"]
+        self.assertEqual(claim["failing_among_accepted"], [3, 5])
+        self.assertEqual(
+            judged["by_condition"]["C4"]["checks_and_same_run_as_reference"]["false_acceptance"],
+            [1, 1],
+        )
+
+    def test_the_diagnosis_of_a_failing_script_is_counted_apart_from_the_decision(self):
+        stale = "stale_optimizer_binding"
+        episodes = [
+            episode("stale_head", "C0", False, triage="reject", found=stale, expected=stale),
+            # Rejected, but for another fault than the one the task holds.
+            episode(
+                "stale_head", "C1", False, triage="reject", found="frozen_head", expected=stale
+            ),
+            episode(
+                "weight_decay_dropped",
+                "C2",
+                False,
+                triage="review",
+                found="no_known_fault",
+                expected="no_known_fault",
+            ),
+            episode("frozen_head", "C3", False, triage="reject"),  # Never diagnosed.
+            episode("stale_head", "C4", False, triage="reject", found=stale, expected=stale),
+            episode("healthy", "C0", True, found="no_known_fault", expected="no_known_fault"),
+        ]
+        table = agent_analysis.analyze(episodes)["verifier"]["failing_scripts_by_diagnosis"]
+        self.assertEqual(table["the_task_fault"], {"accept": 0, "review": 0, "reject": 1})
+        self.assertEqual(table["another_fault"], {"accept": 0, "review": 0, "reject": 1})
+        self.assertEqual(table["no_known_fault"], {"accept": 0, "review": 1, "reject": 0})
+        self.assertEqual(table["not_diagnosed"], {"accept": 0, "review": 0, "reject": 1})
+
     def test_episodes_without_a_label_are_counted_and_left_out(self):
         episodes = [
             episode("stale_head", "C0", True),
@@ -170,6 +258,11 @@ class AgentAnalysisTests(unittest.TestCase):
         self.assertIn("planned comparisons, over all faults and paired by task:", text)
         self.assertRegex(text, r"agent claim\s+1/1")
         self.assertRegex(text, r"failing\s+0/1 \| 0/1 \| 1/1")
+        self.assertEqual(saved["schema_version"], 2)
+        self.assertIn("secondary comparisons, added 2026-10-14 after the draw:", text)
+        self.assertIn("the verifier on the final scripts of C0, C2 (added 2026-10-14):", text)
+        self.assertRegex(text, r"checks and same run as reference\s+0/1\s+0/2\s+2/3\s+0/3")
+        self.assertRegex(text, r"not diagnosed\s+0 \| 0 \| 1")
 
 
 if __name__ == "__main__":

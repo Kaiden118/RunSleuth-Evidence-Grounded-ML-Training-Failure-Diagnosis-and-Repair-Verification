@@ -1,5 +1,6 @@
 """CPU tests for HAM10000 preparation and splits, on a small made-up copy of its files."""
 
+import contextlib
 import csv
 import hashlib
 import io
@@ -7,7 +8,7 @@ import json
 import tempfile
 import unittest
 import zipfile
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from runsleuth import ham10000_data
@@ -187,6 +188,42 @@ class Ham10000DataTests(unittest.TestCase):
             ],
             len(siblings),
         )
+
+    def test_the_audit_shows_a_correct_script_shares_no_lesion_with_any_validation(self):
+        result = ham10000_data.audit(self.config, self.rows, self.data.manifest)
+        self.assertEqual((result["dataset"]["images"], result["dataset"]["lesions"]), (22, 13))
+        self.assertEqual(result["dataset"]["published_md5"], self.published)
+        self.assertEqual(result["validation"]["sealed"]["images"], 2)
+        evaluation = ham10000_data.evaluation_split(self.config, self.rows)
+        self.assertEqual(result["validation"]["id validation"]["images"], len(evaluation["id"]))
+        self.assertEqual(result["validation"]["ood validation"]["by_source"], {"far": 3})
+        healthy = result["training"]["keyed_by_lesion"]
+        for pair, shared in healthy["shared"].items():
+            self.assertEqual(shared, {"images": 0, "lesions": 0}, pair)
+        leaky = result["training"]["keyed_by_image"]
+        siblings = {  # held-out lesions that have images besides their validation image
+            self.rows[index]["lesion_id"]
+            for index, row in enumerate(self.rows)
+            if index not in evaluation["id"]
+            and row["lesion_id"] in {self.rows[i]["lesion_id"] for i in evaluation["id"]}
+        }
+        self.assertEqual(
+            leaky["shared"]["training / id validation"], {"images": 0, "lesions": len(siblings)}
+        )
+        self.assertEqual(leaky["shared"]["training / ood validation"], {"images": 0, "lesions": 0})
+        self.assertGreater(leaky["training"]["images"], healthy["training"]["images"])
+        sources = result["sources"]
+        self.assertEqual(sum(source["images"] for source in sources.values()), 22)
+        self.assertEqual(sources["far"]["number"], 1)
+        config_path = self.root / "ham10000.json"
+        config_path.write_text(json.dumps(asdict(self.config)), encoding="utf-8")
+        output = self.root / "audit" / "ham10000_audit.json"
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = ham10000_data.main(
+                ["audit", "--config", str(config_path), "--output", str(output)]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output.read_text(encoding="utf-8")), result)
 
     def test_admitting_the_validation_source_leaks_and_the_sealed_source_never_trains(self):
         everything = ham10000_data.training_split(self.config, self.rows, lambda _number: True)

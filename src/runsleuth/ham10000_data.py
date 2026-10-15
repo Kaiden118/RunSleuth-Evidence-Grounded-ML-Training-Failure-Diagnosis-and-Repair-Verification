@@ -23,6 +23,8 @@ depend on the script.
 
     python -m runsleuth.ham10000_data prepare --config configs/ham10000.json
     python -m runsleuth.ham10000_data summary --config configs/ham10000.json
+    python -m runsleuth.ham10000_data audit --config configs/ham10000.json \
+        --output evaluations/ham10000_audit.json
 """
 
 import argparse
@@ -53,6 +55,13 @@ PUBLISHED = {
     "HAM10000_metadata.csv": "8f85fb1aa29d80a2797247e434deb79d",
 }
 MALIGNANT = frozenset({"mel", "bcc", "akiec"})
+# The pairs of splits an audit checks for shared images and lesions.
+AUDIT_PAIRS = (
+    ("training", "id validation"),
+    ("training", "ood validation"),
+    ("training", "sealed"),
+    ("id validation", "ood validation"),
+)
 IMAGE_NAME = re.compile(r"(?:[^/]+/)?(ISIC_\d{7})\.jpg")
 SCHEMA_VERSION = 1
 
@@ -363,15 +372,106 @@ def summary(config: HamConfig, rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _describe(rows: list[dict[str, Any]], indices: list[int]) -> dict[str, Any]:
+    """Images, lesions, malignant share and sources of a set of images."""
+    return {
+        "images": len(indices),
+        "lesions": len({rows[index]["lesion_id"] for index in indices}),
+        "malignant_share": (
+            round(sum(rows[index]["label"] for index in indices) / len(indices), 3)
+            if indices
+            else None
+        ),
+        "by_source": dict(sorted(Counter(rows[index]["source"] for index in indices).items())),
+    }
+
+
+def audit(
+    config: HamConfig, rows: list[dict[str, Any]], manifest: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Every split of the data and what any two of them share, under either held-out key.
+
+    A correct script, keyed by lesion, must share no image and no lesion between
+    training and any validation split; keyed by image, only the lesions of the
+    in-distribution validation images are shared, never the images themselves.
+    """
+    evaluation = evaluation_split(config, rows)
+    sealed = [index for index, row in enumerate(rows) if row["source"] == config.sealed_source]
+    held_out = (config.sources[config.ood_source], config.sources[config.sealed_source])
+    keys = {"keyed_by_lesion": by_lesion, "keyed_by_image": lambda image_id, _lesion: image_id}
+    training = {}
+    for name, key in keys.items():
+        splits = {
+            "training": training_split(config, rows, lambda number: number not in held_out, key),
+            "id validation": evaluation["id"],
+            "ood validation": evaluation["ood"],
+            "sealed": sealed,
+        }
+        lesions = {
+            split: {rows[index]["lesion_id"] for index in indices}
+            for split, indices in splits.items()
+        }
+        training[name] = {
+            "training": _describe(rows, splits["training"]),
+            "shared": {
+                f"{first} / {second}": {
+                    "images": len(set(splits[first]) & set(splits[second])),
+                    "lesions": len(lesions[first] & lesions[second]),
+                }
+                for first, second in AUDIT_PAIRS
+            },
+        }
+    sources = {}
+    for name in sorted(config.sources, key=config.sources.get):
+        of_source = [index for index, row in enumerate(rows) if row["source"] == name]
+        sources[name] = {"number": config.sources[name], **_describe(rows, of_source)}
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "task": "ham10000_audit",
+        "dataset": {
+            "doi": DOI,
+            "license": LICENSE,
+            "images": len(rows),
+            "lesions": len({row["lesion_id"] for row in rows}),
+            "published_md5": (manifest or {}).get("published_md5"),
+        },
+        "config": {
+            "sources": dict(config.sources),
+            "ood_source": config.ood_source,
+            "sealed_source": config.sealed_source,
+            "id_val_fraction": config.id_val_fraction,
+            "subset_seed": config.subset_seed,
+            "max_ood_val_samples": config.max_ood_val_samples,
+            "image_size": config.image_size,
+        },
+        "sources": sources,
+        "validation": {
+            "id validation": _describe(rows, evaluation["id"]),
+            "ood validation": _describe(rows, evaluation["ood"]),
+            "sealed": _describe(rows, sealed),
+        },
+        "training": training,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=("prepare", "summary"))
+    parser.add_argument("command", choices=("prepare", "summary", "audit"))
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--output", type=Path, help="Where audit writes its JSON.")
     args = parser.parse_args(argv)
     config = HamConfig.load(args.config)
     if args.command == "prepare":
         print(f"prepared {prepare(config)}")
-    print(json.dumps(summary(config, load(config).rows), indent=2))
+    data = load(config)
+    if args.command == "audit":
+        result = audit(config, data.rows, data.manifest)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps(result, indent=2))
+        return 0
+    print(json.dumps(summary(config, data.rows), indent=2))
     return 0
 
 

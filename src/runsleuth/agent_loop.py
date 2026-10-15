@@ -8,7 +8,11 @@ own claim: whether training is correct now.
 What a training run returns to the agent is decided by the caller, which is how a
 study varies the evidence an agent gets; this loop only relays it. The loop makes no
 decision about the repair either: a claim is what the agent said, never a verdict.
-Every model call, tool call and result is recorded.
+Every model call, tool call and result is recorded, and with each call the model the
+provider says served it and the cached and reasoning tokens it reports, so a run can
+be costed and a model that changed behind its name can be seen. With echo_reasoning,
+each reply's reasoning_content goes back to the provider with the reply, as DeepSeek's
+thinking mode requires once tools are offered; other providers are not sent it.
 
 The client is an OpenAI-compatible one with tool calling (see llm_client).
 """
@@ -96,16 +100,44 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _with_provider_content(entry: dict[str, Any], source: Any) -> dict[str, Any]:
+def _with_provider_content(
+    entry: dict[str, Any], source: Any, *, reasoning: bool = False
+) -> dict[str, Any]:
     """Return what a provider attached to its reply along with the reply.
 
     Gemini signs its function calls (extra_content.google.thought_signature) and
-    rejects a conversation in which a call comes back without its signature.
+    rejects a conversation in which a call comes back without its signature. DeepSeek
+    rejects one in which a reply comes back without its reasoning_content, which is
+    returned only when reasoning is asked for.
     """
     extra = getattr(source, "extra_content", None)
     if extra is not None:
         entry["extra_content"] = extra
+    thought = getattr(source, "reasoning_content", None) if reasoning else None
+    if thought is not None:
+        entry["reasoning_content"] = thought
     return entry
+
+
+def _call_usage(response: Any) -> dict[str, Any]:
+    """What one model call cost, as the provider reports it; None where it says nothing.
+
+    Cached input tokens are prompt_tokens_details.cached_tokens (OpenAI and most
+    compatible endpoints) or prompt_cache_hit_tokens (DeepSeek); reasoning tokens are
+    completion_tokens_details.reasoning_tokens.
+    """
+    usage = getattr(response, "usage", None)
+    cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", None)
+    if cached is None:
+        cached = getattr(usage, "prompt_cache_hit_tokens", None)
+    details = getattr(usage, "completion_tokens_details", None)
+    return {
+        "served_model": getattr(response, "model", None),
+        "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+        "output_tokens": getattr(usage, "completion_tokens", 0) or 0,
+        "cached_input_tokens": cached,
+        "reasoning_tokens": getattr(details, "reasoning_tokens", None),
+    }
 
 
 def _rejected(status_code: Any) -> bool:
@@ -126,6 +158,7 @@ def run_agent(
     pause: float = 0.0,
     error_wait: float = 30.0,
     max_api_errors: int = 3,
+    echo_reasoning: bool = False,
     sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
     """Let the model work on a workspace until it finishes or a limit stops it.
@@ -136,6 +169,7 @@ def run_agent(
     text) or api_error. claim is the agent's own conclusion, None unless it finished.
     pause is waited before every model call and error_wait after a failed one, for
     rate-limited providers; a request the provider rejects is not sent again.
+    echo_reasoning sends each reply's reasoning_content back with it.
     """
     workspace = Path(workspace)
     script, statement = workspace / SCRIPT_NAME, workspace / STATEMENT_NAME
@@ -154,7 +188,7 @@ def run_agent(
         },
     ]
     record: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "task": "agent_loop",
         "model": model,
         "prompt_version": PROMPT_VERSION,
@@ -168,6 +202,11 @@ def run_agent(
         "training_runs": 0,
         "input_tokens": 0,
         "output_tokens": 0,
+        # Totals of what the provider reported; None if it never reported them.
+        "cached_input_tokens": None,
+        "reasoning_tokens": None,
+        "served_models": [],
+        "echoes_reasoning": echo_reasoning,
         "api_errors": [],
         "initial_script_sha256": _sha256(initial),
         "final_script_sha256": None,
@@ -249,12 +288,20 @@ def run_agent(
                 sleep(error_wait)
             continue
         record["model_calls"] += 1
-        usage = getattr(response, "usage", None)
-        record["input_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
-        record["output_tokens"] += getattr(usage, "completion_tokens", 0) or 0
+        usage = _call_usage(response)
+        record["input_tokens"] += usage["input_tokens"]
+        record["output_tokens"] += usage["output_tokens"]
+        for name in ("cached_input_tokens", "reasoning_tokens"):
+            if usage[name] is not None:
+                record[name] = (record[name] or 0) + usage[name]
+        if (
+            usage["served_model"] is not None
+            and usage["served_model"] not in record["served_models"]
+        ):
+            record["served_models"].append(usage["served_model"])
         message = response.choices[0].message
         calls = list(getattr(message, "tool_calls", None) or [])
-        step = {"content": message.content or "", "tool_calls": []}
+        step = {"content": message.content or "", "tool_calls": [], **usage}
         record["steps"].append(step)
         if not calls:
             text_replies += 1
@@ -263,7 +310,9 @@ def run_agent(
                 break
             messages.append(
                 _with_provider_content(
-                    {"role": "assistant", "content": message.content or ""}, message
+                    {"role": "assistant", "content": message.content or ""},
+                    message,
+                    reasoning=echo_reasoning,
                 )
             )
             messages.append(
@@ -291,6 +340,7 @@ def run_agent(
                     ],
                 },
                 message,
+                reasoning=echo_reasoning,
             )
         )
         for call in calls:

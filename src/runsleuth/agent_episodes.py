@@ -922,6 +922,11 @@ def build_parser() -> argparse.ArgumentParser:
     pilot.add_argument("--repetitions", type=int, default=3)
     pilot.add_argument("--pause", type=float, default=4.0, help="Seconds before a model call.")
     pilot.add_argument("--error-wait", type=float, default=60.0, help="Seconds after an error.")
+    pilot.add_argument(
+        "--echo-reasoning",
+        action="store_true",
+        help="Send each reply's reasoning_content back; DeepSeek's thinking mode needs it.",
+    )
     show = commands.add_parser("summarize", help="Summarize the episodes of a pilot directory.")
     review = commands.add_parser(
         "review", help="Show the scripts of a pilot directory that still need a review."
@@ -998,6 +1003,7 @@ def main(argv: list[str] | None = None) -> int:
         provider=args.provider,
         pause=args.pause,
         error_wait=args.error_wait,
+        echo_reasoning=args.echo_reasoning,
         max_api_errors=5,
     )
     print(summary_text(summary))

@@ -296,6 +296,63 @@ class AgentLoopTests(unittest.TestCase):
         unsigned = client.requests[2]["messages"][2]
         self.assertEqual(sorted(unsigned), ["content", "role", "tool_calls"])
 
+    def test_each_call_records_the_model_that_served_it_and_the_tokens_it_reports(self):
+        # OpenAI reports cached tokens in prompt_tokens_details, DeepSeek at the top level.
+        first = reply(("read_file", {"name": "TASK.md"}), tokens=(1000, 300))
+        first.model = "provider-model-0813"
+        first.usage.prompt_tokens_details = SimpleNamespace(cached_tokens=600)
+        first.usage.completion_tokens_details = SimpleNamespace(reasoning_tokens=250)
+        second = finish()
+        second.model = "provider-model-0901"
+        second.usage.prompt_cache_hit_tokens = 900
+        record, _ = self.work(self.workspace(HEALTHY), first, second)
+        self.assertEqual(record["schema_version"], 2)
+        self.assertEqual(record["served_models"], ["provider-model-0813", "provider-model-0901"])
+        self.assertEqual((record["cached_input_tokens"], record["reasoning_tokens"]), (1500, 250))
+        self.assertEqual((record["input_tokens"], record["output_tokens"]), (1100, 320))
+        step = record["steps"][0]
+        self.assertEqual(
+            {
+                name: step[name]
+                for name in ("served_model", "cached_input_tokens", "reasoning_tokens")
+            },
+            {
+                "served_model": "provider-model-0813",
+                "cached_input_tokens": 600,
+                "reasoning_tokens": 250,
+            },
+        )
+        self.assertIsNone(record["steps"][1]["reasoning_tokens"])
+        # A provider that reports none of it leaves the totals at None.
+        silent, _ = self.work(self.workspace(HEALTHY), finish())
+        self.assertEqual(
+            (silent["cached_input_tokens"], silent["reasoning_tokens"], silent["served_models"]),
+            (None, None, []),
+        )
+        self.assertFalse(silent["echoes_reasoning"])
+
+    def test_reasoning_goes_back_to_the_provider_only_when_asked(self):
+        def thinking(*replies):
+            for answer in replies:
+                answer.choices[0].message.reasoning_content = "I should read the task first."
+            return replies
+
+        echoed, client = self.work(
+            self.workspace(HEALTHY),
+            *thinking(reply(("read_file", {"name": "TASK.md"})), reply(content="Hmm."), finish()),
+            echo_reasoning=True,
+        )
+        self.assertTrue(echoed["echoes_reasoning"])
+        sent = client.requests[2]["messages"]
+        self.assertEqual(sent[2]["reasoning_content"], "I should read the task first.")
+        self.assertEqual(sent[4]["reasoning_content"], "I should read the task first.")
+        self.assertNotIn("reasoning_content", sent[2]["tool_calls"][0])
+        _, quiet = self.work(
+            self.workspace(HEALTHY),
+            *thinking(reply(("read_file", {"name": "TASK.md"})), finish()),
+        )
+        self.assertNotIn("reasoning_content", quiet.requests[1]["messages"][2])
+
     def test_the_record_is_json_and_names_the_prompt_it_used(self):
         record, client = self.work(self.workspace(HEALTHY), finish())
         saved = json.loads(json.dumps(record))

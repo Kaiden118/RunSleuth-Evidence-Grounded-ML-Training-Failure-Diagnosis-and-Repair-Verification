@@ -251,6 +251,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--model", help="Defaults to the provider's environment variable.")
     run.add_argument("--pause", type=float, default=4.0, help="Seconds before a model call.")
     run.add_argument("--error-wait", type=float, default=60.0, help="Seconds after an error.")
+    run.add_argument(
+        "--echo-reasoning",
+        action="store_true",
+        help="Send each reply's reasoning_content back; DeepSeek's thinking mode needs it.",
+    )
     summarize = commands.add_parser("summarize", help="Summarize one model's episodes.")
     for command in (run, summarize):
         command.add_argument("--name", required=True, help="The model's directory in the study.")
@@ -302,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
         pause=args.pause,
         error_wait=args.error_wait,
         max_api_errors=5,
+        echo_reasoning=args.echo_reasoning,
     )
     show(agent_episodes.summary_text(summary))
     if summary["provider_failures"]:

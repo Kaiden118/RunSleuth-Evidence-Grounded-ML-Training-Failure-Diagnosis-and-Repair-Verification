@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python\&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch\&logoColor=white)
 ![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?logo=huggingface\&logoColor=black)
-![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20OpenAI--compatible%20%7C%20Ollama-8E75B2)
+![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20DeepSeek%20%7C%20OpenAI--compatible%20%7C%20Ollama-8E75B2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 RunSleuth finds silent bugs in PyTorch training runs, the kind that never crash and
@@ -140,9 +140,12 @@ RunSleuth's evidence help the agent, or catch it?
 - **Labels:** hidden contract tests written from the task statement, independent of
   RunSleuth.
 - **Verdict:** every final script is retrained, then accepted, reviewed or rejected.
+- **Models:** Gemini 3.5 Flash-Lite, GPT-6 Luna, DeepSeek V4.1 Flash, Muse Spark 1.3,
+  Qwen3.8-27B.
 
 Tasks, conditions, five held-out seeds and the analysis were frozen on 2026-10-13,
-before the first episode ran. The first model is running; there are no results yet.
+before the first episode ran. Gemini 3.5 Flash-Lite and GPT-6 Luna have run all 550
+episodes each and DeepSeek V4.1 Flash is running; results follow once every model has run.
 Agent-edited scripts run in a subprocess under a Python-level guard, not in a container.
 
 ```bash
@@ -162,7 +165,7 @@ python -m runsleuth.agent_analysis artifacts/agent_study/<model>
 | Repair tasks and harness for LLM agents                          |   ☑    |
 | Agent loop, contract tests, pilot studies                        |   ☑    |
 | Agent study frozen: 22 tasks, 5 conditions, 5 held-out seeds     |   ☑    |
-| Agent study runs on several LLMs                                 |   ◐    |
+| Agent study runs: 2 of 5 LLMs done                               |   ◐    |
 | Second dataset (HAM10000) and a second script structure          |   ◐    |
 | External agent with and without RunSleuth, LLM-reviewer baseline |   ☐    |
 | Report and release                                               |   ☐    |

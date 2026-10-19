@@ -1,7 +1,8 @@
 """Fine-tune ResNet18 to tell malignant from benign skin lesions in HAM10000 images.
 
-The harness imports this file, supplies the images, calls the functions below and
-evaluates the model itself after every epoch.
+The harness imports this file, supplies the images and uses the functions below. It
+hands train_one_epoch the images as they come and evaluates the model itself after
+every epoch.
 """
 
 import torch

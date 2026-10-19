@@ -6,6 +6,7 @@ and that runs only after the agent has finished:
 
     training_hospitals      1. which hospitals are trained on
     input_normalization     2. what training and evaluation do to the patches
+    training_inputs         2. what the network is trained on: each batch normalized once
     model                   3. a pretrained ResNet18 with a new two-output final layer
     all_parameters_trained  4. every parameter is trainable, optimized and changes
     training_mode           4. the network is in training mode whenever it is trained
@@ -29,12 +30,19 @@ specification. It is not a proof that the script is correct: a check can be wron
 the statement does not cover everything a training script can get wrong. Reviews
 (agent_review) audit the checks, and the trained model's metrics are recorded apart.
 
+Version 3 (2026-10-19) adds training_inputs. Version 2 called the two prepare
+functions directly and never looked at what the network receives in train_one_epoch,
+so a script that fed the network unnormalized patches passed it. Stage one's labels
+were made with version 2; `audit` runs this version on a study's final scripts beside
+them, without changing them.
+
 The checks share no code with the verifier. They use the harness only to load a
 script under its guards and to build a training set, and never read run telemetry,
 evidence or signatures.
 
     python -m runsleuth.agent_contract run --script workspace/train.py
     python -m runsleuth.agent_contract check
+    python -m runsleuth.agent_contract audit artifacts/agent_study/<model>
 """
 
 import argparse
@@ -42,8 +50,11 @@ import json
 import math
 import subprocess
 import sys
+import tempfile
 import types
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -61,10 +72,11 @@ from runsleuth.agent_workspace import (
     synthetic_task_data,
 )
 
-CONTRACT_VERSION = 2
+CONTRACT_VERSION = 3
 CLAUSES = (
     "training_hospitals",
     "input_normalization",
+    "training_inputs",
     "model",
     "all_parameters_trained",
     "training_mode",
@@ -107,6 +119,9 @@ RUNS = ((3, 4), (2, 3))
 BATCH_SIZE = 4
 PATCH_SIZE = 96
 TOLERANCE = 1e-6
+# A script may normalize with other operations than the check, so its inputs may differ
+# in the last bits.
+INPUT_TOLERANCE = 1e-5
 
 
 def _passed() -> dict[str, Any]:
@@ -157,6 +172,34 @@ def _input_normalization(module: types.ModuleType, patch_size: int) -> dict[str,
     return _passed()
 
 
+def _normalized(images: torch.Tensor) -> torch.Tensor:
+    return (images - torch.tensor(MEAN).view(1, 3, 1, 1)) / torch.tensor(STD).view(1, 3, 1, 1)
+
+
+def _training_inputs(seen: dict[str, Any]) -> dict[str, Any]:
+    """What the network is trained on: every batch it is given, normalized once."""
+    inputs, batches = seen["training_inputs"], seen["batches"]
+    if not inputs:
+        return _failed("train_one_epoch never gave the network a batch")
+
+    def among(received: torch.Tensor, transform: Callable) -> bool:
+        return any(
+            tuple(received.shape) == tuple(batch.shape)
+            and torch.allclose(received, transform(batch), atol=INPUT_TOLERANCE)
+            for batch in batches
+        )
+
+    for received in inputs:
+        if among(received, _normalized):
+            continue
+        if among(received, lambda batch: batch):
+            return _failed("the network is trained on the patches as they come, not normalized")
+        if among(received, lambda batch: _normalized(_normalized(batch))):
+            return _failed("the network is trained on patches normalized twice")
+        return _failed("the network is trained on inputs that are not (patches - mean) / std")
+    return _passed()
+
+
 def build(module: types.ModuleType, epochs: int, steps: int) -> tuple[Any, Any, Any, dict]:
     """Build the script's model as the harness does, and note what it is made of."""
     torch.manual_seed(0)
@@ -182,6 +225,8 @@ def observe(module: types.ModuleType, epochs: int, steps: int, patch_size: int) 
         "held": {},  # parameter name -> how often the optimizer holds it, where not once
         "outside_training_mode": {},  # module name -> first epoch
         "forward_passes": 0,
+        "batches": [],  # the patches handed to train_one_epoch, as they come
+        "training_inputs": [],  # what the network received while it was trained
     }
     start = {name: value.detach().clone() for name, value in model.named_parameters()}
 
@@ -198,6 +243,8 @@ def observe(module: types.ModuleType, epochs: int, steps: int, patch_size: int) 
 
     def before_forward(_model, _inputs) -> None:
         seen["forward_passes"] += 1
+        if _inputs and isinstance(_inputs[0], torch.Tensor):
+            seen["training_inputs"].append(_inputs[0].detach().clone())
         for name, part in model.named_modules():
             if not part.training:
                 seen["outside_training_mode"].setdefault(name or "the network", seen["epoch"])
@@ -219,6 +266,7 @@ def observe(module: types.ModuleType, epochs: int, steps: int, patch_size: int) 
                 )
                 for _ in range(steps)
             ]
+            seen["batches"].extend(images for images, _labels in batches)
             seen["learning_rates"].append([])
             module.train_one_epoch(model, iter(batches), optimizer, scheduler, loss_function)
     finally:
@@ -377,6 +425,7 @@ def contract_result(
                 if name not in clauses or clauses[name]["passed"]:
                     clauses[name] = failure
             break
+        check("training_inputs", _training_inputs, seen)
         check("model", _model, seen, expected)
         check("all_parameters_trained", _all_parameters_trained, seen)
         check("training_mode", _training_mode, seen)
@@ -485,13 +534,15 @@ FAULT_CLAUSES = {
     "schedule_ends_an_epoch_early": "learning_rate_schedule",
     "schedule_period_in_steps_stepped_per_epoch": "learning_rate_schedule",
     "learning_rate_halved": "optimizer",
-    "same_wrong_normalization_twice": "input_normalization",
+    # Its training normalizes as wrongly as its evaluation, so both clauses fail.
+    "same_wrong_normalization_twice": ("input_normalization", "training_inputs"),
     "head_bias_left_frozen": "all_parameters_trained",
     "head_frozen_from_the_second_epoch": "all_parameters_trained",
     "weight_decay_dropped": "optimizer",
     "training_hospital_left_out": "training_hospitals",
 }
 _HEAD = "    model.fc = nn.Linear(model.fc.in_features, 2)\n"
+_FED = "model(prepare_training_batch(images))"
 _TRAIN = "    model.train()\n    for images, labels in batches:\n"
 _LOOP = "    for images, labels in batches:\n"
 # Scripts beyond the tasks themselves, to see that the checks neither accept only the
@@ -544,6 +595,17 @@ CASES = {
     "sgd_instead_of_adamw": Case(
         ("optimizer",), "The optimizer is SGD.", (("torch.optim.AdamW", "torch.optim.SGD"),)
     ),
+    "training_patches_not_normalized": Case(
+        ("training_inputs",),
+        "train_one_epoch gives the network the patches as they come, taking them to be "
+        "prepared already; two agents wrote this as a repair.",
+        ((_FED, "model(images)"),),
+    ),
+    "training_patches_normalized_twice": Case(
+        ("training_inputs",),
+        "train_one_epoch prepares every batch twice.",
+        ((_FED, "model(prepare_training_batch(prepare_training_batch(images)))"),),
+    ),
     "two_faults_at_once": Case(
         ("training_hospitals", "learning_rate_schedule"),
         "The validation hospital is trained on and the schedule ends an epoch early.",
@@ -563,6 +625,8 @@ _GENERAL_CASES = (
     "training_mode_lost_after_the_first_epoch",
     "sgd_instead_of_adamw",
     "linear_decay",
+    "training_patches_not_normalized",
+    "training_patches_normalized_twice",
 )
 HAM_FAULT_CLAUSES = {
     **{
@@ -617,6 +681,12 @@ STRUCTURED_CASES = {
         "starts the run below the learning rate it asks for.",
         (("    warmup_epochs: int = 0\n", "    warmup_epochs: int = 1\n"),),
     ),
+    "training_preprocessing_removed": Case(
+        ("training_inputs",),
+        "The epoch runner gives the network the patches as they come; an agent wrote this "
+        "as a repair of every correct script it read without running it.",
+        (("model(TRAIN_PREPROCESS.apply(images))", "model(images)"),),
+    ),
     "backbone_frozen_by_the_configuration": Case(
         ("all_parameters_trained",),
         "The configuration freezes the backbone, so only the head trains.",
@@ -649,8 +719,10 @@ def expected_failures(name: str, family: str = "camelyon") -> tuple[str, ...]:
     """The clauses a task or case should fail; none for a correct script."""
     if name in CASES_BY_FAMILY[family]:
         return CASES_BY_FAMILY[family][name].fails
-    faulty = agent_tasks.is_faulty(name, family)
-    return (FAULT_CLAUSES_BY_FAMILY[family][name],) if faulty else ()
+    if not agent_tasks.is_faulty(name, family):
+        return ()
+    clauses = FAULT_CLAUSES_BY_FAMILY[family][name]
+    return (clauses,) if isinstance(clauses, str) else tuple(clauses)
 
 
 def case_source(name: str, family: str = "camelyon") -> str:
@@ -706,6 +778,85 @@ def cases_text(rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def audit(
+    directory: Path,
+    *,
+    runner: Callable[[Path, str], dict[str, Any]] | None = None,
+    progress: Callable[[str], None] = lambda _line: None,
+) -> dict[str, Any]:
+    """Check a study's final scripts with this version beside the results they have.
+
+    Every episode under directory/episodes keeps its contract.json; the audit writes
+    contract_audit.json beside them and returns it. Each distinct script, per family, is
+    checked once, in a child process unless runner is given.
+    """
+    runner = runner or (lambda script, family: run_contract_in_subprocess(script, family=family))
+    checked: dict[tuple[str, str], dict[str, Any]] = {}
+    rows = {}
+    with tempfile.TemporaryDirectory() as temporary:
+        for folder in sorted(Path(directory, "episodes").iterdir()):
+            saved = folder / "episode.json"
+            if not saved.is_file():
+                continue
+            episode = json.loads(saved.read_text(encoding="utf-8"))
+            family = episode.get("family", "camelyon")
+            stored_path = folder / "contract.json"
+            stored = (
+                json.loads(stored_path.read_text(encoding="utf-8")) if stored_path.is_file() else {}
+            )
+            key = (family, episode["final_script"])
+            if key not in checked:
+                script = Path(temporary, f"script_{len(checked)}.py")
+                script.write_text(episode["final_script"], encoding="utf-8", newline="\n")
+                progress(f"[{len(checked) + 1}] {folder.name}")
+                checked[key] = runner(script, family)
+            result = checked[key]
+            rows[folder.name] = {
+                "family": family,
+                "stored_version": stored.get("contract_version"),
+                "stored_status": stored.get("status"),
+                "status": result["status"],
+                "failed": result["failed"],
+            }
+    changed = {
+        name: row
+        for name, row in rows.items()
+        if (row["stored_status"] == "passed") != (row["status"] == "passed")
+    }
+    report = {
+        "schema_version": 1,
+        "task": "agent_contract_audit",
+        "contract_version": CONTRACT_VERSION,
+        "audited_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "episodes": len(rows),
+        "scripts": len(checked),
+        "passed_then_fail": sorted(
+            name for name, row in changed.items() if row["stored_status"] == "passed"
+        ),
+        "failed_then_pass": sorted(
+            name for name, row in changed.items() if row["stored_status"] != "passed"
+        ),
+        "rows": rows,
+    }
+    Path(directory, "contract_audit.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
+    return report
+
+
+def audit_text(report: dict[str, Any]) -> str:
+    lines = [
+        f"{report['episodes']} episodes, {report['scripts']} distinct scripts checked with "
+        f"contract version {report['contract_version']}",
+        f"passed before, fail now: {len(report['passed_then_fail'])}",
+    ]
+    for name in report["passed_then_fail"]:
+        lines.append(f"    {name}: {', '.join(report['rows'][name]['failed'])}")
+    lines.append(f"failed before, pass now: {len(report['failed_then_pass'])}")
+    lines.extend(f"    {name}" for name in report["failed_then_pass"])
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Contract tests for agent scripts.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -716,6 +867,10 @@ def build_parser() -> argparse.ArgumentParser:
     for command in (run, check):
         command.add_argument("--patch-size", type=int, help="The family's size if unset.")
         command.add_argument("--family", choices=tuple(SPECS), default="camelyon")
+    audited = commands.add_parser(
+        "audit", help="Check a study directory's final scripts beside their stored results."
+    )
+    audited.add_argument("directory", type=Path)
     return parser
 
 
@@ -726,6 +881,10 @@ def main(argv: list[str] | None = None) -> int:
             args.script, args.reference, patch_size=args.patch_size, family=args.family
         )
         print(json.dumps(result))
+        return 0
+    if args.command == "audit":
+        report = audit(args.directory, progress=lambda line: print(line, flush=True))
+        print(audit_text(report))
         return 0
     rows = check_cases(patch_size=args.patch_size, family=args.family)
     print(cases_text(rows))

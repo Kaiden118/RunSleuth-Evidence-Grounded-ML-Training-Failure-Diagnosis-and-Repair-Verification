@@ -164,7 +164,15 @@ class TaskSourceTests(unittest.TestCase):
 
     def test_the_structured_family_states_the_same_and_is_written_otherwise(self):
         structured = agent_tasks.family("camelyon_structured")
-        self.assertEqual(structured.statement, agent_tasks.STATEMENT)
+        # The same requirements; only the sentence on how the harness uses the functions
+        # is said plainly, since stage one's wording misled agents.
+        requirements = agent_tasks.STATEMENT.split("## What the script must do")[1]
+        self.assertEqual(structured.statement.split("## What the script must do")[1], requirements)
+        self.assertEqual(
+            structured.statement,
+            agent_tasks.STATEMENT.replace(agent_tasks._CALLS, agent_tasks._USES),
+        )
+        self.assertNotEqual(structured.statement, agent_tasks.STATEMENT)
         self.assertEqual(structured.tasks, TASKS)
         healthy = agent_tasks.healthy_source("camelyon_structured")
         self.assertGreater(

@@ -327,11 +327,13 @@ HAM_STATEMENT = """\
 `train.py` fine-tunes an ImageNet-pretrained ResNet18 to tell malignant from benign skin
 lesions in 128x128 dermatoscopic images (HAM10000).
 
-A harness imports `train.py`, supplies the images and calls six functions, which must
+A harness imports `train.py`, supplies the images and uses six functions, which must
 keep their names and arguments: `use_for_training`, `held_out_key`,
-`prepare_training_batch`, `prepare_evaluation_batch`, `build` and `train_one_epoch`.
-Before the first epoch and after every epoch the harness itself evaluates the model, in
-evaluation mode, on two validation sets:
+`prepare_training_batch`, `prepare_evaluation_batch`, `build` and `train_one_epoch`. It
+hands `train_one_epoch` the training images as they come, so the script prepares its
+own training inputs, and it applies `prepare_evaluation_batch` to the images it
+evaluates on. Before the first epoch and after every epoch the harness itself evaluates
+the model, in evaluation mode, on two validation sets:
 
 - in-distribution: one image of each of a set of held-out lesions from the sources used
   for training;
@@ -408,6 +410,29 @@ HAM_LOOKALIKES = {name: _for_images(lookalike) for name, lookalike in LOOKALIKES
 
 
 STRUCTURED_TEMPLATE_PATH = Path(__file__).with_name("agent_task_template_structured.py")
+# The camelyon statement, frozen with stage one, says the harness "calls" all five
+# functions. It calls prepare_evaluation_batch, but hands train_one_epoch the patches as
+# they come, and agents read the sentence as normalization done by the harness. The
+# structured family states the same requirements with the interface said plainly.
+_CALLS = (
+    "A harness imports `train.py`, supplies the patches and calls five functions, which\n"
+    "must keep their names and arguments: `use_for_training`, `prepare_training_batch`,\n"
+    "`prepare_evaluation_batch`, `build` and `train_one_epoch`. Before the first epoch and\n"
+    "after every epoch the harness itself evaluates the model, in evaluation mode, on two\n"
+    "validation sets:\n"
+)
+_USES = (
+    "A harness imports `train.py`, supplies the patches and uses five functions, which\n"
+    "must keep their names and arguments: `use_for_training`, `prepare_training_batch`,\n"
+    "`prepare_evaluation_batch`, `build` and `train_one_epoch`. It hands `train_one_epoch`\n"
+    "the training patches as they come, so the script prepares its own training inputs,\n"
+    "and it applies `prepare_evaluation_batch` to the patches it evaluates on. Before the\n"
+    "first epoch and after every epoch the harness itself evaluates the model, in\n"
+    "evaluation mode, on two validation sets:\n"
+)
+if STATEMENT.count(_CALLS) != 1:
+    raise ValueError("the camelyon statement no longer holds the interface sentence")
+STRUCTURED_STATEMENT = STATEMENT.replace(_CALLS, _USES)
 _BUILD = (
     "    model = build_backbone()\n"
     "    replace_head(model, CONFIG.num_classes)\n"
@@ -664,7 +689,7 @@ FAMILIES = {
         Family(
             "camelyon_structured",
             STRUCTURED_TEMPLATE_PATH,
-            STATEMENT,
+            STRUCTURED_STATEMENT,
             STRUCTURED_FAULTS,
             STRUCTURED_UNLISTED_FAULTS,
             STRUCTURED_LOOKALIKES,

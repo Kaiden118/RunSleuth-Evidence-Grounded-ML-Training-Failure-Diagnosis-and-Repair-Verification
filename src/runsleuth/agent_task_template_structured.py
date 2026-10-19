@@ -1,8 +1,9 @@
 """Fine-tune ResNet18 to tell tumor from normal tissue in Camelyon17 patches.
 
-The harness imports this file, supplies the patches, calls the five entry points at the
-end of it (use_for_training, prepare_training_batch, prepare_evaluation_batch, build
-and train_one_epoch) and evaluates the model itself after every epoch.
+The harness imports this file, supplies the patches and uses the five entry points at
+the end of it (use_for_training, prepare_training_batch, prepare_evaluation_batch, build
+and train_one_epoch). It hands train_one_epoch the patches as they come and evaluates
+the model itself after every epoch.
 """
 
 from typing import NamedTuple

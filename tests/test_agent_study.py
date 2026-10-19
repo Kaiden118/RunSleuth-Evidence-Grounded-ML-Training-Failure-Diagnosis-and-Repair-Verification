@@ -21,7 +21,7 @@ except ModuleNotFoundError as error:
 if torch is not None:
     from test_agent_episodes import BUDGET, contract, run_in_process
 
-    from runsleuth import agent_episodes, agent_study
+    from runsleuth import agent_contract, agent_episodes, agent_study
 
 
 @unittest.skipIf(torch is None, "Install torch and torchvision for the study tests")
@@ -74,7 +74,7 @@ class AgentStudyTests(unittest.TestCase):
         self.assertEqual(list(frozen["conditions"]), ["C0", "C3"])
         self.assertEqual(frozen["agent"]["max_tool_calls"], agent_study.MAX_TOOL_CALLS)
         self.assertEqual(frozen["budgets"]["quick"]["epochs"], agent_episodes.QUICK.epochs)
-        self.assertEqual(frozen["contract"]["version"], 2)
+        self.assertEqual(frozen["contract"]["version"], agent_contract.CONTRACT_VERSION)
         self.assertEqual(
             frozen["repair_policy"], {"max_accuracy_drop": 0.01, "max_loss_ratio": 1.1}
         )

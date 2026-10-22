@@ -142,8 +142,9 @@ RunSleuth's evidence help the agent, or catch it?
 - **Models:** Gemini 3.5 Flash-Lite and GPT-6 Luna, 550 episodes each.
 
 Tasks, conditions, five held-out seeds and the analysis were frozen on 2026-10-13,
-before the first episode ran. Both models have run every episode; the results go
-into the report.
+before the first episode ran. Both models have run every episode; in the report this
+is the secondary study, measuring how evidence changes an agent's success, model calls,
+cost and time.
 Agent-edited scripts run in a subprocess under a Python-level guard, not in a container.
 
 ```bash
@@ -157,15 +158,40 @@ python -m runsleuth.agent_analysis artifacts/agent_study/<model>
 In progress. Can acceptance catch a wrong repair without rejecting a correct one that
 is written differently, at a bounded cost?
 
-- **Tasks:** six training pipelines on Camelyon17 and HAM10000 whose faults show only at
-  run time: checkpoint resume, data flow, and the link between training and evaluation.
+- **Projects:** small training pipelines (`config.py`, `data.py`, `train.py`) that own
+  their data, checkpoints and the weights they deliver. The harness may stop a run
+  between epochs and restart it; it records which samples were trained on with which
+  labels, every checkpoint and the weights, and evaluates the delivered weights itself.
+- **Tasks:** faults that show only at run time, each with one case for development and
+  one held out for testing.
 - **Candidates:** repairs by six LLM agents (Gemini 3.5 Flash-Lite, GPT-6 Luna,
-  DeepSeek V4.1 Flash, Muse Spark 1.3, Qwen3.8-27B, Claude Sonnet 5.5), plus certified
-  wrong repairs and legitimate variants, reported apart.
+  DeepSeek V4.1 Flash, Muse Spark 1.3, Qwen3.8-27B, Claude Sonnet 5.5; DeepSeek and Qwen
+  are open-weight), plus constructed wrong repairs and correct variants, reported apart.
 - **Verifiers:** a metric gate, an LLM reviewer (GPT-6.1 Sol), RunSleuth, and RunSleuth
-  checking one requirement at a time as the evidence allows.
-- **Labels:** hidden behavioural tests and blind human review, independent of every
-  verifier.
+  checking one requirement at a time, choosing the next check by what the evidence
+  still leaves open, and sending the rest to review when its budget runs out.
+- **Labels:** hidden behavioural tests, checked on correct and wrong projects before
+  use, and blind review by two annotators. No verifier sees either.
+- **Reported:** wrong repairs accepted, correct ones rejected, the share decided
+  without review, and the cost of checking, each with its denominator.
+
+| Task | Data | Status |
+|---|---|:---:|
+| Training-data filter | Camelyon17 | ☑ |
+| Restart after a stop | Camelyon17 | ☑ |
+| Delivered weights | Camelyon17 | ☐ |
+| Restart after a stop | HAM10000 | ☐ |
+| Image cache | HAM10000 | ☐ |
+| Label mapping | HAM10000 | ☐ |
+
+Verifiers are developed on development cases only and frozen before any test
+candidate is generated.
+
+```bash
+python -m runsleuth.pipeline_tasks list
+python -m runsleuth.pipeline_contract check
+python -m runsleuth.pipeline_workspace check --output <dir> --data camelyon --config configs/camelyon17_clean.json
+```
 
 ## Roadmap
 
@@ -178,8 +204,11 @@ is written differently, at a bounded cost?
 | Repair tasks and harness for LLM agents                |   ☑    |
 | Agent loop, contract tests, pilot studies              |   ☑    |
 | Agent study: 22 tasks, 5 conditions, 2 LLMs            |   ☑    |
-| Verification challenge set and run-time pipeline tasks |   ◐    |
+| Pipeline harness and hidden behavioural tests          |   ☑    |
+| Six run-time tasks (2 of 6 done)                       |   ◐    |
+| Baseline verifiers on development cases                |   ☐    |
 | RunSleuth checking one requirement at a time           |   ☐    |
+| Freeze, then test candidates from six LLM agents       |   ☐    |
 | Verifier comparison and blind review                   |   ☐    |
 | Report and release                                     |   ☐    |
 

@@ -276,6 +276,10 @@ class RunTests(unittest.TestCase):
         )
         read = [event for event in pipeline["checkpoints"] if event["action"] == "read"][0]
         self.assertEqual((read["attempt"], read["after_epoch"], read["name"]), (2, 1, "last"))
+        first, resumed = pipeline["tracked"]
+        self.assertEqual((first["model_same_as"], first["optimizer_steps"]), (["initial state"], 0))
+        self.assertEqual(resumed["model_same_as"], ["epoch 1 (attempt 1)"])
+        self.assertEqual(resumed["optimizer_steps"], 6)  # 24 patches in batches of 4
         self.assertEqual(compare_trajectories(report, healthy)["outcome"], "identical_full_run")
         self.assertEqual(
             pipeline["delivery"]["state_sha256"], healthy["pipeline"]["delivery"]["state_sha256"]

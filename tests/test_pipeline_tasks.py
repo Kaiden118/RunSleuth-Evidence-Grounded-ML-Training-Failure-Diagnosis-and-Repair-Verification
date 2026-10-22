@@ -116,7 +116,9 @@ class TaskTests(unittest.TestCase):
         ):
             self.assertIn(stated, CAMELYON_STATEMENT)
         signatures = {item.signature for item in CAMELYON_VERSIONS.values()} - {None}
-        for name in (*CAMELYON_VERSIONS, *TASKS, *signatures):
+        # Tasks name the requirements they test, which the statement states; the
+        # versions and signatures would give away a fault.
+        for name in (*CAMELYON_VERSIONS, *signatures):
             self.assertNotIn(name, CAMELYON_STATEMENT)
 
 
@@ -251,10 +253,27 @@ class CheckTests(unittest.TestCase):
             self.assertEqual(rows[name]["evidence"]["labels_matching"], 1.0)
             self.assertEqual(rows[name]["trajectory"]["outcome"], "diverged")
         # The test variant must not replay the development one.
-        reports = [
-            json.loads(Path(rows[name]["report"]).read_text(encoding="utf-8")) for name in variants
-        ]
-        self.assertEqual(compare_trajectories(*reports)["outcome"], "diverged")
+        reports = {
+            name: json.loads(Path(row["report"]).read_text(encoding="utf-8"))
+            for name, row in rows.items()
+        }
+        self.assertEqual(
+            compare_trajectories(*(reports[name] for name in variants))["outcome"], "diverged"
+        )
+        # Every run but the healthy reference is restarted after its first epoch.
+        for name in ("scheduler_not_restored", "optimizer_not_restored"):
+            self.assertEqual(rows[name]["trajectory"]["outcome"], "diverged")
+        for name in (pipeline_workspace.RESTARTED, "checkpoint_in_parts", "numbered_checkpoints"):
+            self.assertEqual(rows[name]["trajectory"]["outcome"], "identical_full_run")
+            self.assertEqual(len(reports[name]["pipeline"]["attempts"]), 2)
+        restored = reports[pipeline_workspace.RESTARTED]["pipeline"]["tracked"][1]
+        rebuilt = reports["optimizer_not_restored"]["pipeline"]["tracked"][1]
+        for tracked in (restored, rebuilt):
+            self.assertEqual(tracked["model_same_as"], ["epoch 1 (attempt 1)"])
+        self.assertGreater(restored["optimizer_parameters_with_state"], 0)
+        self.assertLess(restored["learning_rates"][0], 1e-4)
+        self.assertEqual(rebuilt["optimizer_parameters_with_state"], 0)
+        self.assertEqual(rebuilt["learning_rates"], [1e-4])
         saved = json.loads((self.root / "check" / "check_report.json").read_text(encoding="utf-8"))
         self.assertEqual(saved, result)
         text = pipeline_workspace.check_text(result)

@@ -89,6 +89,8 @@ The project may already be correct.
 TASKS = {
     "training_data_filter": "A dataset wrapper keeps the training hospitals' patches; "
     "which patches it hands to training, and with which labels.",
+    "restart": "After a stop between two epochs the project resumes from its checkpoint; "
+    "whether it restores everything the rest of the run depends on.",
 }
 
 
@@ -114,6 +116,26 @@ _IMPORT = "from torch.utils.data import DataLoader, Dataset\n"
 _SHUFFLED = (
     "    return DataLoader(dataset, batch_size=config.BATCH_SIZE, shuffle=True, "
     "generator=generator)\n"
+)
+_RESUMED = (
+    "    if config.LAST_CHECKPOINT in run.checkpoints:\n"
+    "        state = run.checkpoints.read(config.LAST_CHECKPOINT)\n"
+    '        model.load_state_dict(state["model"])\n'
+    '        optimizer.load_state_dict(state["optimizer"])\n'
+    '        scheduler.load_state_dict(state["scheduler"])\n'
+    '        start, best_accuracy = state["epoch"] + 1, state["best_accuracy"]\n'
+)
+_SAVED = (
+    "        run.checkpoints.write(\n"
+    "            config.LAST_CHECKPOINT,\n"
+    "            {\n"
+    '                "epoch": epoch,\n'
+    '                "model": model.state_dict(),\n'
+    '                "optimizer": optimizer.state_dict(),\n'
+    '                "scheduler": scheduler.state_dict(),\n'
+    '                "best_accuracy": best_accuracy,\n'
+    "            },\n"
+    "        )\n"
 )
 CAMELYON_VERSIONS = {
     "positions_index_base": Version(
@@ -177,6 +199,71 @@ CAMELYON_VERSIONS = {
                 "    torch.manual_seed(1000 * seed + epoch)\n"
                 "    return DataLoader(dataset, batch_size=config.BATCH_SIZE, shuffle=True)\n",
             ),
+        ),
+    ),
+    "scheduler_not_restored": Version(
+        "restart",
+        "development",
+        False,
+        "A restart rebuilds the schedule instead of restoring it. The cosine is computed "
+        "step by step from the current rate, so the epoch after the restart still has the "
+        "right rate, and the later epochs follow a new cosine from it and decay too slowly.",
+        (("train", '        scheduler.load_state_dict(state["scheduler"])\n', ""),),
+    ),
+    "optimizer_not_restored": Version(
+        "restart",
+        "test",
+        False,
+        "A restart rebuilds the optimizer instead of restoring it: AdamW's moments start "
+        "again from zero and the learning rate from 1e-4.",
+        (("train", '        optimizer.load_state_dict(state["optimizer"])\n', ""),),
+    ),
+    "checkpoint_in_parts": Version(
+        "restart",
+        "development",
+        True,
+        "The model, the optimizer, the schedule and the progress are four checkpoints; the "
+        "progress is written last and resumed from only when it is there.",
+        (
+            (
+                "train",
+                _RESUMED,
+                '    if "progress" in run.checkpoints:\n'
+                '        model.load_state_dict(run.checkpoints.read("model"))\n'
+                '        optimizer.load_state_dict(run.checkpoints.read("optimizer"))\n'
+                '        scheduler.load_state_dict(run.checkpoints.read("scheduler"))\n'
+                '        progress = run.checkpoints.read("progress")\n'
+                '        start, best_accuracy = progress["epoch"] + 1, progress["best_accuracy"]\n',
+            ),
+            (
+                "train",
+                _SAVED,
+                '        run.checkpoints.write("model", model.state_dict())\n'
+                '        run.checkpoints.write("optimizer", optimizer.state_dict())\n'
+                '        run.checkpoints.write("scheduler", scheduler.state_dict())\n'
+                "        run.checkpoints.write(\n"
+                '            "progress", {"epoch": epoch, "best_accuracy": best_accuracy}\n'
+                "        )\n",
+            ),
+        ),
+    ),
+    "numbered_checkpoints": Version(
+        "restart",
+        "test",
+        True,
+        "Every epoch writes a checkpoint named after it, and a restart resumes from the "
+        "latest one there is.",
+        (
+            (
+                "train",
+                "    if config.LAST_CHECKPOINT in run.checkpoints:\n"
+                "        state = run.checkpoints.read(config.LAST_CHECKPOINT)\n",
+                "    numbers = range(1, run.epochs + 1)\n"
+                '    written = [number for number in numbers if f"epoch-{number}" in run.checkpoints]\n'
+                "    if written:\n"
+                '        state = run.checkpoints.read(f"epoch-{max(written)}")\n',
+            ),
+            ("train", "            config.LAST_CHECKPOINT,\n", '            f"epoch-{epoch}",\n'),
         ),
     ),
 }

@@ -11,7 +11,8 @@ is given and what is recorded:
 - the epoch budget, and a preemption: with interrupt_after_epochs the first attempt is
   stopped as it starts the next epoch, and main is called again in freshly loaded
   modules with the same checkpoints, as after a restart;
-- the checkpoints, kept in memory, with every write and read and a hash of each state;
+- the checkpoints, kept in memory, with every write and read and a hash of each state,
+  and what the model and optimizer hold when an attempt starts training;
 - the monitoring of RunMonitor, a hash of the model state after each of the first
   optimizer steps and after every epoch, and the labels the loss was given;
 - an evaluation of the delivered weights on evaluation splits the project never sees.
@@ -342,6 +343,7 @@ class Recorder:
         self.epochs: list[dict[str, Any]] = []
         self.checkpoints: list[dict[str, Any]] = []
         self.attempts: list[dict[str, Any]] = []
+        self.tracked: list[dict[str, Any]] = []
         self.delivered: dict[str, torch.Tensor] | None = None
         self.delivery: dict[str, Any] | None = None
         self.workspace: dict[str, Any] = {
@@ -399,6 +401,20 @@ class Recorder:
             self.monitor.model, self.monitor.optimizer = model, optimizer
         self.remove_hooks()
         self.model, self.optimizer = model, optimizer
+        # What the project starts training from: after a restart, what it restored.
+        states = [state for state in optimizer.state.values() if state]
+        self.tracked.append(
+            {
+                "attempt": self.attempt,
+                "after_epoch": self.last_epoch(),
+                "model_same_as": self.same_as(state_dict_sha256(model.state_dict())),
+                "learning_rates": [float(group["lr"]) for group in optimizer.param_groups],
+                "optimizer_parameters_with_state": len(states),
+                "optimizer_steps": max(
+                    (float(state["step"]) for state in states if "step" in state), default=0.0
+                ),
+            }
+        )
         monitor, steps = self.monitor, self.workspace["step_state_sha256"]
 
         def observe_inputs(_module, inputs) -> None:
@@ -524,6 +540,16 @@ class Recorder:
             raise TypeError("run.deliver takes a state_dict of the model")
         self.delivered = {name: tensor.detach().cpu().clone() for name, tensor in state.items()}
         sha256 = state_dict_sha256(self.delivered)
+        self.delivery = {
+            "attempt": self.attempt,
+            "after_epoch": self.last_epoch(),
+            "state_sha256": sha256,
+            "same_as": self.same_as(sha256),
+            "evaluation": None,
+        }
+
+    def same_as(self, sha256: str) -> list[str]:
+        """The model states of this run that have this hash: its initial state, its epochs."""
         same_as = [
             f"epoch {row['epoch']} (attempt {row['attempt']})"
             for row, epoch_sha256 in zip(
@@ -533,13 +559,7 @@ class Recorder:
         ]
         if sha256 == self.workspace["initial_state_sha256"]:
             same_as.insert(0, "initial state")
-        self.delivery = {
-            "attempt": self.attempt,
-            "after_epoch": self.last_epoch(),
-            "state_sha256": sha256,
-            "same_as": same_as,
-            "evaluation": None,
-        }
+        return same_as
 
 
 class PipelineRun:
@@ -655,7 +675,9 @@ def run_project(
     The report is RunMonitor's, with the workspace record agent_workspace writes (so
     agent_verification can compare the hashed states of two runs), evaluation_holdouts
     from the samples actually read while training, and a pipeline record: the
-    attempts, every epoch's reads, the checkpoint events and the delivery. final_metrics
+    attempts, what the model and optimizer held when each attempt tracked them (after
+    a restart, what was restored), every epoch's reads, the checkpoint events and the
+    delivery. final_metrics
     are the harness's evaluation of the delivered weights; the project's own metrics
     are in each epoch's project_metrics.
 
@@ -764,6 +786,7 @@ def run_project(
     report["evaluation_holdouts"] = _holdouts(recorder)
     report["pipeline"] = {
         "attempts": recorder.attempts,
+        "tracked": recorder.tracked,
         "training_reads": _training_reads(recorder),
         "epochs": recorder.epochs,
         "checkpoints": recorder.checkpoints,
@@ -1025,19 +1048,22 @@ def check_versions(
     timeout: float = 3600.0,
     versions: tuple[str, ...] | None = None,
     family: str = "camelyon_pipeline",
+    interrupt_after_epochs: int | None = 1,
     run: Callable[..., dict[str, Any]] = run_in_subprocess,
     progress: Callable[[str], None] = lambda _line: None,
 ) -> dict[str, Any]:
     """Train every version for the same budget and diagnose each run against the healthy one.
 
-    The healthy project also runs a second time, stopped after its first epoch and
-    restarted (healthy_restarted), and is as_expected only if it then trains exactly
-    the uninterrupted run. Any other version is as_expected when its run completes and
-    is diagnosed with its signature, or with no_known_fault for a correct version or a
-    fault the library has no signature for. trajectory compares the hashed model
-    states with the healthy run's (see agent_verification). The check stops if the
-    healthy run does not complete, and is written to check_report.json in output_dir,
-    which must be new.
+    The healthy project trains uninterrupted: it is the reference. Every other run is
+    stopped after interrupt_after_epochs epochs and restarted, as the statement allows,
+    so that a project that cannot resume shows it; the healthy project runs so once
+    more (healthy_restarted) and is as_expected only if it then trains exactly the
+    uninterrupted run. Any other version is as_expected when its run completes and is
+    diagnosed with its signature, or with no_known_fault for a correct version or a
+    fault the library has no signature for. trajectory compares the hashed model states
+    with the healthy run's (see agent_verification). The check stops if the healthy run
+    does not complete, and is written to check_report.json in output_dir, which must
+    be new. With interrupt_after_epochs None nothing is restarted.
     """
     names = pipeline_tasks.family(family).names if versions is None else versions
     if HEALTHY not in names:
@@ -1045,7 +1071,8 @@ def check_versions(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True)
     library, reports, rows = load_library(), {}, []
-    ordered = (HEALTHY, RESTARTED, *(name for name in names if name != HEALTHY))
+    restarted = (RESTARTED,) if interrupt_after_epochs is not None else ()
+    ordered = (HEALTHY, *restarted, *(name for name in names if name != HEALTHY))
     for number, name in enumerate(ordered, start=1):
         progress(f"[{number}/{len(ordered)}] training {name}")
         source = HEALTHY if name == RESTARTED else name
@@ -1058,7 +1085,7 @@ def check_versions(
             epochs=epochs,
             seed=seed,
             device=device,
-            interrupt_after_epochs=1 if name == RESTARTED else None,
+            interrupt_after_epochs=None if name == HEALTHY else interrupt_after_epochs,
             max_eval_samples=max_eval_samples,
             timeout=timeout,
         )
@@ -1107,6 +1134,7 @@ def check_versions(
             "epochs": epochs,
             "seed": seed,
             "max_eval_samples": max_eval_samples,
+            "interrupt_after_epochs": interrupt_after_epochs,
         },
         "versions_as_expected": sum(row["as_expected"] for row in rows),
         "versions": rows,
@@ -1165,6 +1193,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="Run a project under monitoring.")
     run.add_argument("--project", type=Path, required=True)
     run.add_argument("--output", type=Path, required=True, help="New run directory.")
+    run.add_argument("--epochs", type=int, default=2)
     run.add_argument(
         "--interrupt-after-epochs",
         type=int,
@@ -1181,10 +1210,17 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument(
         "--family", choices=tuple(pipeline_tasks.FAMILIES), default="camelyon_pipeline"
     )
+    # Three epochs, so that a schedule that is not restored shows after a restart.
+    check.add_argument("--epochs", type=int, default=3)
+    check.add_argument(
+        "--interrupt-after-epochs",
+        type=int,
+        default=1,
+        help="Restart every run but the healthy reference after this many epochs (0: none).",
+    )
     for command in (run, check):
         command.add_argument("--data", choices=DATA_SOURCES, required=True)
         command.add_argument("--config", type=Path, help="Camelyon17 config file.")
-        command.add_argument("--epochs", type=int, default=2)
         command.add_argument("--seed", type=int, default=7)
         command.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
         command.add_argument(
@@ -1211,6 +1247,7 @@ def main(argv: list[str] | None = None) -> int:
             timeout=args.timeout,
             versions=None if args.versions is None else tuple(args.versions),
             family=args.family,
+            interrupt_after_epochs=args.interrupt_after_epochs or None,
             progress=lambda line: print(line, flush=True),
         )
         print(check_text(result))

@@ -2,22 +2,31 @@
 
 TASK.md (pipeline_tasks) is the public specification an agent works from. This module
 turns its requirements into checks that the agent never sees and that run only after
-the agent has finished. Version 1 checks the first requirement, the training data:
+the agent has finished:
 
     training_samples   1. every epoch trains on each patch of hospitals 0, 3 and 4
                           exactly once, and on no other patch, inside run.epoch
     training_labels    1. each of those patches is trained on with its own label
+    restart            5. a run stopped as it starts an epoch and restarted trains
+                          exactly as the uninterrupted run
 
-The other requirements get their clauses with the tasks that need them.
+The other requirements get their clauses with the tasks that need them. Version 1 had
+the first two; version 2 (2026-10-22) adds restart.
 
 The checks call the project's main() as the harness does, with a run of their own: on
-the CPU, for two epochs, with candidates whose pixels say which patch they are, in a
-pattern that per-channel normalization keeps. A patch counts as trained on when the
-gradient of a backward pass reaches the network's output for it, so a forward without
-a backward (validation, or measuring training accuracy) does not count, whether or not
-gradients were enabled. Its label is the target of the cross-entropy computed on that
-output. The candidates come in two layouts, hospital by hospital as Camelyon17 lists
-them and mixed, with unequal numbers of patches per hospital and more than a batch.
+the CPU, with candidates whose pixels say which patch they are, in a pattern that
+per-channel normalization keeps. A patch counts as trained on when the gradient of a
+backward pass reaches the network's output for it, so a forward without a backward
+(validation, or measuring training accuracy) does not count, whether or not gradients
+were enabled. Its label is the target of the cross-entropy computed on that output.
+For the training data the project trains two epochs on candidates in two layouts,
+hospital by hospital as Camelyon17 lists them and mixed, with unequal numbers of
+patches per hospital and more than a batch. For the restart it trains three epochs
+uninterrupted, and again stopped after the first and after the second epoch and
+restarted, as the harness restarts it: main is called again in freshly loaded modules
+with the checkpoints written so far. The restarted runs must train the same epochs, on
+the same batches, with the same learning rates at every step, ending every epoch with
+the same weights; the optimizer's state shows in the weights of the epochs after it.
 
 Passing every check is this benchmark's working definition of a project that meets the
 requirements the checks cover. It is not a proof that the project is correct.
@@ -31,8 +40,10 @@ run report, evidence or signatures.
 """
 
 import argparse
+import hashlib
 import io
 import json
+import math
 import operator
 import subprocess
 import sys
@@ -45,14 +56,15 @@ from typing import Any
 
 import torch
 from torch import nn
+from torch.optim.optimizer import register_optimizer_step_post_hook
 
 from runsleuth import pipeline_tasks
 from runsleuth.agent_workspace import clean_environment
 from runsleuth.pipeline_tasks import HEALTHY
 from runsleuth.pipeline_workspace import check_project, load_project, project_sources
 
-CONTRACT_VERSION = 1
-CLAUSES = ("training_samples", "training_labels")
+CONTRACT_VERSION = 2
+CLAUSES = ("training_samples", "training_labels", "restart")
 TRAINING_HOSPITALS = (0, 3, 4)
 # Candidates per hospital: unequal, and more than a batch of 32 in all.
 CANDIDATES = {0: 9, 1: 7, 3: 14, 4: 17}
@@ -60,6 +72,11 @@ VALIDATION = {0: 2, 3: 2, 4: 2}
 # Each layout runs with a seed of its own.
 LAYOUTS = (("by_hospital", 3), ("mixed", 5))
 EPOCHS = 2
+# The restart: three epochs, stopped after the first or the second. After the first, a
+# schedule computed step by step from the current rate and not restored shows only in
+# the third epoch.
+RESTART_EPOCHS = 3
+STOPS = (1, 2)
 PATCH_SIZE = 96
 # A patch's number is written in bits of channel 0 and their complement in channel 1,
 # after a dark and a bright reference pixel; validation patches are numbered from
@@ -146,13 +163,20 @@ def validation_patches() -> CodedPatches:
     return CodedPatches(codes, [position % 2 for position in range(len(codes))], hospitals)
 
 
+class Stopped(BaseException):
+    """Raised into a project when the checks stop its run; a project cannot name it."""
+
+
 class MemoryCheckpoints:
     """Checkpoints kept in memory, read back as torch.load reads them."""
 
     def __init__(self) -> None:
         self._files: dict[str, bytes] = {}
+        self._stopped = False
 
     def write(self, name: str, state: Any) -> None:
+        if self._stopped:
+            raise Stopped  # A stopped run writes nothing more.
         buffer = io.BytesIO()
         torch.save(state, buffer)
         self._files[name] = buffer.getvalue()
@@ -165,15 +189,28 @@ class MemoryCheckpoints:
 
 
 class ContractRun:
-    """The run a project gets in the checks: everything the statement says run gives."""
+    """The run a project gets in the checks: everything the statement says run gives.
+
+    With stop_after, the run is stopped as it starts an epoch after that many epochs.
+    """
 
     def __init__(
-        self, train: CodedPatches, validation: CodedPatches, *, seed: int, epochs: int
+        self,
+        train: CodedPatches,
+        validation: CodedPatches,
+        *,
+        seed: int,
+        epochs: int,
+        checkpoints: MemoryCheckpoints,
+        stop_after: int | None = None,
+        epoch_ended=lambda _number: None,
     ) -> None:
         self.device, self.seed, self.epochs = torch.device("cpu"), seed, epochs
         self.data = types.SimpleNamespace(train=train, validation=validation)
-        self.checkpoints = MemoryCheckpoints()
+        self.checkpoints = checkpoints
+        self._stop_after, self._epoch_ended = stop_after, epoch_ended
         self._epoch: int | None = None
+        self._trained = 0
         self._delivered = None
 
     def track(self, model: nn.Module, optimizer: torch.optim.Optimizer) -> None:
@@ -181,6 +218,11 @@ class ContractRun:
 
     @contextmanager
     def epoch(self, number: int):
+        if self.checkpoints._stopped:
+            raise Stopped
+        if self._stop_after is not None and self._trained >= self._stop_after:
+            self.checkpoints._stopped = True
+            raise Stopped
         if self._epoch is not None:
             raise RuntimeError("run.epoch cannot be nested")
         self._epoch = number
@@ -188,6 +230,8 @@ class ContractRun:
             yield
         finally:
             self._epoch = None
+        self._trained += 1
+        self._epoch_ended(number)
 
     def log(self, **metrics: float) -> None:
         pass
@@ -196,24 +240,48 @@ class ContractRun:
         self._delivered = state_dict
 
 
-def observe(sources: dict[str, str], layout: str, seed: int) -> dict[str, Any]:
-    """Run a project once on coded candidates; what it trained on, and with which labels.
+def fingerprint(module: nn.Module) -> str:
+    """A hash of a module's parameters and buffers, by name, dtype, shape and bytes."""
+    digest = hashlib.sha256()
+    for name, tensor in sorted(module.state_dict().items()):
+        value = tensor.detach().cpu().contiguous()
+        digest.update(f"{name}|{value.dtype}|{tuple(value.shape)}|".encode())
+        digest.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
 
-    trained has one row per backward pass that reached the network's output: the epoch
-    it happened in (None outside run.epoch), the codes of the batch the network was
-    given, and the targets of the cross-entropy on that output (None if there was none).
+
+def observe(
+    sources: dict[str, str],
+    layout: str,
+    seed: int,
+    *,
+    epochs: int = EPOCHS,
+    stop_after: int | None = None,
+) -> dict[str, Any]:
+    """Run a project on coded candidates, perhaps stopped and restarted; what it did.
+
+    trained has one row per backward pass that reached the network's output: the
+    attempt and the epoch it happened in (None outside run.epoch), the codes of the
+    batch the network was given, and the targets of the cross-entropy on that output
+    (None if there was none). steps has the attempt, epoch and learning rates of every
+    optimizer step, and ended the attempt, number and network fingerprint of every
+    epoch. With stop_after, the first attempt is stopped as it starts an epoch after
+    that many, and main is called again in freshly loaded modules with its checkpoints.
     """
-    train = candidates(layout, seed)
-    run = ContractRun(train, validation_patches(), seed=seed, epochs=EPOCHS)
-    trained: list[dict[str, Any]] = []
-    state: dict[str, Any] = {"depth": 0, "batch": None}
+    train, validation = candidates(layout, seed), validation_patches()
+    checkpoints = MemoryCheckpoints()
+    seen: dict[str, Any] = {"layout": layout, "train": train, "trained": [], "steps": []}
+    seen["ended"] = []
+    state: dict[str, Any] = {"depth": 0, "batch": None, "network": None, "attempt": 0}
+    run: ContractRun | None = None
 
-    def before(_module, args) -> None:
+    def before(module, args) -> None:
         state["depth"] += 1
         if state["depth"] == 1 and args and isinstance(args[0], torch.Tensor):
             if args[0].dim() == 4:
                 # The outermost call on a batch of images: the network.
-                state["batch"] = {"codes": read_codes(args[0]), "output": None, "targets": None}
+                codes = read_codes(args[0])
+                state["batch"] = {"codes": codes, "module": module, "output": None, "targets": None}
 
     def after(_module, _args, output) -> None:
         state["depth"] -= 1
@@ -226,7 +294,23 @@ def observe(sources: dict[str, str], layout: str, seed: int) -> dict[str, Any]:
                 output.register_hook(lambda _gradient, batch=batch: backward(batch))
 
     def backward(batch: dict[str, Any]) -> None:
-        trained.append({"epoch": run._epoch, "codes": batch["codes"], "targets": batch["targets"]})
+        state["network"] = batch["module"]
+        seen["trained"].append(
+            {
+                "attempt": state["attempt"],
+                "epoch": run._epoch,
+                "codes": batch["codes"],
+                "targets": batch["targets"],
+            }
+        )
+
+    def stepped(optimizer, _args, _kwargs) -> None:
+        rates = [float(group["lr"]) for group in optimizer.param_groups]
+        seen["steps"].append((state["attempt"], run._epoch, rates))
+
+    def epoch_ended(number: int) -> None:
+        network = state["network"]
+        seen["ended"].append((state["attempt"], number, network and fingerprint(network)))
 
     cross_entropy = nn.functional.cross_entropy
 
@@ -241,15 +325,34 @@ def observe(sources: dict[str, str], layout: str, seed: int) -> dict[str, Any]:
     handles = [
         nn.modules.module.register_module_forward_pre_hook(before),
         nn.modules.module.register_module_forward_hook(after),
+        register_optimizer_step_post_hook(stepped),
     ]
     try:
-        torch.manual_seed(seed)
-        vars(load_project(sources)["train"])["main"](run)
+        for stop in (stop_after, None) if stop_after is not None else (None,):
+            state.update(attempt=state["attempt"] + 1, depth=0, batch=None, network=None)
+            run = ContractRun(
+                train,
+                validation,
+                seed=seed,
+                epochs=epochs,
+                checkpoints=checkpoints,
+                stop_after=stop,
+                epoch_ended=epoch_ended,
+            )
+            torch.manual_seed(seed)
+            try:
+                vars(load_project(sources)["train"])["main"](run)
+            except Stopped:
+                pass
+            # Whatever the project did with the stop, the attempt ended there.
+            stopped, checkpoints._stopped = checkpoints._stopped, False
+            if not stopped:
+                break
     finally:
         nn.functional.cross_entropy = cross_entropy
         for handle in handles:
             handle.remove()
-    return {"layout": layout, "train": train, "trained": trained}
+    return seen
 
 
 def _count(number: int, noun: str) -> str:
@@ -332,15 +435,74 @@ def _training_labels(seen: dict[str, Any]) -> dict[str, Any]:
     return _passed()
 
 
+def _listed(numbers: list[int]) -> str:
+    return ", ".join(map(str, numbers)) or "none"
+
+
+def _restart_difference(reference: dict[str, Any], restarted: dict[str, Any]) -> str | None:
+    """The first way a restarted run trains differently from the uninterrupted one."""
+    epochs = [number for _, number, _ in reference["ended"]]
+    again = [number for _, number, _ in restarted["ended"]]
+    if again != epochs:
+        return f"trains epochs {_listed(again)} instead of {_listed(epochs)}"
+    for number in epochs:
+        batches = [
+            [row["codes"] for row in seen["trained"] if row["epoch"] == number]
+            for seen in (reference, restarted)
+        ]
+        if batches[0] != batches[1]:
+            return f"trains epoch {number} on other batches"
+        rates = [
+            [step_rates for _, epoch, step_rates in seen["steps"] if epoch == number]
+            for seen in (reference, restarted)
+        ]
+        if len(rates[0]) != len(rates[1]):
+            return f"takes {len(rates[1])} optimizer steps in epoch {number} instead of {len(rates[0])}"
+        for expected, found in zip(*rates, strict=True):
+            if len(expected) != len(found) or not all(
+                math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-15)
+                for a, b in zip(expected, found, strict=True)
+            ):
+                return (
+                    f"trains epoch {number} with learning rate {found[0]:.4g} "
+                    f"instead of {expected[0]:.4g}"
+                )
+    for (_, number, expected), (_, _, found) in zip(
+        reference["ended"], restarted["ended"], strict=True
+    ):
+        # The network is known once a backward pass reached it; a project that trains
+        # outside run.epoch may end an epoch before that, which training_samples reports.
+        if None not in (expected, found) and found != expected:
+            return f"ends epoch {number} with other weights"
+    return None
+
+
+def _restart(sources: dict[str, str]) -> dict[str, Any]:
+    layout, seed = LAYOUTS[0]
+    reference = observe(sources, layout, seed, epochs=RESTART_EPOCHS)
+    for stop in STOPS:
+        try:
+            restarted = observe(sources, layout, seed, epochs=RESTART_EPOCHS, stop_after=stop)
+        except Exception as error:
+            return _failed(
+                f"stopped after epoch {stop} and restarted, the project failed with "
+                f"{type(error).__name__}: {error}"[:300]
+            )
+        difference = _restart_difference(reference, restarted)
+        if difference:
+            return _failed(f"stopped after epoch {stop} and restarted, the run {difference}")
+    return _passed()
+
+
 def contract_result(sources: dict[str, str], family: str = "camelyon_pipeline") -> dict[str, Any]:
     """Check a project's modules against every clause."""
     clauses: dict[str, dict[str, Any]] = {}
 
-    def check(name: str, test, seen: dict[str, Any]) -> None:
+    def check(name: str, test, argument: Any) -> None:
         if name in clauses and not clauses[name]["passed"]:
             return  # Keep the first failure of a clause.
         try:
-            clauses[name] = test(seen)
+            clauses[name] = test(argument)
         except Exception as error:
             clauses[name] = _failed(f"the check failed with {type(error).__name__}: {error}"[:300])
 
@@ -355,6 +517,7 @@ def contract_result(sources: dict[str, str], family: str = "camelyon_pipeline") 
             break
         check("training_samples", _training_samples, seen)
         check("training_labels", _training_labels, seen)
+    check("restart", _restart, sources)
     failed = [name for name in CLAUSES if not clauses[name]["passed"]]
     return {
         "schema_version": 1,
@@ -430,6 +593,8 @@ VERSION_CLAUSES = {
     # Its images come from the wrong positions while its labels come from the right ones.
     "positions_index_base": ("training_samples", "training_labels"),
     "labels_not_filtered": ("training_labels",),
+    "scheduler_not_restored": ("restart",),
+    "optimizer_not_restored": ("restart",),
 }
 _IMPORT = "from torch.utils.data import DataLoader, Dataset\n"
 _ITEM = "        return self.patches.image(self.indices[position]), self.labels[position]\n"
@@ -529,6 +694,51 @@ CASES = {
                 "        with run.epoch(epoch):\n"
                 "            pass\n"
                 "        train_one_epoch(model, loader, optimizer, loss_function, run.device)\n",
+            ),
+        ),
+    ),
+    "epoch_counter_restarts": Case(
+        ("restart",),
+        "A restart restores the checkpoint but counts the epochs from 1 again.",
+        (
+            (
+                "train",
+                '        start, best_accuracy = state["epoch"] + 1, state["best_accuracy"]\n',
+                '        start, best_accuracy = 1, state["best_accuracy"]\n',
+            ),
+        ),
+    ),
+    "weights_not_restored": Case(
+        ("restart",),
+        "A restart restores the optimizer and the schedule but not the weights.",
+        (("train", '        model.load_state_dict(state["model"])\n', ""),),
+    ),
+    "checkpoint_written_before_the_schedule_steps": Case(
+        ("restart",),
+        "The schedule steps after the checkpoint is written, so a restart resumes one step "
+        "behind; an uninterrupted run trains as the healthy one.",
+        (
+            (
+                "train",
+                "        scheduler.step()\n        metrics = evaluate",
+                "        metrics = evaluate",
+            ),
+            (
+                "train",
+                "            },\n        )\n    run.deliver",
+                "            },\n        )\n        scheduler.step()\n    run.deliver",
+            ),
+        ),
+    ),
+    "shuffle_counted_from_the_restart": Case(
+        ("restart",),
+        "The shuffle is seeded by the epochs trained since the start of the attempt, so a "
+        "restarted run repeats the first epoch's order.",
+        (
+            (
+                "train",
+                "        loader = data.training_loader(training, run.seed, epoch)\n",
+                "        loader = data.training_loader(training, run.seed, epoch - start + 1)\n",
             ),
         ),
     ),

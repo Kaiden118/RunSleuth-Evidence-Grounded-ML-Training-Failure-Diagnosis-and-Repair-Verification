@@ -22,6 +22,7 @@ except ModuleNotFoundError as error:
 
 if torch is not None:
     from runsleuth import pipeline_contract, pipeline_workspace
+    from runsleuth.agent_verification import compare_trajectories
 
 VERSION_SOURCES = pipeline_tasks.version_sources  # Bound here, before any test patches it.
 CASE_SOURCES = None if torch is None else pipeline_contract.case_sources
@@ -245,9 +246,15 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(rows["positions_index_base"]["evidence"]["held_out_training_samples"], 8)
         self.assertEqual(rows[HEALTHY]["evidence"]["labels_matching"], 1.0)
         self.assertLess(rows["labels_not_filtered"]["evidence"]["labels_matching"], 1.0)
-        for name in ("subset_random_sampler", "shuffled_by_hand"):
+        variants = ("subset_random_sampler", "seeded_per_epoch")
+        for name in variants:
             self.assertEqual(rows[name]["evidence"]["labels_matching"], 1.0)
             self.assertEqual(rows[name]["trajectory"]["outcome"], "diverged")
+        # The test variant must not replay the development one.
+        reports = [
+            json.loads(Path(rows[name]["report"]).read_text(encoding="utf-8")) for name in variants
+        ]
+        self.assertEqual(compare_trajectories(*reports)["outcome"], "diverged")
         saved = json.loads((self.root / "check" / "check_report.json").read_text(encoding="utf-8"))
         self.assertEqual(saved, result)
         text = pipeline_workspace.check_text(result)
@@ -273,7 +280,7 @@ class CheckTests(unittest.TestCase):
                 data="synthetic",
                 epochs=1,
                 seed=1,
-                versions=("shuffled_by_hand",),
+                versions=("seeded_per_epoch",),
             )
 
 

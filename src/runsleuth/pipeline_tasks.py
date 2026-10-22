@@ -163,19 +163,19 @@ CAMELYON_VERSIONS = {
             ),
         ),
     ),
-    "shuffled_by_hand": Version(
+    "seeded_per_epoch": Version(
         "training_data_filter",
         "test",
         True,
-        "The loader takes the patches in a permutation drawn for the epoch: the same "
-        "patches and labels, in another order.",
+        "Every epoch seeds torch's global generator and the loader shuffles with it: the "
+        "same patches and labels, in another order than the healthy project's and "
+        "subset_random_sampler's.",
         (
-            ("data", _IMPORT, _IMPORT.replace("Dataset", "Dataset, Subset")),
             (
                 "data",
-                _SHUFFLED,
-                "    order = torch.randperm(len(dataset), generator=generator).tolist()\n"
-                "    return DataLoader(Subset(dataset, order), batch_size=config.BATCH_SIZE)\n",
+                "    generator = torch.Generator().manual_seed(1000 * seed + epoch)\n" + _SHUFFLED,
+                "    torch.manual_seed(1000 * seed + epoch)\n"
+                "    return DataLoader(dataset, batch_size=config.BATCH_SIZE, shuffle=True)\n",
             ),
         ),
     ),

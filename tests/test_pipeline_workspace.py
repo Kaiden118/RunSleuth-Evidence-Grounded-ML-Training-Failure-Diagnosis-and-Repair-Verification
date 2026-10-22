@@ -25,15 +25,21 @@ if torch is not None:
 
 TEMPLATES = Path(runsleuth.__file__).parent / "pipeline_templates"
 # The model of the agent_workspace tests: small enough for CPU, with BatchNorm and a
-# 1000-way fc head that the project replaces.
+# 1000-way fc head that the project replaces. Built with weights, its convolution and
+# head take the same values every time, as pretrained weights would.
 TINY_MODEL = """
 
 class Tiny(nn.Module):
-    def __init__(self):
+    def __init__(self, weights=None):
         super().__init__()
         self.backbone = nn.Conv2d(3, 4, kernel_size=3)
         self.norm = nn.BatchNorm2d(4)
         self.fc = nn.Linear(4, 1000)
+        if weights is not None:
+            generator = torch.Generator().manual_seed(0)
+            with torch.no_grad():
+                for value in (*self.backbone.parameters(), *self.fc.parameters()):
+                    value.uniform_(-0.2, 0.2, generator=generator)
 
     def forward(self, inputs):
         return self.fc(torch.relu(self.norm(self.backbone(inputs))).mean(dim=(2, 3)))
@@ -63,7 +69,7 @@ def tiny_sources(*edits: tuple[str, str, str], template: str = "camelyon") -> di
     """A template with the tiny model and four samples a batch, then edits (module, old, new)."""
     sources = template_sources(template)
     replacements = (
-        ("train", "model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)", "model = Tiny()"),
+        ("train", "model = resnet18(", "model = Tiny("),
         ("train", "\n\ndef build_model", TINY_MODEL + "\n\ndef build_model"),
         ("config", "BATCH_SIZE = 32", "BATCH_SIZE = 4"),
         *edits,

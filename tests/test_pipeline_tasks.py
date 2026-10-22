@@ -39,12 +39,12 @@ CASE_SOURCES = None if torch is None else pipeline_contract.case_sources
 def tiny(sources: dict[str, str]) -> dict[str, str]:
     """A project with the tiny model in place of the pretrained ResNet18."""
     train = sources["train"]
-    resnet = "model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)"
+    resnet = "model = resnet18("
     marker = "\n\ndef build_model"
     assert train.count(resnet) == 1 and train.count(marker) == 1
     return {
         **sources,
-        "train": train.replace(resnet, "model = Tiny()").replace(marker, TINY_MODEL + marker),
+        "train": train.replace(resnet, "model = Tiny(").replace(marker, TINY_MODEL + marker),
     }
 
 
@@ -181,7 +181,7 @@ class ContractTests(unittest.TestCase):
     def result(self, sources: dict[str, str]) -> dict:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            return pipeline_contract.contract_result(sources)
+            return pipeline_contract.contract_result(sources, healthy=tiny(CASE_SOURCES(HEALTHY)))
 
     def test_every_version_and_case_fails_exactly_the_clauses_it_should(self):
         for family_name in FAMILIES:
@@ -262,7 +262,10 @@ class ContractTests(unittest.TestCase):
         sources = tiny(CASE_SOURCES("labels_not_filtered"))
         with tempfile.TemporaryDirectory() as directory:
             project = write_project(Path(directory) / "p", sources)
-            child = pipeline_contract.run_contract_in_subprocess(project, timeout=300)
+            healthy = write_project(Path(directory) / "h", tiny(CASE_SOURCES(HEALTHY)))
+            child = pipeline_contract.run_contract_in_subprocess(
+                project, healthy=healthy, timeout=300
+            )
         self.assertEqual(child, self.result(sources))
         self.assertEqual(child["failed"], ["training_labels"])
 

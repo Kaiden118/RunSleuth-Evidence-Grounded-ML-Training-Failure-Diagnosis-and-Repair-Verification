@@ -72,7 +72,7 @@ Samples are read in the main process (`num_workers=0`).
    in an order that is shuffled and depends on nothing but the run's seed and the epoch.
 2. Inputs: subtract the ImageNet mean (0.485, 0.456, 0.406) and divide by the ImageNet
    standard deviation (0.229, 0.224, 0.225) per channel, in training and validation
-   alike, and change nothing else.
+   alike, and change nothing else. The network is given the patches so prepared.
 3. Model: the pretrained ResNet18 with its final layer replaced by a new layer of two
    outputs. Every parameter is trained, and the network is in training mode whenever
    it is trained.
@@ -400,7 +400,7 @@ Samples are read in the main process (`num_workers=0`).
    channel, in training and validation alike. In training, and only there, flip every
    image left-right and up-down, each with probability one half, drawn anew for every
    image in every epoch from nothing but the run's seed and the epoch. Change nothing
-   else.
+   else. The network is given the images so prepared.
 3. Model: the pretrained ResNet18 with its final layer replaced by a new layer of two
    outputs. Every parameter is trained, and the network is in training mode whenever
    it is trained.

@@ -23,7 +23,7 @@ if torch is not None:
     from runsleuth.agent_workspace import ScriptRefused, check_script
     from runsleuth.pipeline_workspace import Samples, check_project, load_project
 
-TEMPLATE = Path(runsleuth.__file__).parent / "pipeline_templates" / "camelyon"
+TEMPLATES = Path(runsleuth.__file__).parent / "pipeline_templates"
 # The model of the agent_workspace tests: small enough for CPU, with BatchNorm and a
 # 1000-way fc head that the project replaces.
 TINY_MODEL = """
@@ -54,13 +54,14 @@ TRAINING = (
 )
 
 
-def template_sources() -> dict[str, str]:
-    return {path.stem: path.read_text(encoding="utf-8") for path in sorted(TEMPLATE.glob("*.py"))}
+def template_sources(template: str = "camelyon") -> dict[str, str]:
+    folder = TEMPLATES / template
+    return {path.stem: path.read_text(encoding="utf-8") for path in sorted(folder.glob("*.py"))}
 
 
-def tiny_sources(*edits: tuple[str, str, str]) -> dict[str, str]:
-    """The template with the tiny model and four patches a batch, then edits (module, old, new)."""
-    sources = template_sources()
+def tiny_sources(*edits: tuple[str, str, str], template: str = "camelyon") -> dict[str, str]:
+    """A template with the tiny model and four samples a batch, then edits (module, old, new)."""
+    sources = template_sources(template)
     replacements = (
         ("train", "model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)", "model = Tiny()"),
         ("train", "\n\ndef build_model", TINY_MODEL + "\n\ndef build_model"),
@@ -141,6 +142,7 @@ class SamplesTests(unittest.TestCase):
         return Samples(
             lambda position: images[position],
             {"labels": [0, 1, 1], "hospitals": [0, 1, 3]},
+            labels=[0, 1, 1],
             reader=reads.append,
         )
 
@@ -162,14 +164,30 @@ class SamplesTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "num_workers=0"):
                 self.samples([])[0]
 
-    def test_columns_need_labels_and_names_of_their_own(self):
-        for columns in (
-            {"hospitals": [0]},
-            {"labels": [0], "image": [0]},
-            {"labels": [0, 1], "x": [0]},
+    def test_columns_need_the_target_and_names_of_their_own(self):
+        for columns, labels in (
+            ({"hospitals": [0]}, [0]),
+            ({"labels": [0], "image": [0]}, [0]),
+            ({"labels": [0, 1], "x": [0, 1]}, [0]),
+            ({"labels": [0], "x": [0, 1]}, [0]),
         ):
             with self.subTest(columns=columns), self.assertRaises(ValueError):
-                Samples(lambda position: torch.zeros(3, 1, 1), columns)
+                Samples(lambda position: torch.zeros(3, 1, 1), columns, labels=labels)
+
+    def test_a_project_may_get_diagnoses_while_the_harness_keeps_the_labels(self):
+        pixels = torch.tensor([0, 255], dtype=torch.uint8).view(2, 1, 1, 1).expand(2, 3, 2, 2)
+        samples = Samples(
+            lambda position: pixels[position],
+            {"diagnoses": ["nv", "akiec"], "lesion_ids": ["a", "b"]},
+            labels=[0, 1],
+            target="diagnoses",
+        )
+        image, diagnosis = samples[1]
+        self.assertEqual((image.dtype, diagnosis), (torch.uint8, "akiec"))
+        self.assertFalse(hasattr(samples, "labels"))
+        ((images, labels),) = samples._batches(8)
+        self.assertEqual((images.dtype, float(images.max())), (torch.float32, 1.0))
+        self.assertEqual(labels.tolist(), [0, 1])
 
     def test_a_state_hash_follows_its_contents(self):
         state = {"epoch": 1, "model": {"w": torch.ones(2)}}
@@ -366,6 +384,67 @@ class RunTests(unittest.TestCase):
         report = self.reports["fails_before_tracking"]
         self.assertEqual((report["status"], report["error"]["type"]), ("failed", "TypeError"))
         self.assertEqual(report["pipeline"]["epochs"], [])
+
+
+@unittest.skipIf(torch is None, "Install torch and torchvision for the pipeline tests")
+class HamRunTests(unittest.TestCase):
+    """The HAM10000 project on synthetic images, three epochs, with and without a restart."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.directory = tempfile.TemporaryDirectory()
+        root = Path(cls.directory.name)
+        cls.reports = {}
+        for name, interrupt in (("healthy", None), ("restarted", 1)):
+            project = write_project(root / name, tiny_sources(template="ham10000"))
+            path = pipeline_workspace.run_project(
+                project,
+                root / "runs" / name,
+                pipeline_workspace.synthetic_ham_pipeline_data,
+                epochs=3,
+                seed=7,
+                device=torch.device("cpu"),
+                interrupt_after_epochs=interrupt,
+            )
+            cls.reports[name] = json.loads(path.read_text(encoding="utf-8"))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.directory.cleanup()
+
+    def test_the_template_may_run(self):
+        self.assertEqual(check_project(template_sources("ham10000")), [])
+
+    def test_the_cache_reads_every_image_once_and_the_labels_follow_the_diagnoses(self):
+        report = self.reports["healthy"]
+        self.assertEqual(report["status"], "completed")
+        first, *later = report["pipeline"]["epochs"]
+        self.assertEqual((first["reads"], first["distinct"]), (24, 24))
+        self.assertEqual(first["loss_targets_matching_read_labels"], 24)
+        for epoch in later:
+            # Cached: nothing is read, so the targets cannot be paired with reads.
+            self.assertEqual(epoch["reads"], 0)
+            self.assertIsNone(epoch["loss_targets_matching_read_labels"])
+        self.assertEqual(report["pipeline"]["training_reads"]["read_while_training"], 24)
+        for holdout in report["evaluation_holdouts"].values():
+            self.assertEqual(holdout["training_samples_in_evaluation_groups"], 0)
+
+    def test_a_restarted_run_with_flips_and_a_cache_continues_the_uninterrupted_one(self):
+        report, healthy = self.reports["restarted"], self.reports["healthy"]
+        attempts = [attempt["outcome"] for attempt in report["pipeline"]["attempts"]]
+        self.assertEqual(attempts, ["preempted", "completed"])
+        self.assertEqual(compare_trajectories(report, healthy)["outcome"], "identical_full_run")
+        self.assertEqual(report["final_metrics"], healthy["final_metrics"])
+
+    def test_the_harness_evaluates_with_the_true_labels(self):
+        report = self.reports["healthy"]
+        rows = report["parameter_group_epochs"]
+        accuracies = [row["project_metrics"]["validation_accuracy"] for row in rows]
+        delivered = rows[accuracies.index(max(accuracies))]["project_metrics"]
+        final = report["final_metrics"]
+        self.assertEqual(final["id_validation_accuracy"], delivered["validation_accuracy"])
+        self.assertAlmostEqual(final["id_validation_loss"], delivered["validation_loss"], places=5)
+        self.assertIn("ood_validation_accuracy", final)
 
 
 @unittest.skipIf(torch is None, "Install torch and torchvision for the pipeline tests")

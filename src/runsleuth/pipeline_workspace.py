@@ -51,9 +51,9 @@ from typing import Any
 import torch
 from torch import nn
 from torch.optim import Optimizer
-from torch.utils.data import DataLoader, get_worker_info
+from torch.utils.data import get_worker_info
 
-from runsleuth import pipeline_tasks
+from runsleuth import ham10000_data, pipeline_tasks
 from runsleuth.agent_verification import compare_trajectories
 from runsleuth.agent_workspace import (
     ALLOWED_IMPORTS,
@@ -143,14 +143,19 @@ def load_project(sources: Mapping[str, str]) -> dict[str, types.ModuleType]:
 
 
 class Samples:
-    """Images in [0, 1] (channel, height, width) with one row of columns per sample.
+    """Images (channel, height, width) with one row of columns per sample.
 
-    samples[i] is (image, label) and samples.image(i) the image alone; both reads are
-    recorded when the samples have a reader. The columns, at least labels and for
-    Camelyon17 hospitals, hold one value per sample and are read without a record.
-    Reads must happen in the process that runs the project (DataLoader num_workers=0),
-    where the harness sees them. What records them is private: the static check refuses
-    any attribute with a leading underscore.
+    samples[i] is (image, the value of the target column) and samples.image(i) the image
+    alone; both reads are recorded when the samples have a reader. The columns hold one
+    value per sample and are read without a record: for Camelyon17 labels and
+    hospitals, the target being labels; for HAM10000 image_ids, lesion_ids, diagnoses
+    and sources, the target being diagnoses, from which a project makes its labels.
+    Images are floats in [0, 1] (Camelyon17) or uint8 (HAM10000).
+
+    The true labels are private: the harness's evidence and its own evaluation use
+    them. Reads must happen in the process that runs the project (DataLoader
+    num_workers=0), where the harness sees them. What records them is private too: the
+    static check refuses any attribute with a leading underscore.
     """
 
     def __init__(
@@ -158,13 +163,17 @@ class Samples:
         load: Callable[[int], torch.Tensor],
         columns: Mapping[str, Iterable[Any]],
         *,
+        labels: Iterable[int],
+        target: str = "labels",
         reader: Callable[[int], None] | None = None,
     ) -> None:
         values = {name: tuple(column) for name, column in columns.items()}
-        if "labels" not in values or len({len(column) for column in values.values()}) != 1:
-            raise ValueError("Samples need labels and columns of equal length")
+        self._labels = tuple(int(label) for label in labels)
+        sizes = {len(column) for column in values.values()} | {len(self._labels)}
+        if target not in values or len(sizes) != 1:
+            raise ValueError("Samples need their target among columns of equal length")
         self._load, self._columns, self._reader = load, values, reader
-        self._size = len(values["labels"])
+        self._target, self._size = target, len(self._labels)
         for name, column in values.items():
             if hasattr(self, name):
                 raise ValueError(f"a column may not be named {name!r}")
@@ -173,9 +182,9 @@ class Samples:
     def __len__(self) -> int:
         return self._size
 
-    def __getitem__(self, index) -> tuple[torch.Tensor, int]:
+    def __getitem__(self, index) -> tuple[torch.Tensor, Any]:
         position = self._position(index)
-        return self.image(position), self.labels[position]
+        return self.image(position), self._columns[self._target][position]
 
     def _position(self, index) -> int:
         position = operator.index(index)
@@ -195,7 +204,18 @@ class Samples:
 
     def _recorded(self, reader: Callable[[int], None] | None) -> "Samples":
         """The same samples with another reader."""
-        return Samples(self._load, self._columns, reader=reader)
+        return Samples(
+            self._load, self._columns, labels=self._labels, target=self._target, reader=reader
+        )
+
+    def _batches(self, size: int):
+        """Unrecorded batches of (images in [0, 1], true labels), for the harness."""
+        for start in range(0, self._size, size):
+            positions = range(start, min(start + size, self._size))
+            images = torch.stack([self._load(position) for position in positions])
+            if images.dtype == torch.uint8:
+                images = images.float() / 255
+            yield images, torch.tensor([self._labels[position] for position in positions])
 
 
 @dataclass(frozen=True)
@@ -204,9 +224,10 @@ class PipelineData:
 
     train and validation are handed to the project. evaluation holds the splits the
     harness evaluates the delivered weights on, never handed over. group names the
-    column that holdouts hold out (hospitals), and holdouts says per evaluation split
-    which groups it evaluates on and whether it holds them out from training; the run
-    adds how many training samples were read from them.
+    column the training reads are counted by (hospitals, sources), and holdouts says
+    per evaluation split which groups it evaluates on, in which column (group_column,
+    group if unset), and whether it holds them out from training; the run adds how many
+    training samples were read from them.
     """
 
     train: Samples
@@ -478,7 +499,7 @@ class Recorder:
             attempt=self.attempt, project_epoch=number
         )
         positions = [position for _, _, position in self.reads["train"][start:]]
-        labels = self.data.train.labels
+        labels = self.data.train._labels
         matching = None
         if len(self.targets) == len(positions):
             matching = sum(
@@ -497,7 +518,7 @@ class Recorder:
         )
 
     def read_summary(self, positions: list[int]) -> dict[str, Any]:
-        groups, labels = getattr(self.data.train, self.data.group), self.data.train.labels
+        groups, labels = getattr(self.data.train, self.data.group), self.data.train._labels
         return {
             "reads": len(positions),
             "distinct": len(set(positions)),
@@ -616,7 +637,7 @@ def evaluate_weights(
     metrics = {}
     for split, samples in splits.items():
         loss, correct, count = 0.0, 0, 0
-        for images, labels in DataLoader(samples, batch_size=EVALUATION_BATCH_SIZE):
+        for images, labels in samples._batches(EVALUATION_BATCH_SIZE):
             images, labels = images.to(device), labels.to(device)
             logits = model((images - mean) / std)
             loss += float(loss_function(logits, labels))
@@ -630,12 +651,12 @@ def evaluate_weights(
 def _holdouts(recorder: Recorder) -> dict[str, dict[str, Any]]:
     """The data's holdouts with the training samples read from the held-out groups."""
     data = recorder.data
-    groups = getattr(data.train, data.group)
     trained = {position for _, epoch, position in recorder.reads["train"] if epoch is not None}
     holdouts = {}
     for split, holdout in data.holdouts.items():
         holdouts[split] = dict(holdout)
         if holdout.get("held_out_by"):
+            groups = getattr(data.train, holdout.get("group_column", data.group))
             held_out = set(holdout["evaluation_groups"])
             holdouts[split]["training_samples_in_evaluation_groups"] = sum(
                 groups[position] in held_out for position in trained
@@ -819,7 +840,7 @@ def synthetic_pipeline_data(seed: int) -> PipelineData:
             name: [value for part in parts for value in part[name]]
             for name in ("labels", "hospitals")
         }
-        return Samples(lambda position: images[position], columns)
+        return Samples(lambda position: images[position], columns, labels=columns["labels"])
 
     candidates = samples(
         [patches(8, hospital, 0.8 if hospital == 1 else 1.0) for hospital in (0, 1, 3, 4)]
@@ -885,12 +906,11 @@ def camelyon_pipeline_data(config: CamelyonConfig) -> DataBuilder:
 
         def samples(indices: list[int]) -> Samples:
             subset = dataset.get_patches(indices, transform)
+            kept = [labels[index] for index in indices]
             return Samples(
                 lambda position: subset[position][0],
-                {
-                    "labels": [labels[index] for index in indices],
-                    "hospitals": [hospitals[index] for index in indices],
-                },
+                {"labels": kept, "hospitals": [hospitals[index] for index in indices]},
+                labels=kept,
             )
 
         validation = samples(evaluation["id"])
@@ -920,18 +940,160 @@ def camelyon_pipeline_data(config: CamelyonConfig) -> DataBuilder:
     return build
 
 
-DATA_SOURCES = ("synthetic", "camelyon")
+DIAGNOSES = ("nv", "mel", "bkl", "bcc", "akiec", "vasc", "df")
+
+
+def synthetic_ham_pipeline_data(seed: int) -> PipelineData:
+    """Random skin-lesion images from two sources: a smoke test of the harness.
+
+    The 24 training images show 14 lesions, ten of them twice, and every diagnosis;
+    malignant lesions are brighter. Validation and in-distribution evaluation share 12
+    images of other lesions; out-of-distribution evaluation has 12 of a third source.
+    Images are uint8, as HAM10000's are.
+    """
+    generator = torch.Generator().manual_seed(seed)
+
+    def images(lesions: list[tuple[str, str, int]], source: str) -> Samples:
+        rows = [(lesion, dx) for lesion, dx, count in lesions for _ in range(count)]
+        labels = [int(dx in ham10000_data.MALIGNANT) for _, dx in rows]
+        noise = torch.rand(len(rows), 3, 16, 16, generator=generator)
+        pixels = (noise * 120 + torch.tensor(labels).view(-1, 1, 1, 1) * 120).to(torch.uint8)
+        return Samples(
+            lambda position: pixels[position],
+            {
+                "image_ids": [
+                    f"{source}_{lesion}_{number}" for number, (lesion, _) in enumerate(rows)
+                ],
+                "lesion_ids": [lesion for lesion, _ in rows],
+                "diagnoses": [dx for _, dx in rows],
+                "sources": [source] * len(rows),
+            },
+            labels=labels,
+            target="diagnoses",
+        )
+
+    def lesions(prefix: str, count: int, twice: int) -> list[tuple[str, str, int]]:
+        return [
+            (f"{prefix}{number}", DIAGNOSES[number % len(DIAGNOSES)], 2 if number < twice else 1)
+            for number in range(count)
+        ]
+
+    train = images(lesions("train", 14, 10), "vidir_modern")
+    validation = images(lesions("val", 12, 0), "vidir_modern")
+    return PipelineData(
+        train=train,
+        validation=validation,
+        evaluation={"id": validation, "ood": images(lesions("ood", 12, 0), "rosendahl")},
+        group="sources",
+        holdouts={
+            "id": {
+                "held_out_by": "lesion",
+                "group_column": "lesion_ids",
+                "evaluation_groups": sorted(set(validation.lesion_ids)),
+            },
+            "ood": {"held_out_by": "source", "evaluation_groups": ["rosendahl"]},
+        },
+        record={"source": "synthetic_ham", "candidates": len(train)},
+    )
+
+
+def ham10000_pipeline_data(config: ham10000_data.HamConfig) -> DataBuilder:
+    """HAM10000 images for projects, as ham10000_data splits them.
+
+    The training images are the training sources' with every image of a validation
+    lesion left out, keyed by lesion: training data is not what the HAM10000 tasks
+    test. Validation is the in-distribution split, one image of each held-out lesion;
+    evaluation adds the out-of-distribution source. Projects get the diagnoses and make
+    their labels from them; the harness keeps the dataset's malignant labels.
+    """
+
+    def build(seed: int) -> PipelineData:
+        loaded = ham10000_data.load(config)
+        rows = loaded.rows
+        evaluation = ham10000_data.evaluation_split(config, rows)
+        training_sources = {
+            number
+            for name, number in config.sources.items()
+            if name not in (config.ood_source, config.sealed_source)
+        }
+        training = ham10000_data.training_split(
+            config, rows, lambda source: source in training_sources
+        )
+
+        def samples(indices: list[int]) -> Samples:
+            return Samples(
+                lambda position: torch.from_numpy(loaded.images[indices[position]].copy()).permute(
+                    2, 0, 1
+                ),
+                {
+                    name: [rows[index][key] for index in indices]
+                    for name, key in (
+                        ("image_ids", "image_id"),
+                        ("lesion_ids", "lesion_id"),
+                        ("diagnoses", "dx"),
+                        ("sources", "source"),
+                    )
+                },
+                labels=[rows[index]["label"] for index in indices],
+                target="diagnoses",
+            )
+
+        validation = samples(evaluation["id"])
+        manifest = loaded.manifest
+        return PipelineData(
+            train=samples(training),
+            validation=validation,
+            evaluation={"id": validation, "ood": samples(evaluation["ood"])},
+            group="sources",
+            holdouts={
+                "id": {
+                    "held_out_by": "lesion",
+                    "group_column": "lesion_ids",
+                    "evaluation_groups": sorted(set(validation.lesion_ids)),
+                },
+                "ood": {"held_out_by": "source", "evaluation_groups": [config.ood_source]},
+            },
+            record={
+                "source": "ham10000",
+                "provenance": {
+                    key: manifest[key]
+                    for key in ("doi", "license", "published_md5", "images_sha256", "image_size")
+                },
+                "subset_seed": config.subset_seed,
+                "candidates": len(training),
+                "candidate_indices_sha256": _digest(training),
+                "evaluation_samples": {split: len(ids) for split, ids in evaluation.items()},
+                "evaluation_indices_sha256": {
+                    split: _digest(ids) for split, ids in evaluation.items()
+                },
+            },
+        )
+
+    return build
+
+
+DATA_SOURCES = ("synthetic", "synthetic_ham", "camelyon", "ham10000")
 
 
 def data_builder(
     source: str, config: Path | None = None, max_eval_samples: int | None = None
 ) -> DataBuilder:
-    """The data source named on the command line; Camelyon17 needs a config.
+    """The data source named on the command line; Camelyon17 and HAM10000 need a config.
 
-    max_eval_samples caps each Camelyon17 evaluation split, for quick runs.
+    max_eval_samples caps each Camelyon17 evaluation split, or HAM10000's
+    out-of-distribution one (its in-distribution split is whole lesions), for quick runs.
     """
     if source == "synthetic":
         return synthetic_pipeline_data
+    if source == "synthetic_ham":
+        return synthetic_ham_pipeline_data
+    if source == "ham10000":
+        if config is None:
+            raise ValueError("HAM10000 data needs --config, for example configs/ham10000.json")
+        ham = ham10000_data.HamConfig.load(Path(config))
+        if max_eval_samples is not None:
+            ham = replace(ham, max_ood_val_samples=max_eval_samples)
+        return ham10000_pipeline_data(ham)
     if source != "camelyon":
         raise ValueError(f"Unknown data source {source!r}; choose from {', '.join(DATA_SOURCES)}")
     if config is None:
@@ -1129,6 +1291,8 @@ def check_versions(
         "task": "pipeline_check",
         "settings": {
             "family": family,
+            # Results of another state of the tasks have another hash; never mix them.
+            "family_sha256": pipeline_tasks.family_sha256(family),
             "data": data,
             "config": None if config is None else str(config),
             "epochs": epochs,
@@ -1160,11 +1324,12 @@ def check_text(result: dict[str, Any]) -> str:
     """The check as a table, one line per version, then what failed runs printed.
 
     held out is the most training samples read from a held-out group, labels the share
-    of the loss's targets that are the labels of the samples read.
+    of the loss's targets that are the labels of the samples read, and delivered the
+    epochs whose weights the run delivered (init for the weights it started from).
     """
     lines = [
-        f"{'version':<24}{'split':<13}{'status':<11}{'diagnosis':<32}{'ok':<5}{'replay':<13}"
-        f"{'held out':>9}{'labels':>8}  id acc  ood acc"
+        f"{'version':<32}{'split':<13}{'status':<11}{'diagnosis':<32}{'ok':<5}{'replay':<13}"
+        f"{'held out':>9}{'labels':>8}{'delivered':>11}  id acc  ood acc"
     ]
     for row in result["versions"]:
         metrics, evidence = row["metrics"] or {}, row["evidence"] or {}
@@ -1174,11 +1339,16 @@ def check_text(result: dict[str, Any]) -> str:
         )
         held_out = evidence.get("held_out_training_samples")
         labels = evidence.get("labels_matching")
+        delivered = evidence.get("delivered")
+        if delivered is not None:
+            delivered = ",".join(
+                "init" if same == "initial state" else same.split()[1] for same in delivered
+            )
         lines.append(
-            f"{row['version']:<24}{row['split'] or '-':<13}{row['status']:<11}"
+            f"{row['version']:<32}{row['split'] or '-':<13}{row['status']:<11}"
             f"{row['diagnosis'] or '-':<32}{'yes' if row['as_expected'] else 'NO':<5}"
             f"{_replay(row['trajectory']):<13}{'-' if held_out is None else held_out:>9}"
-            f"{'-' if labels is None else f'{labels:.0%}':>8}  {accuracies}"
+            f"{'-' if labels is None else f'{labels:.0%}':>8}{delivered or '-':>11}  {accuracies}"
         )
     lines.append(f"{result['versions_as_expected']}/{len(result['versions'])} versions as expected")
     for row in result["versions"]:

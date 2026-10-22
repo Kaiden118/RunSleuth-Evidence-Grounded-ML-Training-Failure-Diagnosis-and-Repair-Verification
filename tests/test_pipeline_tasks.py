@@ -5,13 +5,20 @@ import json
 import tempfile
 import unittest
 import warnings
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
 from test_pipeline_workspace import TINY_MODEL, write_project
 
 from runsleuth import pipeline_tasks
-from runsleuth.pipeline_tasks import CAMELYON_STATEMENT, CAMELYON_VERSIONS, HEALTHY, TASKS
+from runsleuth.pipeline_tasks import (
+    CAMELYON_STATEMENT,
+    CAMELYON_VERSIONS,
+    HAM_STATEMENT,
+    HAM_VERSIONS,
+    HEALTHY,
+)
 
 try:
     import torch
@@ -25,6 +32,7 @@ if torch is not None:
     from runsleuth.agent_verification import compare_trajectories
 
 VERSION_SOURCES = pipeline_tasks.version_sources  # Bound here, before any test patches it.
+FAMILIES = ("camelyon_pipeline", "ham10000_pipeline")
 CASE_SOURCES = None if torch is None else pipeline_contract.case_sources
 
 
@@ -49,32 +57,46 @@ def tiny_version(name: str, family_name: str = "camelyon_pipeline") -> dict[str,
 
 class TaskTests(unittest.TestCase):
     def test_every_version_is_an_exact_edit_of_the_healthy_project(self):
-        healthy = pipeline_tasks.healthy_sources()
-        self.assertEqual(set(healthy), {"config", "data", "train"})
-        for name in CAMELYON_VERSIONS:
-            with self.subTest(version=name):
-                sources = pipeline_tasks.version_sources(name)
-                self.assertEqual(set(sources), set(healthy))
-                self.assertNotEqual(sources, healthy)
-                changed = {module for module in healthy if sources[module] != healthy[module]}
-                diff = pipeline_tasks.version_diff(name)
-                for module in healthy:
-                    self.assertEqual(f"+++ {name}/{module}.py" in diff, module in changed)
-        self.assertEqual(pipeline_tasks.version_sources(HEALTHY), healthy)
-        self.assertEqual(pipeline_tasks.version_diff(HEALTHY), "")
+        for family_name in FAMILIES:
+            healthy = pipeline_tasks.healthy_sources(family_name)
+            self.assertEqual(set(healthy), {"config", "data", "train"})
+            for name in pipeline_tasks.family(family_name).versions:
+                with self.subTest(family=family_name, version=name):
+                    sources = pipeline_tasks.version_sources(name, family_name)
+                    self.assertEqual(set(sources), set(healthy))
+                    self.assertNotEqual(sources, healthy)
+                    changed = {module for module in healthy if sources[module] != healthy[module]}
+                    diff = pipeline_tasks.version_diff(name, family_name)
+                    for module in healthy:
+                        self.assertEqual(f"+++ {name}/{module}.py" in diff, module in changed)
+            self.assertEqual(pipeline_tasks.version_sources(HEALTHY, family_name), healthy)
+            self.assertEqual(pipeline_tasks.version_diff(HEALTHY, family_name), "")
 
     def test_every_task_has_a_development_and_a_test_fault_and_variant(self):
-        for task in TASKS:
-            versions = [item for item in CAMELYON_VERSIONS.values() if item.task == task]
-            for correct in (False, True):
-                splits = sorted(item.split for item in versions if item.correct == correct)
-                self.assertEqual(splits, ["development", "test"], (task, correct))
-        for name, item in CAMELYON_VERSIONS.items():
-            self.assertIn(item.task, TASKS)
-            self.assertIn(item.split, pipeline_tasks.SPLITS)
-            self.assertEqual(pipeline_tasks.kind(name), "variant" if item.correct else "fault")
-            if item.correct:
-                self.assertIsNone(item.signature)
+        for family_name in FAMILIES:
+            family = pipeline_tasks.family(family_name)
+            for task in family.tasks:
+                versions = [
+                    item
+                    for item in family.versions.values()
+                    if item.task == task and not item.control
+                ]
+                for correct in (False, True):
+                    splits = sorted(item.split for item in versions if item.correct == correct)
+                    self.assertEqual(splits, ["development", "test"], (task, correct))
+            for name, item in family.versions.items():
+                self.assertIn(item.task, family.tasks)
+                self.assertIn(item.split, pipeline_tasks.SPLITS)
+                kind = "variant" if item.correct else "control" if item.control else "fault"
+                self.assertEqual(pipeline_tasks.kind(name, family_name), kind)
+                if item.correct:
+                    self.assertIsNone(item.signature)
+                    self.assertFalse(item.control)
+        self.assertEqual(
+            pipeline_tasks.expected_diagnosis("epoch_count_not_restored", "ham10000_pipeline"),
+            "zero_learning_rate_epoch",
+        )
+        self.assertEqual(pipeline_tasks.kind("pretrained_weights_delivered"), "control")
         self.assertEqual(pipeline_tasks.kind(HEALTHY), HEALTHY)
         self.assertEqual(
             pipeline_tasks.expected_diagnosis("positions_index_base"),
@@ -83,6 +105,20 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(pipeline_tasks.expected_diagnosis("labels_not_filtered"), "no_known_fault")
         with self.assertRaisesRegex(ValueError, "Unknown version"):
             pipeline_tasks.version("missing")
+
+    def test_the_family_hash_changes_with_anything_a_version_is_made_of(self):
+        family_hash = pipeline_tasks.family_sha256()
+        self.assertEqual(family_hash, pipeline_tasks.family_sha256())
+        changed = replace(CAMELYON_VERSIONS["labels_not_filtered"], split="development")
+        with patch.dict(CAMELYON_VERSIONS, {"labels_not_filtered": changed}):
+            self.assertNotEqual(pipeline_tasks.family_sha256(), family_hash)
+        family = pipeline_tasks.FAMILIES["camelyon_pipeline"]
+        with patch.dict(
+            pipeline_tasks.FAMILIES,
+            {"camelyon_pipeline": replace(family, statement=family.statement + "\n")},
+        ):
+            self.assertNotEqual(pipeline_tasks.family_sha256(), family_hash)
+        self.assertEqual(pipeline_tasks.family_sha256(), family_hash)
 
     def test_a_project_is_its_modules_and_the_statement(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -113,6 +149,8 @@ class TaskTests(unittest.TestCase):
             "`run.deliver(state_dict)`",
             "`write(name, state)`, `read(name)` and `name in run.checkpoints`",
             "`num_workers=0`",
+            "`run.log(validation_loss=..., validation_accuracy=...)`",
+            "among all the epochs of the run, before and after any restart",
         ):
             self.assertIn(stated, CAMELYON_STATEMENT)
         signatures = {item.signature for item in CAMELYON_VERSIONS.values()} - {None}
@@ -120,6 +158,22 @@ class TaskTests(unittest.TestCase):
         # versions and signatures would give away a fault.
         for name in (*CAMELYON_VERSIONS, *signatures):
             self.assertNotIn(name, CAMELYON_STATEMENT)
+
+    def test_the_ham10000_statement_states_labels_flips_and_the_interface(self):
+        for stated in (
+            "1 for the diagnoses mel, bcc and akiec, 0 for every other",
+            "divide the images by 255",
+            "flip every\n   image left-right and up-down, each with probability one half",
+            "In training, and only there",
+            "labelled as in 1",
+            "`run.data.train.lesion_ids`",
+            "uint8 values",
+            "`run.log(validation_loss=..., validation_accuracy=...)`",
+        ):
+            self.assertIn(stated, HAM_STATEMENT)
+        signatures = {item.signature for item in HAM_VERSIONS.values()} - {None}
+        for name in (*HAM_VERSIONS, *signatures):
+            self.assertNotIn(name, HAM_STATEMENT)
 
 
 @unittest.skipIf(torch is None, "Install torch and torchvision for the contract tests")
@@ -130,28 +184,42 @@ class ContractTests(unittest.TestCase):
             return pipeline_contract.contract_result(sources)
 
     def test_every_version_and_case_fails_exactly_the_clauses_it_should(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            rows = pipeline_contract.check_cases(sources=lambda name: tiny(CASE_SOURCES(name)))
-        for row in rows:
-            with self.subTest(project=row["name"]):
-                self.assertTrue(row["as_expected"], row)
-        text = pipeline_contract.cases_text(rows)
-        self.assertIn(f"{len(rows)}/{len(rows)} projects as expected", text)
+        for family_name in FAMILIES:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                rows = pipeline_contract.check_cases(
+                    sources=lambda name, family=family_name: tiny(CASE_SOURCES(name, family)),
+                    family=family_name,
+                )
+            for row in rows:
+                with self.subTest(family=family_name, project=row["name"]):
+                    self.assertTrue(row["as_expected"], row)
+                    # Where the delivery is in question, both of its directions were tested.
+                    if row["name"] == HEALTHY or "delivery" in row["expected"]:
+                        self.assertEqual(row["notes"], [])
+            text = pipeline_contract.cases_text(rows)
+            self.assertIn(f"{len(rows)}/{len(rows)} projects as expected", text)
 
     def test_the_cases_cover_correct_and_wrong_projects_and_every_clause(self):
-        names = (*pipeline_tasks.family("camelyon_pipeline").names, *pipeline_contract.CASES)
-        expected = {name: pipeline_contract.expected_failures(name) for name in names}
-        self.assertGreaterEqual(sum(not clauses for clauses in expected.values()), 6)
-        failed = {clause for clauses in expected.values() for clause in clauses}
-        self.assertEqual(failed, set(pipeline_contract.CLAUSES))
-        for clause in pipeline_contract.CLAUSES:
-            alone = [name for name, clauses in expected.items() if clauses == (clause,)]
-            self.assertGreaterEqual(len(alone), 1, clause)
+        for family_name in FAMILIES:
+            clauses = pipeline_contract.SPECS[family_name].clauses
+            names = (
+                *pipeline_tasks.family(family_name).names,
+                *pipeline_contract.CASES[family_name],
+            )
+            expected = {
+                name: pipeline_contract.expected_failures(name, family_name) for name in names
+            }
+            self.assertGreaterEqual(sum(not failed for failed in expected.values()), 6)
+            failed = {clause for found in expected.values() for clause in found}
+            self.assertEqual(failed, set(clauses))
+            for clause in clauses:
+                alone = [name for name, found in expected.items() if found == (clause,)]
+                self.assertGreaterEqual(len(alone), 1, (family_name, clause))
 
     def test_codes_survive_normalization_and_nothing_else(self):
         codes = [0, 5, 46, pipeline_contract.VALIDATION_CODES + 3]
-        images = pipeline_contract.coded_images(codes)
+        images = pipeline_contract.coded_images(codes, [0.3, 0.5, 0.7, 0.4])
         mean = torch.tensor((0.485, 0.456, 0.406)).view(1, 3, 1, 1)
         std = torch.tensor((0.229, 0.224, 0.225)).view(1, 3, 1, 1)
         once = (images - mean) / std
@@ -161,6 +229,18 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(pipeline_contract.read_codes(changed), [None] * len(codes))
         self.assertEqual(pipeline_contract.read_codes(torch.zeros(2, 5)), [None, None])
 
+    def test_flipped_codes_are_read_with_their_flip(self):
+        codes = [0, 7, 45, pipeline_contract.VALIDATION_CODES]
+        images = pipeline_contract.coded_images(codes, [0.3, 0.5, 0.7, 0.4], 128, uint8=True)
+        self.assertEqual(images.dtype, torch.uint8)
+        scaled = images.float() / 255
+        for name, dims in pipeline_contract.FLIPS.items():
+            flipped = scaled.flip(dims) if dims else scaled
+            self.assertEqual(
+                pipeline_contract.read_flipped(flipped), [(code, name) for code in codes]
+            )
+        self.assertEqual(pipeline_contract.read_codes(scaled.flip(-2)), [None] * len(codes))
+
     def test_a_project_that_fails_or_is_refused_does_not_pass(self):
         healthy = tiny(CASE_SOURCES(HEALTHY))
         crashing = {
@@ -169,13 +249,14 @@ class ContractTests(unittest.TestCase):
         }
         result = self.result(crashing)
         self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["failed"], list(pipeline_contract.CLAUSES))
+        clauses = list(pipeline_contract.SPECS["camelyon_pipeline"].clauses)
+        self.assertEqual(result["failed"], clauses)
         self.assertIn("ZeroDivisionError", result["clauses"]["training_samples"]["detail"])
         with tempfile.TemporaryDirectory() as directory:
             sources = {**healthy, "data": "import os\n" + healthy["data"]}
             refused = pipeline_contract.run_contract(write_project(Path(directory) / "p", sources))
         self.assertEqual(refused["status"], "refused")
-        self.assertEqual(refused["failed"], list(pipeline_contract.CLAUSES))
+        self.assertEqual(refused["failed"], clauses)
 
     def test_a_child_process_gives_the_same_result(self):
         sources = tiny(CASE_SOURCES("labels_not_filtered"))
@@ -274,11 +355,61 @@ class CheckTests(unittest.TestCase):
         self.assertLess(restored["learning_rates"][0], 1e-4)
         self.assertEqual(rebuilt["optimizer_parameters_with_state"], 0)
         self.assertEqual(rebuilt["learning_rates"], [1e-4])
+        # The delivery: the last epoch, the freshly built model, or the healthy run's best.
+        delivered = {name: row["evidence"]["delivered"] for name, row in rows.items()}
+        self.assertEqual(delivered["last_epoch_delivered"], ["epoch 3 (attempt 2)"])
+        self.assertEqual(delivered["pretrained_weights_delivered"], [])
+        self.assertEqual(len(delivered[HEALTHY]), 1)
+        self.assertEqual(
+            result["settings"]["family_sha256"], pipeline_tasks.family_sha256("camelyon_pipeline")
+        )
         saved = json.loads((self.root / "check" / "check_report.json").read_text(encoding="utf-8"))
         self.assertEqual(saved, result)
         text = pipeline_workspace.check_text(result)
         self.assertIn(f"{len(names)}/{len(names)} versions as expected", text)
         self.assertNotIn(" NO ", text)
+
+    def test_every_ham10000_version_is_trained_and_diagnosed_against_the_healthy_run(self):
+        result = pipeline_workspace.check_versions(
+            self.root / "ham",
+            data="synthetic_ham",
+            epochs=3,
+            seed=11,
+            device="cpu",
+            family="ham10000_pipeline",
+            run=self.run_in_process,
+        )
+        names = [HEALTHY, pipeline_workspace.RESTARTED, *HAM_VERSIONS]
+        self.assertEqual([row["version"] for row in result["versions"]], names)
+        text = pipeline_workspace.check_text(result)
+        self.assertEqual(result["versions_as_expected"], len(names), text)
+        rows = {row["version"]: row for row in result["versions"]}
+        outcomes = {name: row["trajectory"]["outcome"] for name, row in rows.items()}
+        # Faults and variants that change what is trained part from the healthy run;
+        # the others train it exactly, a wrong validation list included.
+        for name in (
+            "epoch_count_not_restored",
+            "shuffle_generator_made_once",
+            "cache_keyed_by_lesion",
+            "flipped_image_cached",
+            "akiec_left_out_of_training",
+            "explicit_random_sampler",
+        ):
+            self.assertEqual(outcomes[name], "diverged", name)
+        for name in (
+            pipeline_workspace.RESTARTED,
+            "akiec_left_out_of_validation",
+            "start_read_from_the_scheduler",
+            "no_cache",
+            "converted_up_front",
+            "labels_from_a_table",
+            "validation_uses_the_training_labels",
+        ):
+            self.assertEqual(outcomes[name], "identical_full_run", name)
+        report = json.loads(Path(rows["converted_up_front"]["report"]).read_text(encoding="utf-8"))
+        reads = report["pipeline"]["training_reads"]
+        # Converted before the first epoch: nothing is read while training.
+        self.assertEqual((reads["read_while_training"], reads["reads_outside_epochs"]), (0, 48))
 
     def test_a_version_that_does_not_run_is_reported_and_not_as_expected(self):
         def run(project, run_dir, **options):

@@ -97,7 +97,7 @@ Samples are read in the main process (`num_workers=0`).
 
 The project may already be correct.
 """
-TASKS = {
+CAMELYON_TASKS = {
     "training_data_filter": "A dataset wrapper keeps the training hospitals' patches; "
     "which patches it hands to training, and with which labels.",
     "restart": "After a stop between two epochs the project resumes from its checkpoint; "
@@ -359,14 +359,309 @@ CAMELYON_VERSIONS = {
 }
 
 
+HAM_STATEMENT = """\
+# Task
+
+This project fine-tunes an ImageNet-pretrained ResNet18 to tell malignant from benign
+skin lesions in 128x128 dermatoscopic images (HAM10000). Its modules are `config.py`,
+`data.py` and `train.py`.
+
+A harness calls `main(run)` in `train.py`. `run` gives the project:
+
+- `run.data.train`: the training images, from two sources, without any image of a
+  lesion that validation holds out. `run.data.train[i]` is `(image, diagnosis)` and
+  `run.data.train.image(i)` the image alone, an RGB tensor of shape (3, 128, 128) with
+  uint8 values. `run.data.train.diagnoses`, `run.data.train.lesion_ids`,
+  `run.data.train.image_ids` and `run.data.train.sources` hold every image's diagnosis,
+  lesion, name and source; one lesion may have several images.
+- `run.data.validation`: in-distribution validation images, one of each held-out
+  lesion, given the same way.
+- `run.device`, `run.seed` and `run.epochs`: where to train, the run's seed, and how
+  many epochs the run trains in all.
+- `run.checkpoints`: `write(name, state)`, `read(name)` and `name in run.checkpoints`,
+  the project's only storage.
+- `run.track(model, optimizer)`, once both exist and before the first epoch;
+  `with run.epoch(number):` around the training of every epoch, numbered from 1;
+  `run.log(**metrics)` after every epoch; `run.deliver(state_dict)` once, at the end.
+
+The harness may stop the run as it starts an epoch and call `main` again from the
+start, as after a restart, with the same checkpoints. After the run it evaluates the
+delivered weights itself, on the validation images and on images from another source.
+Samples are read in the main process (`num_workers=0`).
+
+## What the project must do
+
+1. Training data: every epoch trains on each image of `run.data.train` exactly once,
+   with its label: 1 for the diagnoses mel, bcc and akiec, 0 for every other. Batches
+   hold 32 images (the last of an epoch may hold fewer), in an order that is shuffled
+   and depends on nothing but the run's seed and the epoch.
+2. Inputs: divide the images by 255, then subtract the ImageNet mean (0.485, 0.456,
+   0.406) and divide by the ImageNet standard deviation (0.229, 0.224, 0.225) per
+   channel, in training and validation alike. In training, and only there, flip every
+   image left-right and up-down, each with probability one half, drawn anew for every
+   image in every epoch from nothing but the run's seed and the epoch. Change nothing
+   else.
+3. Model: the pretrained ResNet18 with its final layer replaced by a new layer of two
+   outputs. Every parameter is trained, and the network is in training mode whenever
+   it is trained.
+4. Optimizer: AdamW with learning rate 1e-4 and weight decay 1e-2 for all parameters,
+   one step per batch, minimizing the cross-entropy loss. The learning rate follows a
+   cosine from 1e-4 at the start of the run to 0 at its end, updated once per epoch.
+5. Restarts: after every epoch the project checkpoints what it needs, so that a run
+   stopped as it starts an epoch and restarted trains exactly as the uninterrupted run
+   would have: the same epochs, batches, flips, weights, optimizer state and learning
+   rates.
+6. Validation and delivery: after every epoch the project measures the mean
+   cross-entropy loss and the accuracy of the network on all of `run.data.validation`,
+   labelled as in 1, and reports them with
+   `run.log(validation_loss=..., validation_accuracy=...)`. At the end it delivers the
+   weights of the epoch with the highest validation accuracy among all the epochs of
+   the run, before and after any restart, the earliest such epoch on a tie.
+
+## Your job
+
+1. Decide whether the project does all of the above.
+2. If it does not, fix it, changing only what is needed.
+3. Say whether the project now does all of the above and what you changed.
+
+The project may already be correct.
+"""
+HAM_TASKS = {
+    "restart": "After a stop between two epochs the project resumes from its checkpoint; "
+    "whether the epochs it counts and the batches it draws continue the uninterrupted run.",
+    "image_cache": "The project caches converted training images; whether every epoch "
+    "trains on every image itself, freshly flipped.",
+    "label_mapping": "The project makes labels from diagnoses, for training and for "
+    "validation; whether both follow the statement.",
+}
+_HAM_LOADER = (
+    "def training_loader(dataset, seed, epoch):\n"
+    '    """One epoch of shuffled, flipped training batches, drawn from the run\'s seed '
+    "and the\n"
+    '    epoch alone, so that a resumed run repeats them."""\n'
+    "    generator = torch.Generator().manual_seed(1000 * seed + epoch)\n"
+)
+_HAM_CACHED = (
+    "        if key not in self.cache:\n"
+    "            self.cache[key] = self.images.image(position).float() / 255\n"
+    "        return flip(self.cache[key], self.generator), self.labels[position]\n"
+)
+_HAM_SHUFFLED = (
+    "    return DataLoader(dataset, batch_size=config.BATCH_SIZE, shuffle=True, "
+    "generator=generator)\n"
+)
+HAM_VERSIONS = {
+    "epoch_count_not_restored": Version(
+        "restart",
+        "development",
+        False,
+        "A restart restores the weights, optimizer and schedule but counts the epochs from "
+        "1 again, so the run trains more epochs than it should, the schedule running past "
+        "its end.",
+        (
+            (
+                "train",
+                _RESUMED_PROGRESS,
+                '        start, best_accuracy = 1, state["best_accuracy"]\n',
+            ),
+        ),
+        "zero_learning_rate_epoch",
+    ),
+    "shuffle_generator_made_once": Version(
+        "restart",
+        "test",
+        False,
+        "One generator, seeded once when main starts, shuffles and flips every epoch, so a "
+        "restarted run draws the first epoch's order and flips again.",
+        (
+            (
+                "data",
+                _HAM_LOADER,
+                "def training_loader(dataset, generator):\n"
+                '    """One epoch of shuffled, flipped training batches, drawn from the run\'s '
+                'generator."""\n',
+            ),
+            (
+                "train",
+                "    training = data.TrainingImages(run.data.train)\n",
+                "    training = data.TrainingImages(run.data.train)\n"
+                "    generator = torch.Generator().manual_seed(run.seed)\n",
+            ),
+            (
+                "train",
+                "        loader = data.training_loader(training, run.seed, epoch)\n",
+                "        loader = data.training_loader(training, generator)\n",
+            ),
+        ),
+    ),
+    "cache_keyed_by_lesion": Version(
+        "image_cache",
+        "development",
+        False,
+        "The cache is keyed by lesion, so every image of a lesion is trained on as the "
+        "first of its images that was read.",
+        (
+            (
+                "data",
+                "        key = self.images.image_ids[position]\n",
+                "        key = self.images.lesion_ids[position]\n",
+            ),
+        ),
+    ),
+    "flipped_image_cached": Version(
+        "image_cache",
+        "test",
+        False,
+        "The cache keeps every image as it was flipped in the first epoch, so later epochs "
+        "repeat those flips instead of drawing new ones.",
+        (
+            (
+                "data",
+                _HAM_CACHED,
+                "        if key not in self.cache:\n"
+                "            self.cache[key] = flip(self.images.image(position).float() / 255, "
+                "self.generator)\n"
+                "        return self.cache[key], self.labels[position]\n",
+            ),
+        ),
+    ),
+    "akiec_left_out_of_validation": Version(
+        "label_mapping",
+        "development",
+        False,
+        "Validation's own list of malignant diagnoses leaves out akiec, so validation counts "
+        "those lesions as benign; training labels them right.",
+        (
+            (
+                "train",
+                'VALIDATED_MALIGNANT = ("mel", "bcc", "akiec")',
+                'VALIDATED_MALIGNANT = ("mel", "bcc")',
+            ),
+        ),
+    ),
+    "akiec_left_out_of_training": Version(
+        "label_mapping",
+        "test",
+        False,
+        "The training list of malignant diagnoses leaves out akiec, so training labels those "
+        "lesions benign; validation counts them right. Like akiec_left_out_of_validation it "
+        "maps a diagnosis wrongly, in another part of the code.",
+        (("config", 'MALIGNANT = ("mel", "bcc", "akiec")', 'MALIGNANT = ("mel", "bcc")'),),
+    ),
+    "start_read_from_the_scheduler": Version(
+        "restart",
+        "development",
+        True,
+        "A restart takes the epoch to start from from the restored schedule instead of the "
+        "checkpoint's epoch.",
+        (
+            (
+                "train",
+                _RESUMED_PROGRESS,
+                '        start, best_accuracy = scheduler.last_epoch + 1, state["best_accuracy"]\n',
+            ),
+        ),
+    ),
+    "explicit_random_sampler": Version(
+        "restart",
+        "test",
+        True,
+        "The loader is given a RandomSampler on the epoch's generator: the same images, "
+        "labels and kind of flips, in another order with other flips.",
+        (
+            ("data", _IMPORT, _IMPORT.replace("Dataset", "Dataset, RandomSampler")),
+            (
+                "data",
+                _HAM_SHUFFLED,
+                "    sampler = RandomSampler(dataset, generator=generator)\n"
+                "    return DataLoader(dataset, batch_size=config.BATCH_SIZE, sampler=sampler)\n",
+            ),
+        ),
+    ),
+    "no_cache": Version(
+        "image_cache",
+        "development",
+        True,
+        "Every image is converted again whenever it is read, without a cache.",
+        (
+            ("data", "        self.cache = {}\n", ""),
+            (
+                "data",
+                "        key = self.images.image_ids[position]\n" + _HAM_CACHED,
+                "        image = self.images.image(position).float() / 255\n"
+                "        return flip(image, self.generator), self.labels[position]\n",
+            ),
+        ),
+    ),
+    "converted_up_front": Version(
+        "image_cache",
+        "test",
+        True,
+        "Every image is converted and cached when the training set is built, before the "
+        "first epoch reads anything.",
+        (
+            (
+                "data",
+                "        self.cache = {}\n",
+                "        self.cache = {\n"
+                "            key: images.image(position).float() / 255\n"
+                "            for position, key in enumerate(images.image_ids)\n"
+                "        }\n",
+            ),
+        ),
+    ),
+    "labels_from_a_table": Version(
+        "label_mapping",
+        "development",
+        True,
+        "Training labels come from a table of all seven diagnoses instead of a list of the "
+        "malignant ones.",
+        (
+            (
+                "config",
+                "# The diagnoses trained as malignant; every other diagnosis is benign.\n"
+                'MALIGNANT = ("mel", "bcc", "akiec")\n',
+                "# The label of every diagnosis: 1 for malignant, 0 for benign.\n"
+                'LABELS = {"akiec": 1, "bcc": 1, "bkl": 0, "df": 0, "mel": 1, "nv": 0, "vasc": 0}\n',
+            ),
+            (
+                "data",
+                "    return int(diagnosis in config.MALIGNANT)\n",
+                "    return config.LABELS[diagnosis]\n",
+            ),
+        ),
+    ),
+    "validation_uses_the_training_labels": Version(
+        "label_mapping",
+        "test",
+        True,
+        "Validation labels its images with the training's label function instead of a "
+        "list of its own.",
+        (
+            (
+                "train",
+                '\n# The diagnoses validation counts as malignant.\nVALIDATED_MALIGNANT = ("mel", "bcc", "akiec")\n',
+                "",
+            ),
+            (
+                "train",
+                "        labels = [int(diagnosis in VALIDATED_MALIGNANT) for diagnosis in diagnoses]\n",
+                "        labels = [data.label(diagnosis) for diagnosis in diagnoses]\n",
+            ),
+        ),
+    ),
+}
+
+
 @dataclass(frozen=True, slots=True)
 class Family:
-    """A healthy project, its statement, and the versions made from it."""
+    """A healthy project, its statement, its tasks and the versions made from it."""
 
     name: str
     template: Path
     statement: str
     versions: dict[str, Version]
+    tasks: dict[str, str]
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -376,7 +671,14 @@ class Family:
 FAMILIES = {
     family.name: family
     for family in (
-        Family("camelyon_pipeline", TEMPLATES / "camelyon", CAMELYON_STATEMENT, CAMELYON_VERSIONS),
+        Family(
+            "camelyon_pipeline",
+            TEMPLATES / "camelyon",
+            CAMELYON_STATEMENT,
+            CAMELYON_VERSIONS,
+            CAMELYON_TASKS,
+        ),
+        Family("ham10000_pipeline", TEMPLATES / "ham10000", HAM_STATEMENT, HAM_VERSIONS, HAM_TASKS),
     )
 }
 

@@ -125,8 +125,8 @@
       ]
     },
     {
-      "task": "epoch_counter_restarts",
-      "family": "proposed for ham10000_pipeline",
+      "task": "epoch_count_not_restored",
+      "family": "ham10000_pipeline",
       "status": "public_instance",
       "cases": [
         {
@@ -140,8 +140,8 @@
       ]
     },
     {
-      "task": "shuffle_seed_reset",
-      "family": "proposed for ham10000_pipeline",
+      "task": "shuffle_generator_made_once",
+      "family": "ham10000_pipeline",
       "status": "public_instance",
       "cases": [
         {
@@ -156,13 +156,13 @@
     },
     {
       "task": "cache_keyed_by_lesion",
-      "family": "proposed for ham10000_pipeline",
+      "family": "ham10000_pipeline",
       "status": "not_found",
       "cases": []
     },
     {
-      "task": "augmentation_cached",
-      "family": "proposed for ham10000_pipeline",
+      "task": "flipped_image_cached",
+      "family": "ham10000_pipeline",
       "status": "public_instance",
       "cases": [
         {
@@ -177,7 +177,7 @@
     },
     {
       "task": "akiec_left_out_of_malignant",
-      "family": "proposed for ham10000_pipeline",
+      "family": "ham10000_pipeline",
       "status": "discussion_only",
       "cases": [
         {

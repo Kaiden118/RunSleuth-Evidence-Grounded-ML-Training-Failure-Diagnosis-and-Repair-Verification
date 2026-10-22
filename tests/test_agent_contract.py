@@ -1,6 +1,7 @@
 """CPU tests for the contract tests of agent scripts, on a tiny network."""
 
 import ast
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -73,7 +74,9 @@ class AgentContractTests(unittest.TestCase):
         self.assertGreaterEqual(len(correct), 9)
         self.assertGreaterEqual(len(wrong), 21)
         failed_somewhere = {clause for case in CASES.values() for clause in case.fails}
-        failed_somewhere.update(agent_contract.FAULT_CLAUSES.values())
+        failed_somewhere.update(
+            clause for name in ALL_FAULTS for clause in agent_contract.expected_failures(name)
+        )
         self.assertEqual(failed_somewhere, set(CLAUSES))
         self.assertTrue(set(CASES).isdisjoint(TASKS))
 
@@ -88,6 +91,71 @@ class AgentContractTests(unittest.TestCase):
         self.assertIn("1, 0.5, 0 of the first", detail)
         self.assertIn("gives 1, 0.75, 0.25", detail)
         self.assertEqual(late["clauses"]["optimizer"], {"passed": True, "detail": ""})
+
+    def test_the_network_must_be_trained_on_patches_normalized_once(self):
+        healthy = tiny(agent_tasks.task_source(HEALTHY))
+        fed = "model(prepare_training_batch(images))"
+        raw = self.result(healthy.replace(fed, "model(images)"))
+        self.assertEqual(raw["failed"], ["training_inputs"])
+        self.assertEqual(
+            raw["clauses"]["training_inputs"]["detail"],
+            "the network is trained on the patches as they come, not normalized",
+        )
+        # The prepare functions themselves are still right, which is all version 2 checked.
+        self.assertTrue(raw["clauses"]["input_normalization"]["passed"])
+        twice = self.result(
+            healthy.replace(fed, "model(prepare_training_batch(prepare_training_batch(images)))")
+        )
+        self.assertEqual(
+            twice["clauses"]["training_inputs"]["detail"],
+            "the network is trained on patches normalized twice",
+        )
+        inline = healthy.replace(
+            fed,
+            "model((images - torch.tensor(MEAN).view(1, 3, 1, 1)) / torch.tensor(STD).view(1, 3, 1, 1))",
+        )
+        self.assertIn("MEAN", healthy)
+        self.assertEqual(self.result(inline)["failed"], [], "normalizing inline is allowed")
+        self.assertEqual(agent_contract.CONTRACT_VERSION, 3)
+
+    def test_an_audit_checks_final_scripts_beside_the_stored_results(self):
+        study = self.root / "study"
+        healthy = tiny(agent_tasks.task_source(HEALTHY))
+        scripts = {
+            "healthy-C0-1": (healthy, "passed"),
+            "healthy-C0-2": (
+                healthy.replace("model(prepare_training_batch(images))", "model(images)"),
+                "passed",
+            ),
+            "stale_head-C1-1": (tiny(agent_tasks.task_source("stale_head")), "failed"),
+            "healthy-C1-1": (healthy, "passed"),
+        }
+        for name, (source, status) in scripts.items():
+            folder = study / "episodes" / name
+            folder.mkdir(parents=True)
+            episode = {"repair_task": name.split("-")[0], "final_script": source}
+            (folder / "episode.json").write_text(json.dumps(episode), encoding="utf-8")
+            stored = {"contract_version": 2, "status": status}
+            (folder / "contract.json").write_text(json.dumps(stored), encoding="utf-8")
+        calls = []
+
+        def runner(script, family):
+            calls.append(family)
+            return agent_contract.run_contract(
+                script, self.reference, patch_size=PATCH_SIZE, family=family
+            )
+
+        report = agent_contract.audit(study, runner=runner)
+        self.assertEqual((report["episodes"], report["scripts"], len(calls)), (4, 3, 3))
+        self.assertEqual(set(calls), {"camelyon"})
+        self.assertEqual(report["passed_then_fail"], ["healthy-C0-2"])
+        self.assertEqual(report["failed_then_pass"], [])
+        self.assertEqual(report["rows"]["healthy-C0-2"]["failed"], ["training_inputs"])
+        saved = json.loads((study / "contract_audit.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["passed_then_fail"], ["healthy-C0-2"])
+        stored = json.loads((study / "episodes" / "healthy-C0-2" / "contract.json").read_text())
+        self.assertEqual(stored["contract_version"], 2, "the audit leaves the labels alone")
+        self.assertIn("passed before, fail now: 1", agent_contract.audit_text(report))
 
     def test_a_script_that_fails_or_is_refused_does_not_pass(self):
         crashing = tiny(agent_tasks.task_source(HEALTHY)).replace(
@@ -137,6 +205,65 @@ class AgentContractTests(unittest.TestCase):
         for name in (*ALL_FAULTS, *(fault.signature for fault in FAULTS.values())):
             self.assertNotIn(name, statement)
 
+    def test_the_ham10000_family_has_its_own_clauses_and_cases(self):
+        rows = agent_contract.check_cases(
+            patch_size=PATCH_SIZE,
+            sources=lambda name: tiny(agent_contract.case_source(name, "ham10000")),
+            family="ham10000",
+        )
+        tasks = agent_tasks.family("ham10000").tasks
+        self.assertEqual([row["name"] for row in rows], [*tasks, *agent_contract.HAM_CASES])
+        for row in rows:
+            with self.subTest(script=row["name"]):
+                self.assertEqual(sorted(row["failed"]), sorted(row["expected"]), row["details"])
+        clauses = agent_contract.SPECS["ham10000"].clauses
+        self.assertEqual(clauses[:2], ("training_sources", "held_out_lesions"))
+        failed = {clause for row in rows for clause in row["expected"]}
+        self.assertEqual(failed, set(clauses))
+        script = self.write(
+            "image_key", tiny(agent_tasks.task_source("held_out_by_image", "ham10000"))
+        )
+        reference = self.write("ham", tiny(agent_tasks.task_source(HEALTHY, "ham10000")))
+        result = agent_contract.run_contract(
+            script, reference, patch_size=PATCH_SIZE, family="ham10000"
+        )
+        self.assertEqual((result["family"], result["failed"]), ("ham10000", ["held_out_lesions"]))
+        self.assertEqual(
+            result["clauses"]["held_out_lesions"]["detail"],
+            "two images of one lesion get different keys",
+        )
+        self.assertEqual(tuple(result["clauses"]), clauses)
+        refused = agent_contract.run_contract_in_subprocess(
+            self.write("bad", "import os\n"), family="ham10000"
+        )
+        self.assertEqual((refused["status"], refused["failed"]), ("refused", list(clauses)))
+        # A camelyon script has no held_out_key, which the ham10000 contract requires.
+        camelyon = agent_contract.run_contract(
+            self.write("camelyon", tiny(agent_tasks.task_source(HEALTHY))),
+            reference,
+            patch_size=PATCH_SIZE,
+            family="ham10000",
+        )
+        self.assertIn("held_out_lesions", camelyon["failed"])
+
+    def test_the_structured_family_meets_the_same_clauses_with_cases_of_its_own(self):
+        rows = agent_contract.check_cases(
+            patch_size=PATCH_SIZE,
+            sources=lambda name: tiny(agent_contract.case_source(name, "camelyon_structured")),
+            family="camelyon_structured",
+        )
+        self.assertEqual([row["name"] for row in rows], [*TASKS, *agent_contract.STRUCTURED_CASES])
+        for row in rows:
+            with self.subTest(script=row["name"]):
+                self.assertEqual(sorted(row["failed"]), sorted(row["expected"]), row["details"])
+        self.assertEqual(agent_contract.SPECS["camelyon_structured"].clauses, CLAUSES)
+        # Stage two says plainly that train_one_epoch gets the patches as they come.
+        for name in ("camelyon_structured", "ham10000"):
+            statement = agent_tasks.family(name).statement
+            self.assertIn("as they come, so the script prepares its", statement)
+            self.assertNotIn("calls five functions", statement)
+        self.assertIn("calls five functions", agent_tasks.STATEMENT, "stage one's is frozen")
+
     def test_the_checks_share_no_code_with_the_verifier(self):
         tree = ast.parse(Path(agent_contract.__file__).read_text(encoding="utf-8"))
         imported = set()
@@ -149,7 +276,6 @@ class AgentContractTests(unittest.TestCase):
                 "runsleuth.agent_tasks",
                 "runsleuth.agent_tasks.FAULTS",
                 "runsleuth.agent_tasks.HEALTHY",
-                "runsleuth.agent_tasks.TASKS",
                 "runsleuth.agent_workspace.ScriptRefused",
                 "runsleuth.agent_workspace.check_script",
                 "runsleuth.agent_workspace.clean_environment",

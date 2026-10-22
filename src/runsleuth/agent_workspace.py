@@ -40,8 +40,8 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from runsleuth import agent_tasks
-from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME, TASKS
+from runsleuth import agent_tasks, ham10000_data
+from runsleuth.agent_tasks import HEALTHY, SCRIPT_NAME
 from runsleuth.agent_verification import compare_trajectories
 from runsleuth.camelyon_config import CamelyonConfig
 from runsleuth.camelyon_data import (
@@ -189,11 +189,17 @@ class TaskData:
     record: dict[str, Any]
 
 
-DataBuilder = Callable[[Callable[[int], bool], torch.device, int], TaskData]
+# build(use_for_training, device, seed, held_out_key=None) -> TaskData; held_out_key is
+# the script's, if it has one, for data whose validation images hold out more than
+# themselves (HAM10000's lesions).
+DataBuilder = Callable[..., TaskData]
 
 
 def synthetic_task_data(
-    use_for_training: Callable[[int], bool], device: torch.device, seed: int
+    use_for_training: Callable[[int], bool],
+    device: torch.device,
+    seed: int,
+    held_out_key: Callable[[str, str], str] | None = None,
 ) -> TaskData:
     """Random patches from four hospitals: a smoke test of the harness, not a benchmark.
 
@@ -256,7 +262,12 @@ def camelyon_task_data(config: CamelyonConfig) -> DataBuilder:
     hospital trains on its slides without ever seeing an evaluation patch itself.
     """
 
-    def build(use_for_training: Callable[[int], bool], device: torch.device, seed: int):
+    def build(
+        use_for_training: Callable[[int], bool],
+        device: torch.device,
+        seed: int,
+        held_out_key: Callable[[str, str], str] | None = None,
+    ):
         from torchvision import transforms
 
         dataset = load_camelyon_mirror(config, download=False)
@@ -352,19 +363,108 @@ def camelyon_task_data(config: CamelyonConfig) -> DataBuilder:
     return build
 
 
-DATA_SOURCES = ("synthetic", "camelyon")
+class ImageArray:
+    """Images held as uint8 (image, height, width, channel), served as [0, 1] tensors."""
+
+    def __init__(self, images, labels: list[int], indices: list[int]) -> None:
+        self.images, self.labels, self.indices = images, labels, list(indices)
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, position: int) -> tuple[torch.Tensor, int]:
+        index = self.indices[position]
+        image = torch.from_numpy(self.images[index].copy()).permute(2, 0, 1)
+        return image.float().div_(255), self.labels[index]
+
+
+def ham10000_task_data(config: ham10000_data.HamConfig) -> DataBuilder:
+    """HAM10000 images for workspace scripts; ham10000_data says how they are split.
+
+    The validation sets are fixed by the data. The training images follow the sources
+    the script admits and the key by which it holds images out with the validation
+    images, which a HAM10000 script must define.
+    """
+
+    def build(
+        use_for_training: Callable[[int], bool],
+        device: torch.device,
+        seed: int,
+        held_out_key: Callable[[str, str], str] | None = None,
+    ) -> TaskData:
+        if held_out_key is None:
+            raise ValueError("a HAM10000 script must define held_out_key(image_id, lesion_id)")
+        data = ham10000_data.load(config)
+        rows = data.rows
+        labels = [row["label"] for row in rows]
+        evaluation = ham10000_data.evaluation_split(config, rows)
+        training = ham10000_data.training_split(config, rows, use_for_training, held_out_key)
+        if not training:
+            raise ValueError("the script admits no image for training")
+
+        def loader(indices: list[int], *, shuffle: bool = False):
+            return DataLoader(
+                ImageArray(data.images, labels, indices),
+                batch_size=config.batch_size,
+                shuffle=shuffle,
+                num_workers=config.num_workers,
+                pin_memory=device.type == "cuda",
+                generator=torch.Generator().manual_seed(seed),
+                worker_init_fn=seed_worker if config.num_workers else None,
+            )
+
+        def digest(indices: list[int]) -> str:
+            return hashlib.sha256(json.dumps(indices, separators=(",", ":")).encode()).hexdigest()
+
+        manifest = data.manifest
+        return TaskData(
+            train_loader=loader(training, shuffle=True),
+            evaluation_loaders={split: loader(indices) for split, indices in evaluation.items()},
+            holdouts=ham10000_data.holdouts(config, rows, training),
+            record={
+                "source": "ham10000",
+                "provenance": {
+                    key: manifest[key]
+                    for key in ("doi", "license", "published_md5", "images_sha256", "image_size")
+                },
+                "subset_seed": config.subset_seed,
+                "batch_size": config.batch_size,
+                "training_sources": sorted(
+                    {config.sources[rows[index]["source"]] for index in training}
+                ),
+                "training_samples": len(training),
+                "training_indices_sha256": digest(training),
+                "evaluation_samples": {split: len(ids) for split, ids in evaluation.items()},
+                "evaluation_indices_sha256": {
+                    split: digest(ids) for split, ids in evaluation.items()
+                },
+            },
+        )
+
+    return build
+
+
+DATA_SOURCES = ("synthetic", "camelyon", "ham10000")
 
 
 def data_builder(
     source: str, config: Path | None = None, max_eval_samples: int | None = None
 ) -> DataBuilder:
-    """The data source named on the command line; Camelyon17 needs its config file.
+    """The data source named on the command line; Camelyon17 and HAM10000 need a config.
 
-    max_eval_samples caps each Camelyon17 validation split, for quick runs whose
-    metrics may be noisier; the synthetic source is small already and ignores it.
+    max_eval_samples caps each Camelyon17 validation split, and HAM10000's
+    out-of-distribution one (its in-distribution split is whole lesions), for quick
+    runs whose metrics may be noisier; the synthetic source is small and ignores it.
     """
     if source == "synthetic":
         return synthetic_task_data
+    if source == "ham10000":
+        if config is None:
+            raise ValueError("HAM10000 data needs --config, for example configs/ham10000.json")
+        ham = ham10000_data.HamConfig.load(Path(config))
+        if max_eval_samples is not None:
+            ham = replace(ham, max_ood_val_samples=max_eval_samples)
+        return ham10000_task_data(ham)
     if source != "camelyon":
         raise ValueError(f"Unknown data source {source!r}; choose from {', '.join(DATA_SOURCES)}")
     if config is None:
@@ -404,7 +504,9 @@ def run_workspace(
     """
     script = Path(workspace) / SCRIPT_NAME
     module = load_script(script)
-    data = build_data(module.use_for_training, device, seed)
+    data = build_data(
+        module.use_for_training, device, seed, held_out_key=vars(module).get("held_out_key")
+    )
     steps_per_epoch = len(data.train_loader)
     if max_train_batches is not None:
         steps_per_epoch = min(steps_per_epoch, max_train_batches)
@@ -594,7 +696,8 @@ def check_tasks(
     device: str = "auto",
     max_train_batches: int | None = None,
     timeout: float = 3600.0,
-    tasks: tuple[str, ...] = TASKS,
+    tasks: tuple[str, ...] | None = None,
+    family: str = "camelyon",
     run: Callable[..., dict[str, Any]] = run_in_subprocess,
     progress: Callable[[str], None] = lambda _line: None,
 ) -> dict[str, Any]:
@@ -606,6 +709,7 @@ def check_tasks(
     stops if the healthy run does not complete. The result is also written to
     check_report.json in output_dir, which must be new.
     """
+    tasks = agent_tasks.family(family).tasks if tasks is None else tasks
     if HEALTHY not in tasks:
         raise ValueError("The healthy task is the reference and must be checked")
     output_dir = Path(output_dir)
@@ -614,7 +718,7 @@ def check_tasks(
     ordered = (HEALTHY, *(name for name in tasks if name != HEALTHY))
     for number, task in enumerate(ordered, start=1):
         progress(f"[{number}/{len(ordered)}] training {task}")
-        workspace = agent_tasks.materialize(task, output_dir / "workspaces" / task)
+        workspace = agent_tasks.materialize(task, output_dir / "workspaces" / task, family)
         outcome = run(
             workspace,
             output_dir / "runs" / task,
@@ -628,7 +732,7 @@ def check_tasks(
         )
         row = {
             "task": task,
-            "expected": agent_tasks.expected_diagnosis(task),
+            "expected": agent_tasks.expected_diagnosis(task, family),
             "status": outcome["status"],
             "diagnosis": None,
             "as_expected": False,
@@ -728,10 +832,9 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument(
         "--tasks",
         nargs="+",
-        choices=TASKS,
-        default=list(TASKS),
-        help="Tasks to check; healthy is the reference and must be among them.",
+        help="Tasks to check, all of the family's if unset; healthy must be among them.",
     )
+    check.add_argument("--family", choices=tuple(agent_tasks.FAMILIES), default="camelyon")
     for command in (run, check):
         command.add_argument("--data", choices=DATA_SOURCES, required=True)
         command.add_argument("--config", type=Path, help="Camelyon17 config file.")
@@ -758,7 +861,8 @@ def main(argv: list[str] | None = None) -> int:
             device=args.device,
             max_train_batches=args.max_train_batches,
             timeout=args.timeout,
-            tasks=tuple(args.tasks),
+            tasks=None if args.tasks is None else tuple(args.tasks),
+            family=args.family,
             progress=lambda line: print(line, flush=True),
         )
         print(check_text(result))

@@ -1,0 +1,17 @@
+{
+  "data_dir": "C:/Users/ADMIN/OneDrive/Desktop/RunSleuth-Evidence-Grounded-ML-Training-Failure-Diagnosis-and-Repair-Verification/data/raw/ham10000",
+  "sources": {
+    "vidir_molemax": 0,
+    "rosendahl": 1,
+    "vienna_dias": 2,
+    "vidir_modern": 3
+  },
+  "ood_source": "rosendahl",
+  "sealed_source": "vienna_dias",
+  "image_size": 128,
+  "subset_seed": 2026,
+  "id_val_fraction": 0.15,
+  "max_ood_val_samples": 1000,
+  "batch_size": 32,
+  "num_workers": 0
+}

@@ -55,7 +55,7 @@ class TaskSourceTests(unittest.TestCase):
         for old in ("not in the script", "model"):
             with (
                 self.subTest(old=old),
-                patch.dict(ALL_FAULTS, {"broken": Fault("none", "none", ((old, ""),))}),
+                patch.dict(FAULTS, {"broken": Fault("none", "none", ((old, ""),))}),
                 self.assertRaisesRegex(ValueError, "exactly once"),
             ):
                 agent_tasks.task_source("broken")
@@ -103,6 +103,104 @@ class TaskSourceTests(unittest.TestCase):
                 self.assertNotIn(hint.lower(), statement)
             with self.assertRaises(FileExistsError):
                 agent_tasks.materialize(HEALTHY, Path(temporary) / HEALTHY)
+
+    def test_the_ham10000_family_holds_the_same_tasks_and_one_of_its_own(self):
+        ham = agent_tasks.family("ham10000")
+        self.assertEqual(len(ham.tasks), len(TASKS) + 1)
+        sources = {task: agent_tasks.task_source(task, "ham10000") for task in ham.tasks}
+        self.assertEqual(len(set(sources.values())), len(ham.tasks), "tasks must differ")
+        for task, source in sources.items():
+            with self.subTest(task=task):
+                compile(source, agent_tasks.SCRIPT_NAME, "exec")
+                self.assertNotIn("hospital", source.lower())
+        # The leak through a validation source, and the leak through a lesion's other
+        # images, are both diagnosed by the signature for overlapping groups.
+        overlap = {
+            task
+            for task in ham.faults
+            if agent_tasks.expected_diagnosis(task, "ham10000") == "train_evaluation_group_overlap"
+        }
+        self.assertEqual(overlap, {"validation_source_in_training", "held_out_by_image"})
+        self.assertEqual(agent_tasks.kind("held_out_by_image", "ham10000"), "listed_fault")
+        self.assertEqual(agent_tasks.kind("training_source_left_out", "ham10000"), "unlisted_fault")
+        self.assertTrue(agent_tasks.is_faulty("held_out_by_image", "ham10000"))
+        self.assertFalse(agent_tasks.is_faulty("held_out_by_image"), "not a camelyon task")
+        self.assertIn(
+            "-    return lesion_id", agent_tasks.source_diff("held_out_by_image", "ham10000")
+        )
+        # Shared tasks make the same change to both scripts.
+        for task in ("stale_head", "weight_decay_dropped"):
+            camelyon = [
+                line for line in agent_tasks.source_diff(task).splitlines() if line[:1] in "+-"
+            ]
+            ham10000 = [
+                line
+                for line in agent_tasks.source_diff(task, "ham10000").splitlines()
+                if line[:1] in "+-"
+            ]
+            self.assertEqual(camelyon[2:], ham10000[2:])
+        with self.assertRaisesRegex(ValueError, "Unknown task family"):
+            agent_tasks.task_source(HEALTHY, "imagenet")
+
+    def test_the_ham10000_statement_states_the_lesions_and_names_no_fault(self):
+        ham = agent_tasks.family("ham10000")
+        statement = ham.statement
+        for stated in (
+            "held_out_key",
+            "every source (0 to 3) except sources 1 and 2",
+            "every image of one lesion the same key",
+            "weight decay 1e-2",
+            "128x128",
+        ):
+            self.assertIn(stated, statement)
+        signatures = (fault.signature for fault in ham.all_faults.values() if fault.signature)
+        for hint in (*ham.all_faults, *ham.lookalikes, *signatures, "fault", "bug"):
+            self.assertNotIn(hint.lower(), statement.lower())
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = agent_tasks.materialize(
+                "held_out_by_image", Path(temporary) / "w", "ham10000"
+            )
+            self.assertEqual((workspace / "TASK.md").read_text(encoding="utf-8"), statement)
+
+    def test_the_structured_family_states_the_same_and_is_written_otherwise(self):
+        structured = agent_tasks.family("camelyon_structured")
+        # The same requirements; only the sentence on how the harness uses the functions
+        # is said plainly, since stage one's wording misled agents.
+        requirements = agent_tasks.STATEMENT.split("## What the script must do")[1]
+        self.assertEqual(structured.statement.split("## What the script must do")[1], requirements)
+        self.assertEqual(
+            structured.statement,
+            agent_tasks.STATEMENT.replace(agent_tasks._CALLS, agent_tasks._USES),
+        )
+        self.assertNotEqual(structured.statement, agent_tasks.STATEMENT)
+        self.assertEqual(structured.tasks, TASKS)
+        healthy = agent_tasks.healthy_source("camelyon_structured")
+        self.assertGreater(
+            len(healthy.splitlines()), 2 * len(agent_tasks.healthy_source().splitlines())
+        )
+        for name in (
+            "class TrainingConfig",
+            "class EpochRunner",
+            "def make_scheduler",
+            "HOSPITAL_ROLES",
+        ):
+            self.assertIn(name, healthy)
+        sources = {task: agent_tasks.task_source(task, "camelyon_structured") for task in TASKS}
+        self.assertEqual(len(set(sources.values())), len(TASKS), "tasks must differ")
+        for task, source in sources.items():
+            with self.subTest(task=task):
+                compile(source, agent_tasks.SCRIPT_NAME, "exec")
+                self.assertEqual(
+                    agent_tasks.expected_diagnosis(task, "camelyon_structured"),
+                    agent_tasks.expected_diagnosis(task),
+                )
+                self.assertEqual(
+                    agent_tasks.kind(task, "camelyon_structured"), agent_tasks.kind(task)
+                )
+        # The stale binding is an order of calls here, not a line placed after the optimizer.
+        diff = agent_tasks.source_diff("stale_head", "camelyon_structured")
+        self.assertIn("-    replace_head(model, CONFIG.num_classes)", diff)
+        self.assertIn("+    replace_head(model, CONFIG.num_classes)", diff)
 
     def test_command_line_lists_and_shows_tasks(self):
         output = io.StringIO()

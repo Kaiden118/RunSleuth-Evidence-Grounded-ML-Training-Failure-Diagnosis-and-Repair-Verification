@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "task": "ham10000_audit",
+  "dataset": {
+    "doi": "doi:10.7910/DVN/DBW86T",
+    "license": "CC BY-NC 4.0",
+    "images": 10015,
+    "lesions": 7470,
+    "published_md5": {
+      "HAM10000_images_part_1.zip": "4639bfa73ab251610530a97c898e6e46",
+      "HAM10000_images_part_2.zip": "da43d6cc50f6613013be07e8986b384b",
+      "HAM10000_metadata.csv": "8f85fb1aa29d80a2797247e434deb79d"
+    }
+  },
+  "config": {
+    "sources": {
+      "vidir_molemax": 0,
+      "rosendahl": 1,
+      "vienna_dias": 2,
+      "vidir_modern": 3
+    },
+    "ood_source": "rosendahl",
+    "sealed_source": "vienna_dias",
+    "id_val_fraction": 0.15,
+    "subset_seed": 2026,
+    "max_ood_val_samples": 1000,
+    "image_size": 128
+  },
+  "sources": {
+    "vidir_molemax": {
+      "number": 0,
+      "images": 3954,
+      "lesions": 3954,
+      "malignant_share": 0.007,
+      "by_source": {
+        "vidir_molemax": 3954
+      }
+    },
+    "rosendahl": {
+      "number": 1,
+      "images": 2259,
+      "lesions": 1552,
+      "malignant_share": 0.413,
+      "by_source": {
+        "rosendahl": 2259
+      }
+    },
+    "vienna_dias": {
+      "number": 2,
+      "images": 439,
+      "lesions": 278,
+      "malignant_share": 0.164,
+      "by_source": {
+        "vienna_dias": 439
+      }
+    },
+    "vidir_modern": {
+      "number": 3,
+      "images": 3363,
+      "lesions": 1695,
+      "malignant_share": 0.274,
+      "by_source": {
+        "vidir_modern": 3363
+      }
+    }
+  },
+  "validation": {
+    "id validation": {
+      "images": 829,
+      "lesions": 829,
+      "malignant_share": 0.093,
+      "by_source": {
+        "vidir_modern": 250,
+        "vidir_molemax": 579
+      }
+    },
+    "ood validation": {
+      "images": 1000,
+      "lesions": 842,
+      "malignant_share": 0.413,
+      "by_source": {
+        "rosendahl": 1000
+      }
+    },
+    "sealed": {
+      "images": 439,
+      "lesions": 278,
+      "malignant_share": 0.164,
+      "by_source": {
+        "vienna_dias": 439
+      }
+    }
+  },
+  "training": {
+    "keyed_by_lesion": {
+      "training": {
+        "images": 6254,
+        "lesions": 4811,
+        "malignant_share": 0.128,
+        "by_source": {
+          "vidir_modern": 2879,
+          "vidir_molemax": 3375
+        }
+      },
+      "shared": {
+        "training / id validation": {
+          "images": 0,
+          "lesions": 0
+        },
+        "training / ood validation": {
+          "images": 0,
+          "lesions": 0
+        },
+        "training / sealed": {
+          "images": 0,
+          "lesions": 0
+        },
+        "id validation / ood validation": {
+          "images": 0,
+          "lesions": 0
+        }
+      }
+    },
+    "keyed_by_image": {
+      "training": {
+        "images": 6488,
+        "lesions": 4992,
+        "malignant_share": 0.134,
+        "by_source": {
+          "vidir_modern": 3113,
+          "vidir_molemax": 3375
+        }
+      },
+      "shared": {
+        "training / id validation": {
+          "images": 0,
+          "lesions": 181
+        },
+        "training / ood validation": {
+          "images": 0,
+          "lesions": 0
+        },
+        "training / sealed": {
+          "images": 0,
+          "lesions": 0
+        },
+        "id validation / ood validation": {
+          "images": 0,
+          "lesions": 0
+        }
+      }
+    }
+  }
+}

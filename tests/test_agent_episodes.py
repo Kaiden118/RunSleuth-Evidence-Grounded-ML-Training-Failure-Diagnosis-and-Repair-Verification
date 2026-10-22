@@ -5,6 +5,7 @@ import io
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -45,9 +46,9 @@ def run_in_process(workspace, run_dir, *, data, config, epochs, seed, **options)
     return {"status": status, "problems": [], "report": str(path), "output": ""}
 
 
-def contract(script):
+def contract(script, family="camelyon"):
     """The contract tests without a child process, on patches the tiny network can take."""
-    return agent_contract.run_contract(script, patch_size=16)
+    return agent_contract.run_contract(script, patch_size=16, family=family)
 
 
 @unittest.skipIf(torch is None, "Install torch and torchvision for the episode tests")
@@ -439,9 +440,9 @@ class EpisodeTests(unittest.TestCase):
         )
         calls = []
 
-        def other(script):
+        def other(script, family="camelyon"):
             calls.append(script.read_text(encoding="utf-8"))
-            return {**contract(script), "contract_version": 99}
+            return {**contract(script, family), "contract_version": 99}
 
         self.assertEqual(agent_episodes.score_episodes(pilot, other), 0, "already scored")
         scored.unlink()
@@ -509,9 +510,9 @@ class EpisodeTests(unittest.TestCase):
         )
         lines, scored = [], []
 
-        def counted(script):
+        def counted(script, family="camelyon"):
             scored.append(script.read_text(encoding="utf-8"))
-            return contract(script)
+            return contract(script, family)
 
         options = {
             "tasks": ("stale_head", HEALTHY),
@@ -611,6 +612,61 @@ class EpisodeTests(unittest.TestCase):
         )
         self.assertEqual(again, summary)
 
+    def test_a_ham10000_episode_is_run_scored_and_verified_in_its_family(self):
+        from test_ham10000_data import made_up_ham10000
+
+        from runsleuth import ham10000_data
+
+        config, published = made_up_ham10000(self.root / "ham")
+        ham10000_data.prepare(config, published=published)
+        config_path = self.root / "ham.json"
+        values = {name: getattr(config, name) for name in config.__dataclass_fields__}
+        config_path.write_text(json.dumps(values), encoding="utf-8")
+        store = RunStore(
+            self.root / "ham-runs",
+            data="ham10000",
+            config=config_path,
+            seed=11,
+            runner=run_in_process,
+        )
+        repair = {"old_text": "    return image_id\n", "new_text": "    return lesion_id\n"}
+
+        def episode(name, *replies):
+            return agent_episodes.run_episode(
+                Scripted(*replies),
+                "scripted-model",
+                "held_out_by_image",
+                "C4",
+                self.root / name,
+                store,
+                quick=BUDGET,
+                full=BUDGET,
+                contract=contract,
+                family="ham10000",
+                sleep=lambda _seconds: None,
+            )
+
+        repaired = episode(
+            "repaired", reply(("edit_file", repair)), reply(("run_training", {})), finish(True)
+        )
+        self.assertEqual((repaired["family"], repaired["task_kind"]), ("ham10000", "listed_fault"))
+        self.assertEqual(repaired["semantic_basis"], "same_program_as_healthy_script")
+        self.assertEqual(
+            (repaired["contract"]["family"], repaired["contract"]["status"]), ("ham10000", "passed")
+        )
+        self.assertEqual(repaired["verification"]["triage"], "accept")
+        self.assertIn(
+            "held_out_key", (self.root / "repaired" / "workspace" / "TASK.md").read_text("utf-8")
+        )
+        left = episode("left", reply(("run_training", {})), finish(True))
+        self.assertEqual(left["contract"]["failed"], ["held_out_lesions"])
+        self.assertEqual(left["verification"]["re_diagnosis"], "train_evaluation_group_overlap")
+        shown = left["agent"]["steps"][0]["tool_calls"][0]["result"]
+        self.assertEqual(shown["diagnosis"]["diagnosis"], "train_evaluation_group_overlap")
+        self.assertEqual(shown["verification"]["triage"], "reject")
+        summary = agent_episodes.summarize([repaired, left])
+        self.assertEqual(summary["conditions"]["C4"]["false_claims"], 1)
+
     def test_a_pilot_directory_holds_one_model_and_one_setup(self):
         options = {
             "tasks": (HEALTHY,),
@@ -643,7 +699,14 @@ class EpisodeTests(unittest.TestCase):
         ):
             pilot("model-a", provider="gemini")
         with (
-            patch.object(agent_episodes.agent_tasks, "STATEMENT", "Another task."),
+            patch.dict(
+                agent_episodes.agent_tasks.FAMILIES,
+                {
+                    "camelyon": replace(
+                        agent_episodes.agent_tasks.FAMILIES["camelyon"], statement="Another task."
+                    )
+                },
+            ),
             self.assertRaisesRegex(ValueError, "statement sha256"),
         ):
             pilot("model-a", provider="gemini")

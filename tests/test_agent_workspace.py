@@ -42,9 +42,9 @@ class Tiny(nn.Module):
 TASK_SOURCE = agent_tasks.task_source  # Bound here, before any test patches it.
 
 
-def tiny_source(task: str) -> str:
+def tiny_source(task: str, family_name: str = "camelyon") -> str:
     """A task's script with the tiny model in place of the pretrained ResNet18."""
-    source = TASK_SOURCE(task)
+    source = TASK_SOURCE(task, family_name)
     resnet = "model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)"
     marker = "\n\ndef use_for_training"
     assert source.count(resnet) == 1 and source.count(marker) == 1
@@ -675,7 +675,11 @@ class TaskCheckTests(unittest.TestCase):
             patch("builtins.print") as printed,
         ):
             self.assertEqual(agent_workspace.main(arguments), 1)
-            self.assertEqual(check.call_args.kwargs["tasks"], TASKS)
+            # Without --tasks the check takes every task of the family.
+            self.assertEqual(check.call_args.kwargs["tasks"], None)
+            self.assertEqual(check.call_args.kwargs["family"], "camelyon")
+            agent_workspace.main([*arguments, "--family", "ham10000"])
+            self.assertEqual(check.call_args.kwargs["family"], "ham10000")
             selected = [*arguments, "--tasks", HEALTHY, "stale_head"]
             agent_workspace.main(selected)
             self.assertEqual(check.call_args.kwargs["tasks"], (HEALTHY, "stale_head"))

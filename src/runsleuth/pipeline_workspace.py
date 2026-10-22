@@ -22,6 +22,11 @@ a sandbox.
 
     python -m runsleuth.pipeline_workspace run --project P --output runs/p \
         --data synthetic --interrupt-after-epochs 1
+    python -m runsleuth.pipeline_workspace check --output artifacts/pipeline_tasks/check-1 \
+        --data camelyon --config configs/camelyon17_clean.json
+
+check trains every version of pipeline_tasks for the same budget, and the healthy
+project once more with a restart, and diagnoses each run against the healthy one.
 """
 
 import argparse
@@ -47,6 +52,8 @@ from torch import nn
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, get_worker_info
 
+from runsleuth import pipeline_tasks
+from runsleuth.agent_verification import compare_trajectories
 from runsleuth.agent_workspace import (
     ALLOWED_IMPORTS,
     HASHED_STEPS,
@@ -59,7 +66,9 @@ from runsleuth.agent_workspace import (
 from runsleuth.camelyon_config import CamelyonConfig
 from runsleuth.camelyon_data import NativeRGBPatch, load_camelyon_mirror, select_stratified_indices
 from runsleuth.optimizer_probe import state_dict_sha256
+from runsleuth.pipeline_tasks import HEALTHY
 from runsleuth.run_monitor import RunMonitor
+from runsleuth.signature_matching import diagnose, extract_evidence, load_library
 from runsleuth.train import resolve_device, seed_everything
 
 ENTRY_MODULE = "train"
@@ -69,6 +78,8 @@ MODULE_NAME = re.compile(r"[a-z][a-z0-9_]*\Z")
 CHECKPOINT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 MEAN, STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 EVALUATION_BATCH_SIZE = 128
+# The check's second run of the healthy project, restarted after its first epoch.
+RESTARTED = "healthy_restarted"
 
 
 def project_sources(directory: Path) -> dict[str, str]:
@@ -856,7 +867,6 @@ def camelyon_pipeline_data(config: CamelyonConfig) -> DataBuilder:
                 {
                     "labels": [labels[index] for index in indices],
                     "hospitals": [hospitals[index] for index in indices],
-                    "slides": [slides[index] for index in indices],
                 },
             )
 
@@ -980,29 +990,231 @@ def run_in_subprocess(
     return {**outcome, **reported}
 
 
+def run_evidence(report: dict[str, Any]) -> dict[str, Any]:
+    """What a run's pipeline record says about its training data and its delivery.
+
+    held_out_training_samples is the most training samples read from groups that an
+    evaluation split holds out; labels_matching is the share of the loss's targets that
+    are the labels of the samples read, or None where they could not be paired.
+    """
+    pipeline = report.get("pipeline") or {}
+    epochs = pipeline.get("epochs") or []
+    held_out = [
+        holdout["training_samples_in_evaluation_groups"]
+        for holdout in (report.get("evaluation_holdouts") or {}).values()
+        if holdout.get("held_out_by")
+    ]
+    matching = [epoch["loss_targets_matching_read_labels"] for epoch in epochs]
+    targets = sum(epoch["loss_targets"] for epoch in epochs)
+    return {
+        "held_out_training_samples": max(held_out) if held_out else None,
+        "labels_matching": None if None in matching or not targets else sum(matching) / targets,
+        "delivered": (pipeline.get("delivery") or {}).get("same_as"),
+    }
+
+
+def check_versions(
+    output_dir: Path,
+    *,
+    data: str,
+    epochs: int,
+    seed: int,
+    config: Path | None = None,
+    device: str = "auto",
+    max_eval_samples: int | None = None,
+    timeout: float = 3600.0,
+    versions: tuple[str, ...] | None = None,
+    family: str = "camelyon_pipeline",
+    run: Callable[..., dict[str, Any]] = run_in_subprocess,
+    progress: Callable[[str], None] = lambda _line: None,
+) -> dict[str, Any]:
+    """Train every version for the same budget and diagnose each run against the healthy one.
+
+    The healthy project also runs a second time, stopped after its first epoch and
+    restarted (healthy_restarted), and is as_expected only if it then trains exactly
+    the uninterrupted run. Any other version is as_expected when its run completes and
+    is diagnosed with its signature, or with no_known_fault for a correct version or a
+    fault the library has no signature for. trajectory compares the hashed model
+    states with the healthy run's (see agent_verification). The check stops if the
+    healthy run does not complete, and is written to check_report.json in output_dir,
+    which must be new.
+    """
+    names = pipeline_tasks.family(family).names if versions is None else versions
+    if HEALTHY not in names:
+        raise ValueError("The healthy project is the reference and must be checked")
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True)
+    library, reports, rows = load_library(), {}, []
+    ordered = (HEALTHY, RESTARTED, *(name for name in names if name != HEALTHY))
+    for number, name in enumerate(ordered, start=1):
+        progress(f"[{number}/{len(ordered)}] training {name}")
+        source = HEALTHY if name == RESTARTED else name
+        project = pipeline_tasks.materialize(source, output_dir / "projects" / name, family)
+        outcome = run(
+            project,
+            output_dir / "runs" / name,
+            data=data,
+            config=config,
+            epochs=epochs,
+            seed=seed,
+            device=device,
+            interrupt_after_epochs=1 if name == RESTARTED else None,
+            max_eval_samples=max_eval_samples,
+            timeout=timeout,
+        )
+        described = None if source == HEALTHY else pipeline_tasks.version(source, family)
+        row = {
+            "version": name,
+            "kind": "restart" if name == RESTARTED else pipeline_tasks.kind(source, family),
+            "task": described and described.task,
+            "split": described and described.split,
+            "expected": pipeline_tasks.expected_diagnosis(source, family),
+            "status": outcome["status"],
+            "diagnosis": None,
+            "as_expected": False,
+            "trajectory": None,
+            "metrics": None,
+            "evidence": None,
+            "report": outcome["report"],
+            "output": None if outcome["status"] == "completed" else outcome["output"],
+        }
+        if outcome["report"] is not None:
+            reports[name] = json.loads(Path(outcome["report"]).read_text(encoding="utf-8"))
+        if name in reports and HEALTHY in reports:
+            report, healthy = reports[name], reports[HEALTHY]
+            row["diagnosis"] = diagnose(extract_evidence(report, healthy), library)["diagnosis"]
+            row["trajectory"] = compare_trajectories(report, healthy)
+            row["as_expected"] = (
+                outcome["status"] == "completed" and row["diagnosis"] == row["expected"]
+            )
+            if name == RESTARTED:
+                row["as_expected"] &= row["trajectory"]["outcome"] == "identical_full_run"
+            row["metrics"] = {
+                name: value for name, value in report["final_metrics"].items() if name != "epoch"
+            }
+            row["evidence"] = run_evidence(report)
+        rows.append(row)
+        if name == HEALTHY and outcome["status"] != "completed":
+            # Without the reference no other version can be diagnosed.
+            break
+    result = {
+        "schema_version": 1,
+        "task": "pipeline_check",
+        "settings": {
+            "family": family,
+            "data": data,
+            "config": None if config is None else str(config),
+            "epochs": epochs,
+            "seed": seed,
+            "max_eval_samples": max_eval_samples,
+        },
+        "versions_as_expected": sum(row["as_expected"] for row in rows),
+        "versions": rows,
+    }
+    (output_dir / "check_report.json").write_text(
+        json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+    )
+    return result
+
+
+def _replay(trajectory: dict[str, Any] | None) -> str:
+    """Where a run's hashed states leave the healthy run's, for the check table."""
+    if trajectory is None or trajectory["outcome"] == "not_comparable":
+        return "-"
+    if trajectory["outcome"] != "diverged":
+        return "identical" if trajectory["outcome"] == "identical_full_run" else "checked steps"
+    where = trajectory["first_difference"]
+    place = where["at"].replace("_", " ")
+    return place if where["index"] is None else f"{place} {where['index']}"
+
+
+def check_text(result: dict[str, Any]) -> str:
+    """The check as a table, one line per version, then what failed runs printed.
+
+    held out is the most training samples read from a held-out group, labels the share
+    of the loss's targets that are the labels of the samples read.
+    """
+    lines = [
+        f"{'version':<24}{'split':<13}{'status':<11}{'diagnosis':<32}{'ok':<5}{'replay':<13}"
+        f"{'held out':>9}{'labels':>8}  id acc  ood acc"
+    ]
+    for row in result["versions"]:
+        metrics, evidence = row["metrics"] or {}, row["evidence"] or {}
+        accuracies = "  ".join(
+            f"{metrics[name]:.4f}" if name in metrics else "   -  "
+            for name in ("id_validation_accuracy", "ood_validation_accuracy")
+        )
+        held_out = evidence.get("held_out_training_samples")
+        labels = evidence.get("labels_matching")
+        lines.append(
+            f"{row['version']:<24}{row['split'] or '-':<13}{row['status']:<11}"
+            f"{row['diagnosis'] or '-':<32}{'yes' if row['as_expected'] else 'NO':<5}"
+            f"{_replay(row['trajectory']):<13}{'-' if held_out is None else held_out:>9}"
+            f"{'-' if labels is None else f'{labels:.0%}':>8}  {accuracies}"
+        )
+    lines.append(f"{result['versions_as_expected']}/{len(result['versions'])} versions as expected")
+    for row in result["versions"]:
+        if row.get("output"):
+            lines.append(f"\n{row['version']} ({row['status']}) printed:\n{row['output'].strip()}")
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run an agent's training project.")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="Run a project under monitoring.")
     run.add_argument("--project", type=Path, required=True)
     run.add_argument("--output", type=Path, required=True, help="New run directory.")
-    run.add_argument("--data", choices=DATA_SOURCES, required=True)
-    run.add_argument("--config", type=Path, help="Camelyon17 config file.")
-    run.add_argument("--epochs", type=int, default=2)
-    run.add_argument("--seed", type=int, default=7)
-    run.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     run.add_argument(
         "--interrupt-after-epochs",
         type=int,
         help="Stop the first attempt after this many epochs and restart the project.",
     )
-    run.add_argument("--max-eval-samples", type=int, help="Cap each Camelyon17 evaluation split.")
+    check = commands.add_parser(
+        "check", help="Train every version and diagnose each run against the healthy one."
+    )
+    check.add_argument("--output", type=Path, required=True, help="New directory for the check.")
+    check.add_argument("--timeout", type=float, default=3600.0, help="Seconds per version.")
+    check.add_argument(
+        "--versions", nargs="+", help="Versions to check, all if unset; healthy must be among them."
+    )
+    check.add_argument(
+        "--family", choices=tuple(pipeline_tasks.FAMILIES), default="camelyon_pipeline"
+    )
+    for command in (run, check):
+        command.add_argument("--data", choices=DATA_SOURCES, required=True)
+        command.add_argument("--config", type=Path, help="Camelyon17 config file.")
+        command.add_argument("--epochs", type=int, default=2)
+        command.add_argument("--seed", type=int, default=7)
+        command.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+        command.add_argument(
+            "--max-eval-samples", type=int, help="Cap each Camelyon17 evaluation split."
+        )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run one project; the last line printed is the outcome as JSON."""
+    """Run one project, or check every version.
+
+    For run, the last line printed is the outcome as JSON.
+    """
     args = build_parser().parse_args(argv)
+    if args.command == "check":
+        result = check_versions(
+            args.output,
+            data=args.data,
+            config=args.config,
+            epochs=args.epochs,
+            seed=args.seed,
+            device=args.device,
+            max_eval_samples=args.max_eval_samples,
+            timeout=args.timeout,
+            versions=None if args.versions is None else tuple(args.versions),
+            family=args.family,
+            progress=lambda line: print(line, flush=True),
+        )
+        print(check_text(result))
+        return 0 if result["versions_as_expected"] == len(result["versions"]) else 1
     outcome = {"status": "failed", "problems": [], "report": None, "error": None}
     try:
         report = run_project(

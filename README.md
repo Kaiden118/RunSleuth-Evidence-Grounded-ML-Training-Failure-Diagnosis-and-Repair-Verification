@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python\&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch\&logoColor=white)
 ![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?logo=huggingface\&logoColor=black)
-![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20DeepSeek%20%7C%20OpenAI--compatible%20%7C%20Ollama-8E75B2)
+![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20GPT--6%20%7C%20Claude%20%7C%20DeepSeek%20%7C%20Qwen%20%7C%20Muse%20%7C%20Ollama-8E75B2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 RunSleuth finds silent bugs in PyTorch training runs, the kind that never crash and
@@ -140,12 +140,11 @@ RunSleuth's evidence help the agent, or catch it?
 - **Labels:** hidden contract tests written from the task statement, independent of
   RunSleuth.
 - **Verdict:** every final script is retrained, then accepted, reviewed or rejected.
-- **Models:** Gemini 3.5 Flash-Lite, GPT-6 Luna, DeepSeek V4.1 Flash, Muse Spark 1.3,
-  Qwen3.8-27B.
+- **Models:** Gemini 3.5 Flash-Lite and GPT-6 Luna, 550 episodes each.
 
 Tasks, conditions, five held-out seeds and the analysis were frozen on 2026-10-13,
-before the first episode ran. Gemini 3.5 Flash-Lite and GPT-6 Luna have run all 550
-episodes each and DeepSeek V4.1 Flash is running; results follow once every model has run.
+before the first episode ran. Both models have run every episode; the results go
+into the report.
 Agent-edited scripts run in a subprocess under a Python-level guard, not in a container.
 
 ```bash
@@ -154,21 +153,36 @@ python -m runsleuth.agent_study run --name <model> --provider gemini
 python -m runsleuth.agent_analysis artifacts/agent_study/<model>
 ```
 
+## Repair Verification
+
+In progress. Can acceptance catch a wrong repair without rejecting a correct one that
+is written differently, at a bounded cost?
+
+- **Tasks:** six training pipelines on Camelyon17 and HAM10000 whose faults show only at
+  run time: checkpoint resume, data flow, and the link between training and evaluation.
+- **Candidates:** repairs by six LLM agents (Gemini 3.5 Flash-Lite, GPT-6 Luna,
+  DeepSeek V4.1 Flash, Muse Spark 1.3, Qwen3.8-27B, Claude Sonnet 5.5), plus certified
+  wrong repairs and legitimate variants, reported apart.
+- **Verifiers:** a metric gate, an LLM reviewer (GPT-6.1 Sol), RunSleuth, and RunSleuth
+  checking one requirement at a time as the evidence allows.
+- **Labels:** hidden behavioural tests and blind human review, independent of every
+  verifier.
+
 ## Roadmap
 
-| Task                                                             | Status |
-| ---------------------------------------------------------------- | :----: |
-| Training monitor, first fault on Camelyon17                      |   ☑    |
-| Nine faults, signature library, ResNet18 and DeiT                |   ☑    |
-| Repair verification, held-out seeds, LLM explanation             |   ☑    |
-| Command line, CI, Docker                                         |   ☑    |
-| Repair tasks and harness for LLM agents                          |   ☑    |
-| Agent loop, contract tests, pilot studies                        |   ☑    |
-| Agent study frozen: 22 tasks, 5 conditions, 5 held-out seeds     |   ☑    |
-| Agent study runs: 2 of 5 LLMs done                               |   ◐    |
-| Second dataset (HAM10000) and a second script structure          |   ◐    |
-| External agent with and without RunSleuth, LLM-reviewer baseline |   ☐    |
-| Report and release                                               |   ☐    |
+| Task                                                   | Status |
+| ------------------------------------------------------ | :----: |
+| Training monitor, first fault on Camelyon17            |   ☑    |
+| Nine faults, signature library, ResNet18 and DeiT      |   ☑    |
+| Repair verification, held-out seeds, LLM explanation   |   ☑    |
+| Command line, CI, Docker                               |   ☑    |
+| Repair tasks and harness for LLM agents                |   ☑    |
+| Agent loop, contract tests, pilot studies              |   ☑    |
+| Agent study: 22 tasks, 5 conditions, 2 LLMs            |   ☑    |
+| Verification challenge set and run-time pipeline tasks |   ◐    |
+| RunSleuth checking one requirement at a time           |   ☐    |
+| Verifier comparison and blind review                   |   ☐    |
+| Report and release                                     |   ☐    |
 
 ☑ done · ◐ in progress · ☐ planned
 

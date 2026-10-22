@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "task": "pipeline_fault_real_cases",
+  "searched_on": "2026-10-22",
+  "method": "Web search for each pipeline task's fault and for the faults proposed for the HAM10000 project, then each candidate thread, issue, pull request or paper opened and read; only what the page itself shows is recorded. A page that could not be opened (one behind a bot check) is left out, as is a thread whose cause turned out to be something else. The faults are the author's; these cases show whether the mistakes occur in other people's code, not that the tasks reproduce them.",
+  "statuses": {
+    "public_instance": "someone's own code had this mistake, and the page shows the mechanism",
+    "literature": "published studies show the mistake occurs and changes results",
+    "discussion_only": "the confusion is discussed, but no instance of it was found",
+    "not_found": "nothing found yet"
+  },
+  "faults": [
+    {
+      "task": "positions_index_base",
+      "family": "camelyon_pipeline",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "GitHub issue, tum-daml/gemnet_pytorch #4",
+          "title": "Validation sampler over a Subset reads the full dataset",
+          "url": "https://github.com/tum-daml/gemnet_pytorch/issues/4",
+          "date": "2022-01-11",
+          "matches": "The sampler was SequentialSampler(Subset(data_container, indices)) while the DataLoader was given the full data_container, so the positions 0, 1, 2 of the subset indexed the first rows of the full dataset; the reporter says validation 'actually takes data from a subset of training part'. Fixed by the maintainers in PR #5.",
+          "caveat": "It hit the validation loader, so the model was evaluated on training data; the task has the same mechanism in the training wrapper, so the model is trained on held-out data."
+        }
+      ]
+    },
+    {
+      "task": "labels_not_filtered",
+      "family": "camelyon_pipeline",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "PyTorch forum",
+          "title": "Concatenated dataloader have different image and label order",
+          "url": "https://discuss.pytorch.org/t/concatenated-dataloader-have-different-image-and-label-order/144221",
+          "date": "2022-02-15",
+          "matches": "Images and labels were kept in separate datasets; after concatenating the per-location sets each held the right files, but 'they are not in the same order', so labels no longer lined up with their images. Solved by deriving every label path from its image path.",
+          "caveat": "The images and labels fell out of step through concatenation, not through filtering the images without the labels."
+        }
+      ]
+    },
+    {
+      "task": "scheduler_not_restored",
+      "family": "camelyon_pipeline",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "PyTorch forum (ultralytics/yolov3 train.py)",
+          "title": "A problem occured when resuming an optimizer",
+          "url": "https://discuss.pytorch.org/t/a-problem-occured-when-resuming-an-optimizer/28822",
+          "date": "2020-04-23",
+          "matches": "In ultralytics/yolov3, the LambdaLR scheduler was rebuilt on resume with the default last_epoch=-1, which resets the learning rate, so it was not loaded from last.pt; the maintainer said --resume is meant only for accidentally stopped training.",
+          "caveat": "The thread mixes this with a missing initial_lr when resuming past the last epoch, where the optimizer state was deliberately not saved."
+        },
+        {
+          "source": "PyTorch forum",
+          "title": "Discontinuity in learning rate value when resuming training from checkpoint",
+          "url": "https://discuss.pytorch.org/t/discontinuity-in-learning-rate-value-when-resuming-training-from-checkpoint/93128",
+          "date": "2020-08-17",
+          "matches": "CosineAnnealingLR over 100 epochs, resumed after epoch 45 with both states loaded: the learning rate jumped at epoch 46 and stayed different from an uninterrupted run to the end.",
+          "caveat": "Both states were restored; the scheduler's construction and load order is suspected, and no fix is confirmed."
+        }
+      ]
+    },
+    {
+      "task": "optimizer_not_restored",
+      "family": "camelyon_pipeline",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "PyTorch forum",
+          "title": "Self.state is always empty in torch.optim.Adam",
+          "url": "https://discuss.pytorch.org/t/self-state-is-always-empty-in-torch-optim-adam/39111",
+          "date": "2019-03-06",
+          "matches": "After resuming, the loss rose for a few hundred iterations before falling; the saved Adam state was empty, because optimizer.state_dict() (taken at setup) was handed to the checkpointer instead of the optimizer, so the run resumed with Adam's moments from zero.",
+          "caveat": "The optimizer was restored from a checkpoint that held its initial state, not rebuilt; the effect on the resumed run is the same."
+        }
+      ]
+    },
+    {
+      "task": "last_epoch_delivered",
+      "family": "camelyon_pipeline",
+      "status": "discussion_only",
+      "cases": [
+        {
+          "source": "Keras documentation",
+          "title": "EarlyStopping",
+          "url": "https://keras.io/api/callbacks/early_stopping",
+          "date": null,
+          "matches": "restore_best_weights defaults to False, in which case the model keeps the weights of the last step of training rather than the best epoch's.",
+          "caveat": "Documentation of a default, not an instance of someone delivering the wrong weights."
+        },
+        {
+          "source": "PyTorch Lightning documentation",
+          "title": "Validate and test a model (intermediate)",
+          "url": "https://lightning.ai/docs/pytorch/stable/common/evaluation_intermediate.html",
+          "date": null,
+          "matches": "trainer.test with a model instance and no ckpt_path uses the current weights; ckpt_path='best' loads the best checkpoint.",
+          "caveat": "Documentation, not an instance. A GitLab issue that a search snippet describes as saving the last epoch as the best (bob.ip.binseg #14) could not be opened and is not counted."
+        }
+      ]
+    },
+    {
+      "task": "best_accuracy_not_restored",
+      "family": "camelyon_pipeline",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "GitHub pull request, CambridgeCIA/LION #213",
+          "title": "Fix resuming training from checkpoints",
+          "url": "https://github.com/CambridgeCIA/LION/pull/213",
+          "date": "2026-10-20",
+          "matches": "On resume 'the best validation loss was never restored', so 'the first validation after resuming always overwrote the saved min-validation model'; fixed by restoring it, merged the same day.",
+          "caveat": "The best value is a validation loss rather than an accuracy."
+        }
+      ]
+    },
+    {
+      "task": "epoch_counter_restarts",
+      "family": "proposed for ham10000_pipeline",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "NVIDIA developer forum (jetson-inference train_ssd.py)",
+          "title": "How does resume work when a model fails to train",
+          "url": "https://forums.developer.nvidia.com/t/how-does-resume-work-when-a-model-fails-to-train-following-re-training-ssd-mobilenet-tutorial/169960",
+          "date": "2021-03-03",
+          "matches": "Resumed with --resume from the epoch-8 checkpoint, training restarted at epoch 0 and saved new files from epoch 0; the maintainer wrote that 'the train_ssd.py script doesn't know what the previous epoch was, so it restarts at 0'.",
+          "caveat": "The page does not show whether the optimizer and schedule were restored."
+        }
+      ]
+    },
+    {
+      "task": "shuffle_seed_reset",
+      "family": "proposed for ham10000_pipeline",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "PyTorch forum",
+          "title": "Reproducibility with checkpoints",
+          "url": "https://discuss.pytorch.org/t/reproducibility-with-checkpoints/104344",
+          "date": "2023-08-17",
+          "matches": "The sample order of a run restarted from a checkpoint differed from the full run's even with seed_everything, because RandomSampler drew from the generator in ways not tracked; fixed with a sampler seeded from the run's seed plus the epoch restored from the checkpoint.",
+          "caveat": "Augmentation randomness inside __getitem__ was still unsolved in the thread."
+        }
+      ]
+    },
+    {
+      "task": "cache_keyed_by_lesion",
+      "family": "proposed for ham10000_pipeline",
+      "status": "not_found",
+      "cases": []
+    },
+    {
+      "task": "augmentation_cached",
+      "family": "proposed for ham10000_pipeline",
+      "status": "public_instance",
+      "cases": [
+        {
+          "source": "GitHub issue, tensorflow/tensorflow #47755",
+          "title": "Augmentation applied before Dataset.cache()",
+          "url": "https://github.com/tensorflow/tensorflow/issues/47755",
+          "date": "2021-03-12",
+          "matches": "'The root cause is that augmentation is applied before a Dataset.cache()', so 'augmentation is applied once to each datapoint'; a maintainer replied that caching right before augmentation keeps most of the benefit.",
+          "caveat": "A TensorFlow input pipeline, not PyTorch; the mechanism, a cache that stores augmented images, is the same."
+        }
+      ]
+    },
+    {
+      "task": "akiec_left_out_of_malignant",
+      "family": "proposed for ham10000_pipeline",
+      "status": "discussion_only",
+      "cases": [
+        {
+          "source": "arXiv 2511.06293",
+          "title": "Achieving Fairness Without Harm via Selective Demographic Experts",
+          "url": "https://arxiv.org/html/2511.06293",
+          "date": null,
+          "matches": "Appendix A.1: 'The \"malignant\" category comprises actinic keratoses and intraepithelial carcinoma/Bowen's disease (akiec)'.",
+          "caveat": "Shows one definition in use."
+        },
+        {
+          "source": "arXiv 2608.07574",
+          "title": "Multimodal Skin Lesion Classification with Swin Transformer and Clinical Metadata Fusion",
+          "url": "https://arxiv.org/html/2608.07574",
+          "date": null,
+          "matches": "Table I places akiec in a separate 'Pre-malignant' group beside 'Malignant' (bcc, mel) and 'Benign'.",
+          "caveat": "A seven-class study; together the two papers show the grouping of akiec differs between publications, not a project that mixes two groupings."
+        }
+      ]
+    }
+  ]
+}

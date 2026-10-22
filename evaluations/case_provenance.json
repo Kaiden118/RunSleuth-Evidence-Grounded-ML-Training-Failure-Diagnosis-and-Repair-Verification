@@ -24,18 +24,18 @@
   ],
   "certifications": {
     "camelyon_pipeline": {
-      "contract_version": 4,
-      "family_sha256": "988fbc19f29cc59fb6c21f91b08466aa3a0a4b0932b8d90ba2fd1ec2130d235e",
-      "commit": "7a0614b",
-      "contract_cases": "33/33 as expected on the tiny network and on the pretrained ResNet18 (artifacts/pipeline_tasks/contract-v4-camelyon_pipeline.log); on the pretrained ResNet18 the delivery of every project was tested in both directions",
-      "gpu_check": "artifacts/pipeline_tasks/check-5 (seed 7, 3 epochs, every run but the reference restarted after epoch 1): 15/15 as expected, family 988fbc19f29c"
+      "contract_version": 5,
+      "family_sha256": "6e7406bbc9c7d03a56bea822e9a7ef734920e8c64ad18e0a103bfdbfe5a2c023",
+      "commit": "41cc91a",
+      "contract_cases": "44/44 as expected on the tiny network and on the pretrained ResNet18 (artifacts/pipeline_tasks/contract-v5-camelyon_pipeline.log); on the pretrained ResNet18 the delivery of every project was tested in both directions",
+      "gpu_check": "artifacts/pipeline_tasks/check-6 (seed 7, 3 epochs, every run but the reference restarted after epoch 1): 15/15 as expected, family 6e7406bbc9c7, every row identical to check-5 of the previous family hash"
     },
     "ham10000_pipeline": {
-      "contract_version": 4,
-      "family_sha256": "e9ef90952415c68a48980202818877d62ea6766def03cdf9be963b7ca1a68a9b",
-      "commit": "7a0614b",
-      "contract_cases": "19/19 as expected on the tiny network and on the pretrained ResNet18 (artifacts/pipeline_tasks/contract-v4-ham10000_pipeline.log); on the pretrained ResNet18 the delivery of every project was tested in both directions",
-      "gpu_check": "artifacts/pipeline_tasks/ham-check-1 (seed 7, 3 epochs, every run but the reference restarted after epoch 1): 14/14 as expected, family e9ef90952415"
+      "contract_version": 5,
+      "family_sha256": "0a10c2e512e34013a8576602f8e9ca4cdc243f1c5fcc9fb07728abb864da5f7e",
+      "commit": "41cc91a",
+      "contract_cases": "27/27 as expected on the tiny network and on the pretrained ResNet18 (artifacts/pipeline_tasks/contract-v5-ham10000_pipeline.log); on the pretrained ResNet18 the delivery was tested in both directions for every project but the contract case validation_not_divided_by_255, whose network never changes its validation predictions",
+      "gpu_check": "artifacts/pipeline_tasks/ham-check-2 (seed 7, 3 epochs, every run but the reference restarted after epoch 1): 14/14 as expected, family 0a10c2e512e3, every row identical to ham-check-1 of the previous family hash"
     }
   },
   "cases": [

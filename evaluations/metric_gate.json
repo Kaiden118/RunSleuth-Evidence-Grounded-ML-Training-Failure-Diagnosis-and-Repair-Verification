@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "task": "metric_gate",
+  "rule": "accept when neither accuracy is below the same seed's healthy run by more than the threshold; thresholds are the largest accuracy difference between two correct development runs, rounded up to a tenth of a point",
+  "calibration_seeds": [
+    7,
+    11,
+    42,
+    2026
+  ],
+  "stage_one_gate": {
+    "max_accuracy_drop": 0.01,
+    "max_loss_ratio": 1.1
+  },
+  "families": {
+    "camelyon_pipeline": {
+      "family_sha256": "6e7406bbc9c7d03a56bea822e9a7ef734920e8c64ad18e0a103bfdbfe5a2c023",
+      "runs": [
+        {
+          "version": "healthy",
+          "seed": 7,
+          "id": 0.982,
+          "ood": 0.912
+        },
+        {
+          "version": "subset_random_sampler",
+          "seed": 7,
+          "id": 0.98,
+          "ood": 0.8998
+        },
+        {
+          "version": "checkpoint_in_parts",
+          "seed": 7,
+          "id": 0.982,
+          "ood": 0.912
+        },
+        {
+          "version": "accuracy_history_in_checkpoint",
+          "seed": 7,
+          "id": 0.982,
+          "ood": 0.912
+        },
+        {
+          "version": "healthy",
+          "seed": 11,
+          "id": 0.9826,
+          "ood": 0.9142
+        },
+        {
+          "version": "healthy",
+          "seed": 42,
+          "id": 0.9796,
+          "ood": 0.9164
+        },
+        {
+          "version": "healthy",
+          "seed": 2026,
+          "id": 0.9828,
+          "ood": 0.9228
+        }
+      ],
+      "thresholds": {
+        "id": 0.004,
+        "ood": 0.023
+      },
+      "calibrated_on": "2026-10-22"
+    },
+    "ham10000_pipeline": {
+      "family_sha256": "0a10c2e512e34013a8576602f8e9ca4cdc243f1c5fcc9fb07728abb864da5f7e",
+      "runs": [
+        {
+          "version": "healthy",
+          "seed": 7,
+          "id": 0.9433051869722557,
+          "ood": 0.722
+        },
+        {
+          "version": "start_read_from_the_scheduler",
+          "seed": 7,
+          "id": 0.9433051869722557,
+          "ood": 0.722
+        },
+        {
+          "version": "no_cache",
+          "seed": 7,
+          "id": 0.9433051869722557,
+          "ood": 0.722
+        },
+        {
+          "version": "labels_from_a_table",
+          "seed": 7,
+          "id": 0.9433051869722557,
+          "ood": 0.722
+        },
+        {
+          "version": "healthy",
+          "seed": 11,
+          "id": 0.9372738238841978,
+          "ood": 0.693
+        },
+        {
+          "version": "healthy",
+          "seed": 42,
+          "id": 0.9420989143546441,
+          "ood": 0.705
+        },
+        {
+          "version": "healthy",
+          "seed": 2026,
+          "id": 0.9433051869722557,
+          "ood": 0.699
+        }
+      ],
+      "thresholds": {
+        "id": 0.007,
+        "ood": 0.029
+      },
+      "calibrated_on": "2026-10-22"
+    }
+  }
+}

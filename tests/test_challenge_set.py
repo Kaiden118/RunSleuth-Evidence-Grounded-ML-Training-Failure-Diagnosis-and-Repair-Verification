@@ -96,7 +96,11 @@ class PlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "seeds.json"
             draws = [7, 42, 5, 5, 6, 8]
-            with patch.object(challenge_set.secrets, "randbelow", side_effect=draws):
+            # The draw records the commit; the Docker image has no repository.
+            with (
+                patch.object(challenge_set.secrets, "randbelow", side_effect=draws),
+                patch.object(challenge_set, "_commit", return_value="0" * 40),
+            ):
                 seeds = challenge_set.draw_test_seeds(path)
             self.assertEqual(seeds, [5, 6, 8])
             record = json.loads(path.read_text(encoding="utf-8"))

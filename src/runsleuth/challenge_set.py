@@ -358,6 +358,12 @@ def label(result: dict[str, Any], family: str) -> dict[str, Any]:
     }
 
 
+def _commit() -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
 def draw_test_seeds(path: Path = SEEDS_FILE) -> list[int]:
     """Draw the test seeds at random from seeds no earlier run used, and record them.
 
@@ -371,16 +377,13 @@ def draw_test_seeds(path: Path = SEEDS_FILE) -> list[int]:
         seed = secrets.randbelow(SEED_LIMIT)
         if seed not in used and seed not in seeds:
             seeds.append(seed)
-    commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
-    ).stdout.strip()
     record = {
         "schema_version": 1,
         "task": "challenge_set_seeds",
         "seeds": seeds,
         "excluded_seeds": sorted(used),
         "drawn_on": date.today().isoformat(),
-        "commit": commit,
+        "commit": _commit(),
     }
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")

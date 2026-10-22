@@ -179,7 +179,7 @@ is written differently, at a bounded cost?
 |---|---|:---:|
 | Training-data filter | Camelyon17 | ☑ |
 | Restart after a stop | Camelyon17 | ☑ |
-| Delivered weights | Camelyon17 | ☐ |
+| Delivered weights | Camelyon17 | ☑ |
 | Restart after a stop | HAM10000 | ☐ |
 | Image cache | HAM10000 | ☐ |
 | Label mapping | HAM10000 | ☐ |
@@ -205,7 +205,7 @@ python -m runsleuth.pipeline_workspace check --output <dir> --data camelyon --co
 | Agent loop, contract tests, pilot studies              |   ☑    |
 | Agent study: 22 tasks, 5 conditions, 2 LLMs            |   ☑    |
 | Pipeline harness and hidden behavioural tests          |   ☑    |
-| Six run-time tasks (2 of 6 done)                       |   ◐    |
+| Six run-time tasks (3 of 6 done)                       |   ◐    |
 | Baseline verifiers on development cases                |   ☐    |
 | RunSleuth checking one requirement at a time           |   ☐    |
 | Freeze, then test candidates from six LLM agents       |   ☐    |

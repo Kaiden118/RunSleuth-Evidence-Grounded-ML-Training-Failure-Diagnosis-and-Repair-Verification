@@ -9,9 +9,14 @@ the agent has finished:
     training_labels    1. each of those patches is trained on with its own label
     restart            5. a run stopped as it starts an epoch and restarted trains
                           exactly as the uninterrupted run
+    validation         6. after every epoch run.log reports the mean cross-entropy and
+                          the accuracy of the network on all the validation patches
+    delivery           6. the delivered weights are those of the epoch with the highest
+                          validation accuracy in the whole run, the earliest on a tie
 
 The other requirements get their clauses with the tasks that need them. Version 1 had
-the first two; version 2 (2026-10-22) adds restart.
+the first two; version 2 (2026-10-22) added restart; version 3 (2026-10-22) adds
+validation and delivery, and gives the patches content a network can learn.
 
 The checks call the project's main() as the harness does, with a run of their own: on
 the CPU, with candidates whose pixels say which patch they are, in a pattern that
@@ -27,6 +32,19 @@ restarted, as the harness restarts it: main is called again in freshly loaded mo
 with the checkpoints written so far. The restarted runs must train the same epochs, on
 the same batches, with the same learning rates at every step, ending every epoch with
 the same weights; the optimizer's state shows in the weights of the epochs after it.
+
+Validation and delivery are judged by what the project did, not by how: whatever
+keeps the best epoch, the checks compute each epoch's validation accuracy themselves,
+from the network's predictions on the validation patches in that run and their
+labels, and require that run.log reports it and that the delivered weights are those
+the network had when the best epoch was validated. Every run above is judged so. Two
+more runs make the best epoch fall on either side of a restart, with labels chosen
+from the predictions of the uninterrupted three-epoch run and fixed for the whole run:
+labelled as the first epoch predicted and stopped after it, the best epoch is the
+first, which the restarted run must keep; labelled as the first epoch that predicted
+otherwise and stopped before it, the best epoch comes after the restart, which the
+restarted run must take. If the network never changes its predictions, the second
+cannot be made and the result says so.
 
 Passing every check is this benchmark's working definition of a project that meets the
 requirements the checks cover. It is not a proof that the project is correct.
@@ -63,12 +81,15 @@ from runsleuth.agent_workspace import clean_environment
 from runsleuth.pipeline_tasks import HEALTHY
 from runsleuth.pipeline_workspace import check_project, load_project, project_sources
 
-CONTRACT_VERSION = 2
-CLAUSES = ("training_samples", "training_labels", "restart")
+CONTRACT_VERSION = 3
+CLAUSES = ("training_samples", "training_labels", "restart", "validation", "delivery")
 TRAINING_HOSPITALS = (0, 3, 4)
-# Candidates per hospital: unequal, and more than a batch of 32 in all.
+# Candidates per hospital: unequal, and more than a batch of 32 in all; validation
+# patches too, so that a project that measures one batch only is seen.
 CANDIDATES = {0: 9, 1: 7, 3: 14, 4: 17}
-VALIDATION = {0: 2, 3: 2, 4: 2}
+VALIDATION = {0: 12, 3: 14, 4: 14}
+# How close a reported validation loss must be to the checks' own, relative.
+LOSS_TOLERANCE = 1e-4
 # Each layout runs with a seed of its own.
 LAYOUTS = (("by_hospital", 3), ("mixed", 5))
 EPOCHS = 2
@@ -85,17 +106,24 @@ BITS = 12
 VALIDATION_CODES = 1 << 11
 
 
-def _passed() -> dict[str, Any]:
-    return {"passed": True, "detail": ""}
+def _passed(detail: str = "") -> dict[str, Any]:
+    return {"passed": True, "detail": detail}
 
 
 def _failed(detail: str) -> dict[str, Any]:
     return {"passed": False, "detail": detail}
 
 
-def coded_images(codes: list[int]) -> torch.Tensor:
-    """RGB patches in [0, 1], each showing its code."""
-    images = torch.full((len(codes), 3, PATCH_SIZE * PATCH_SIZE), 0.5)
+def coded_images(codes: list[int], brightness: list[float]) -> torch.Tensor:
+    """RGB patches in [0, 1], each showing its code.
+
+    The other pixels are noise of width 0.2 around the patch's brightness, so that a
+    network can learn to tell bright from dark patches.
+    """
+    images = torch.empty(len(codes), 3, PATCH_SIZE * PATCH_SIZE)
+    for row, (code, level) in enumerate(zip(codes, brightness, strict=True)):
+        noise = torch.rand(images.shape[1:], generator=torch.Generator().manual_seed(code))
+        images[row] = level - 0.1 + 0.2 * noise
     images[:, :, 0], images[:, :, 1] = 0.0, 1.0
     bits = torch.tensor([[(code >> bit) & 1 for bit in range(BITS)] for code in codes])
     images[:, 0, 2 : 2 + BITS] = bits.float()
@@ -124,9 +152,16 @@ def read_codes(inputs: torch.Tensor) -> list[int | None]:
 class CodedPatches:
     """Patches as the harness gives them: samples[i], samples.image(i), labels, hospitals."""
 
-    def __init__(self, codes: list[int], labels: list[int], hospitals: list[int]) -> None:
-        self._images = coded_images(codes)
-        self.labels, self.hospitals = tuple(labels), tuple(hospitals)
+    def __init__(
+        self,
+        codes: list[int],
+        labels: list[int],
+        hospitals: list[int],
+        brightness: list[float],
+    ) -> None:
+        self._images = coded_images(codes, brightness)
+        self.codes, self.labels = tuple(codes), tuple(labels)
+        self.hospitals = tuple(hospitals)
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -147,20 +182,29 @@ class CodedPatches:
 
 
 def candidates(layout: str, seed: int) -> CodedPatches:
-    """Training candidates numbered by position, with labels drawn at random."""
+    """Training candidates numbered by position, labels drawn at random, label 1 brighter."""
     hospitals = [hospital for hospital, count in CANDIDATES.items() for _ in range(count)]
     if layout == "mixed":
         order = torch.randperm(len(hospitals), generator=torch.Generator().manual_seed(seed))
         hospitals = [hospitals[position] for position in order.tolist()]
     generator = torch.Generator().manual_seed(1000 + seed)
     labels = torch.randint(0, 2, (len(hospitals),), generator=generator).tolist()
-    return CodedPatches(list(range(len(hospitals))), labels, hospitals)
+    brightness = [0.3 + 0.4 * label for label in labels]
+    return CodedPatches(list(range(len(hospitals))), labels, hospitals, brightness)
 
 
-def validation_patches() -> CodedPatches:
+def validation_patches(labels: dict[int, int] | None = None) -> CodedPatches:
+    """Validation patches labelled by brightness, or by labels[code].
+
+    Their brightness is spread evenly between the two training classes', so that some
+    lie near the network's boundary and its predictions change as it trains.
+    """
     hospitals = [hospital for hospital, count in VALIDATION.items() for _ in range(count)]
     codes = [VALIDATION_CODES + position for position in range(len(hospitals))]
-    return CodedPatches(codes, [position % 2 for position in range(len(codes))], hospitals)
+    order = torch.randperm(len(codes), generator=torch.Generator().manual_seed(len(codes)))
+    brightness = [0.3 + 0.4 * rank / (len(codes) - 1) for rank in order.tolist()]
+    given = [int(level > 0.5) for level in brightness] if labels is None else None
+    return CodedPatches(codes, given or [labels[code] for code in codes], hospitals, brightness)
 
 
 class Stopped(BaseException):
@@ -192,6 +236,8 @@ class ContractRun:
     """The run a project gets in the checks: everything the statement says run gives.
 
     With stop_after, the run is stopped as it starts an epoch after that many epochs.
+    events receives every ended epoch (epoch_ended), log (logged) and delivery
+    (delivered).
     """
 
     def __init__(
@@ -202,16 +248,15 @@ class ContractRun:
         seed: int,
         epochs: int,
         checkpoints: MemoryCheckpoints,
+        events: types.SimpleNamespace,
         stop_after: int | None = None,
-        epoch_ended=lambda _number: None,
     ) -> None:
         self.device, self.seed, self.epochs = torch.device("cpu"), seed, epochs
         self.data = types.SimpleNamespace(train=train, validation=validation)
         self.checkpoints = checkpoints
-        self._stop_after, self._epoch_ended = stop_after, epoch_ended
+        self._stop_after, self._events = stop_after, events
         self._epoch: int | None = None
         self._trained = 0
-        self._delivered = None
 
     def track(self, model: nn.Module, optimizer: torch.optim.Optimizer) -> None:
         pass
@@ -231,19 +276,23 @@ class ContractRun:
         finally:
             self._epoch = None
         self._trained += 1
-        self._epoch_ended(number)
+        self._events.epoch_ended(number)
 
     def log(self, **metrics: float) -> None:
-        pass
+        if self.checkpoints._stopped:
+            raise Stopped
+        self._events.logged(metrics)
 
     def deliver(self, state_dict) -> None:
-        self._delivered = state_dict
+        if self.checkpoints._stopped:
+            raise Stopped
+        self._events.delivered(state_dict)
 
 
-def fingerprint(module: nn.Module) -> str:
-    """A hash of a module's parameters and buffers, by name, dtype, shape and bytes."""
+def fingerprint(state: dict[str, torch.Tensor]) -> str:
+    """A hash of a state_dict's tensors, by name, dtype, shape and bytes."""
     digest = hashlib.sha256()
-    for name, tensor in sorted(module.state_dict().items()):
+    for name, tensor in sorted(state.items()):
         value = tensor.detach().cpu().contiguous()
         digest.update(f"{name}|{value.dtype}|{tuple(value.shape)}|".encode())
         digest.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
@@ -257,6 +306,7 @@ def observe(
     *,
     epochs: int = EPOCHS,
     stop_after: int | None = None,
+    validation_labels: dict[int, int] | None = None,
 ) -> dict[str, Any]:
     """Run a project on coded candidates, perhaps stopped and restarted; what it did.
 
@@ -265,15 +315,21 @@ def observe(
     batch the network was given, and the targets of the cross-entropy on that output
     (None if there was none). steps has the attempt, epoch and learning rates of every
     optimizer step, and ended the attempt, number and network fingerprint of every
-    epoch. With stop_after, the first attempt is stopped as it starts an epoch after
-    that many, and main is called again in freshly loaded modules with its checkpoints.
+    epoch. validated maps (attempt, the attempt's last ended epoch) to the network's
+    fingerprint and logits per validation code in the first pass over them after that
+    epoch; logged and delivered hold the same key with every run.log, and the attempt
+    and fingerprint of every delivery. With stop_after, the first attempt is stopped as
+    it starts an epoch after that many, and main is called again in freshly loaded
+    modules with its checkpoints. validation_labels relabel the validation patches.
     """
-    train, validation = candidates(layout, seed), validation_patches()
+    train, validation = candidates(layout, seed), validation_patches(validation_labels)
     checkpoints = MemoryCheckpoints()
     seen: dict[str, Any] = {"layout": layout, "train": train, "trained": [], "steps": []}
-    seen["ended"] = []
+    seen.update(ended=[], validated={}, logged=[], delivered=[], validation=validation)
     state: dict[str, Any] = {"depth": 0, "batch": None, "network": None, "attempt": 0}
+    state["last_ended"] = None
     run: ContractRun | None = None
+    validation_codes = set(validation.codes)
 
     def before(module, args) -> None:
         state["depth"] += 1
@@ -283,15 +339,30 @@ def observe(
                 codes = read_codes(args[0])
                 state["batch"] = {"codes": codes, "module": module, "output": None, "targets": None}
 
-    def after(_module, _args, output) -> None:
+    def after(module, _args, output) -> None:
         state["depth"] -= 1
         batch = state["batch"]
         if state["depth"] or batch is None or batch["output"] is not None:
             return
         if isinstance(output, torch.Tensor):
             batch["output"] = output
+            validated(module, batch["codes"], output)
             if output.requires_grad:
                 output.register_hook(lambda _gradient, batch=batch: backward(batch))
+
+    def validated(module, codes: list[int | None], output: torch.Tensor) -> None:
+        """Keep the first logits per validation patch after each ended epoch."""
+        if state["last_ended"] is None or output.dim() != 2 or len(output) != len(codes):
+            return
+        if not validation_codes.intersection(codes):
+            return
+        key = (state["attempt"], state["last_ended"])
+        if key not in seen["validated"]:
+            seen["validated"][key] = {"fingerprint": fingerprint(module.state_dict()), "logits": {}}
+        logits = seen["validated"][key]["logits"]
+        for code, row in zip(codes, output.detach().to("cpu", torch.float64), strict=True):
+            if code in validation_codes and code not in logits:
+                logits[code] = row
 
     def backward(batch: dict[str, Any]) -> None:
         state["network"] = batch["module"]
@@ -310,7 +381,21 @@ def observe(
 
     def epoch_ended(number: int) -> None:
         network = state["network"]
-        seen["ended"].append((state["attempt"], number, network and fingerprint(network)))
+        weights = network and fingerprint(network.state_dict())
+        seen["ended"].append((state["attempt"], number, weights))
+        state["last_ended"] = number
+
+    def logged(metrics: dict[str, Any]) -> None:
+        seen["logged"].append(((state["attempt"], state["last_ended"]), dict(metrics)))
+
+    def delivered(weights) -> None:
+        try:
+            weights = fingerprint(dict(weights))
+        except (TypeError, ValueError, AttributeError):
+            weights = None  # Not a state_dict: no epoch's weights.
+        seen["delivered"].append((state["attempt"], weights))
+
+    events = types.SimpleNamespace(epoch_ended=epoch_ended, logged=logged, delivered=delivered)
 
     cross_entropy = nn.functional.cross_entropy
 
@@ -330,14 +415,15 @@ def observe(
     try:
         for stop in (stop_after, None) if stop_after is not None else (None,):
             state.update(attempt=state["attempt"] + 1, depth=0, batch=None, network=None)
+            state["last_ended"] = None
             run = ContractRun(
                 train,
                 validation,
                 seed=seed,
                 epochs=epochs,
                 checkpoints=checkpoints,
+                events=events,
                 stop_after=stop,
-                epoch_ended=epoch_ended,
             )
             torch.manual_seed(seed)
             try:
@@ -477,53 +563,216 @@ def _restart_difference(reference: dict[str, Any], restarted: dict[str, Any]) ->
     return None
 
 
-def _restart(sources: dict[str, str]) -> dict[str, Any]:
-    layout, seed = LAYOUTS[0]
-    reference = observe(sources, layout, seed, epochs=RESTART_EPOCHS)
-    for stop in STOPS:
-        try:
-            restarted = observe(sources, layout, seed, epochs=RESTART_EPOCHS, stop_after=stop)
-        except Exception as error:
-            return _failed(
-                f"stopped after epoch {stop} and restarted, the project failed with "
-                f"{type(error).__name__}: {error}"[:300]
-            )
-        difference = _restart_difference(reference, restarted)
-        if difference:
-            return _failed(f"stopped after epoch {stop} and restarted, the run {difference}")
+def _restart(reference: dict[str, Any], restarted: dict[str, Any]) -> dict[str, Any]:
+    difference = _restart_difference(reference, restarted)
+    if difference:
+        return _failed(f"{restarted['context']}, the run {difference}")
     return _passed()
+
+
+def measured_epochs(seen: dict[str, Any]) -> dict[tuple[int, int], dict[str, Any]]:
+    """Accuracy, mean cross-entropy and weights of every epoch validated on every patch.
+
+    Computed by the checks from the network's logits after the epoch and the labels the
+    validation patches had in that run; keyed by (attempt, epoch).
+    """
+    validation = seen["validation"]
+    targets = torch.tensor(validation.labels)
+    measured = {}
+    for key, validated in seen["validated"].items():
+        logits = validated["logits"]
+        if len(logits) < len(validation):
+            continue
+        rows = torch.stack([logits[code] for code in validation.codes])
+        measured[key] = {
+            "accuracy": float((rows.argmax(dim=1) == targets).double().mean()),
+            "loss": float(nn.functional.cross_entropy(rows, targets)),
+            "fingerprint": validated["fingerprint"],
+        }
+    return measured
+
+
+def _validation(seen: dict[str, Any]) -> dict[str, Any]:
+    measured, where, total = measured_epochs(seen), seen["context"], len(seen["validation"])
+    reported: dict[tuple[int, int | None], dict[str, Any]] = {}
+    for key, metrics in seen["logged"]:
+        reported[key] = {**reported.get(key, {}), **metrics}
+    for attempt, number, _ in seen["ended"]:
+        key, after = (attempt, number), f"after epoch {number}"
+        if key not in measured:
+            validated = len(seen["validated"].get(key, {}).get("logits", {}))
+            return _failed(
+                f"{where}: {after} the network is measured on {validated} of the {total} "
+                "validation patches"
+            )
+        metrics = reported.get(key, {})
+        for name in ("validation_accuracy", "validation_loss"):
+            if name not in metrics:
+                return _failed(f"{where}: run.log reports no {name} {after}")
+        accuracy, loss = measured[key]["accuracy"], measured[key]["loss"]
+        if not math.isclose(float(metrics["validation_accuracy"]), accuracy, abs_tol=1e-9):
+            return _failed(
+                f"{where}: {after} run.log reports a validation accuracy of "
+                f"{float(metrics['validation_accuracy']):.4g}; the network's is {accuracy:.4g}"
+            )
+        if not math.isclose(
+            float(metrics["validation_loss"]), loss, rel_tol=LOSS_TOLERANCE, abs_tol=1e-6
+        ):
+            return _failed(
+                f"{where}: {after} run.log reports a validation loss of "
+                f"{float(metrics['validation_loss']):.4g}; the network's is {loss:.4g}"
+            )
+    return _passed()
+
+
+def _delivery(seen: dict[str, Any]) -> dict[str, Any]:
+    measured, where = measured_epochs(seen), seen["context"]
+    delivered = [weights for _, weights in seen["delivered"]]
+    if len(delivered) != 1:
+        times = "no weights" if not delivered else f"weights {len(delivered)} times"
+        return _failed(f"{where}: the run delivers {times}")
+    epochs = [(attempt, number) for attempt, number, _ in seen["ended"]]
+    if not epochs:
+        return _failed(f"{where}: the run trained no epoch")
+    if any(key not in measured for key in epochs):
+        return _failed(
+            f"{where}: the delivery cannot be checked, since not every epoch is measured on "
+            "all the validation patches"
+        )
+    # max keeps the first of equals, and epochs are in the order they were trained.
+    best = max(epochs, key=lambda key: measured[key]["accuracy"])
+    if delivered[0] == measured[best]["fingerprint"]:
+        return _passed()
+    matching = [key for key in epochs if measured[key]["fingerprint"] == delivered[0]]
+    what = f"the weights of epoch {matching[0][1]}" if matching else "weights no epoch ended with"
+    return _failed(
+        f"{where}: the run delivers {what} instead of those of epoch {best[1]}, whose "
+        f"validation accuracy of {measured[best]['accuracy']:.3g} is the highest"
+    )
+
+
+def steered_runs(
+    sources: dict[str, str], reference: dict[str, Any]
+) -> tuple[list[dict[str, Any]], str]:
+    """Runs whose best epoch falls before, and after, a restart; and what was not tested.
+
+    The validation labels are the predictions of an epoch of the uninterrupted
+    three-epoch run, which makes that epoch's accuracy 1 if the run repeats.
+    """
+    layout, seed = LAYOUTS[0]
+    predictions = {
+        number: {code: int(row.argmax()) for code, row in validated["logits"].items()}
+        for (_, number), validated in seen_complete(reference).items()
+    }
+    runs, untested = [], ""
+    if 1 in predictions:
+        seen = observe(
+            sources,
+            layout,
+            seed,
+            epochs=RESTART_EPOCHS,
+            stop_after=1,
+            validation_labels=predictions[1],
+        )
+        seen["context"] = "labelled for epoch 1 to be the best, stopped after it and restarted"
+        runs.append(seen)
+    later = [
+        number
+        for number in range(2, RESTART_EPOCHS + 1)
+        if number in predictions and predictions[number] != predictions.get(1)
+    ]
+    if later:
+        seen = observe(
+            sources,
+            layout,
+            seed,
+            epochs=RESTART_EPOCHS,
+            stop_after=later[0] - 1,
+            validation_labels=predictions[later[0]],
+        )
+        seen["context"] = (
+            f"labelled for epoch {later[0]} to be the best, stopped before it and restarted"
+        )
+        runs.append(seen)
+    elif predictions:
+        untested = (
+            "a best epoch after a restart was not tested: the network's validation "
+            "predictions did not change from epoch to epoch"
+        )
+    return runs, untested
+
+
+def seen_complete(seen: dict[str, Any]) -> dict[tuple[int, int], dict[str, Any]]:
+    """The validation passes of a run that cover every validation patch."""
+    total = len(seen["validation"])
+    return {key: value for key, value in seen["validated"].items() if len(value["logits"]) == total}
 
 
 def contract_result(sources: dict[str, str], family: str = "camelyon_pipeline") -> dict[str, Any]:
     """Check a project's modules against every clause."""
     clauses: dict[str, dict[str, Any]] = {}
 
-    def check(name: str, test, argument: Any) -> None:
+    def check(name: str, test, *arguments: Any) -> None:
         if name in clauses and not clauses[name]["passed"]:
             return  # Keep the first failure of a clause.
         try:
-            clauses[name] = test(argument)
+            clauses[name] = test(*arguments)
         except Exception as error:
             clauses[name] = _failed(f"the check failed with {type(error).__name__}: {error}"[:300])
 
-    for layout, seed in LAYOUTS:
+    def failed_with(error: Exception, where: str = "the project") -> dict[str, Any]:
+        return _failed(f"{where} failed with {type(error).__name__}: {error}"[:300])
+
+    layout, seed = LAYOUTS[0]
+    observations = []
+    try:
+        for name, number in LAYOUTS:
+            seen = observe(sources, name, number)
+            seen["context"] = f"{name} layout, {EPOCHS} epochs"
+            observations.append(seen)
+            check("training_samples", _training_samples, seen)
+            check("training_labels", _training_labels, seen)
+        reference = observe(sources, layout, seed, epochs=RESTART_EPOCHS)
+        reference["context"] = f"{layout} layout, {RESTART_EPOCHS} epochs"
+        observations.append(reference)
+    except Exception as error:
+        failure = failed_with(error)
+        for name in CLAUSES:
+            if name not in clauses or clauses[name]["passed"]:
+                clauses[name] = failure
+        return _result(clauses, family)
+    for stop in STOPS:
+        where = f"stopped after epoch {stop} and restarted"
         try:
-            seen = observe(sources, layout, seed)
+            seen = observe(sources, layout, seed, epochs=RESTART_EPOCHS, stop_after=stop)
         except Exception as error:
-            failure = _failed(f"the project failed with {type(error).__name__}: {error}"[:300])
-            for name in CLAUSES:
-                if name not in clauses or clauses[name]["passed"]:
-                    clauses[name] = failure
-            break
-        check("training_samples", _training_samples, seen)
-        check("training_labels", _training_labels, seen)
-    check("restart", _restart, sources)
+            check("restart", failed_with, error, where + ", the project")
+            continue
+        seen["context"] = where
+        observations.append(seen)
+        check("restart", _restart, reference, seen)
+    untested = ""
+    try:
+        steered, untested = steered_runs(sources, reference)
+        observations.extend(steered)
+    except Exception as error:
+        check("delivery", failed_with, error, "a run labelled to test the delivery")
+    for seen in observations:
+        check("validation", _validation, seen)
+        check("delivery", _delivery, seen)
+    if untested and clauses["delivery"]["passed"]:
+        clauses["delivery"] = _passed(untested)
+    return _result(clauses, family)
+
+
+def _result(clauses: dict[str, dict[str, Any]], family: str) -> dict[str, Any]:
     failed = [name for name in CLAUSES if not clauses[name]["passed"]]
     return {
         "schema_version": 1,
         "task": "pipeline_contract",
         "contract_version": CONTRACT_VERSION,
         "family": family,
+        "family_sha256": pipeline_tasks.family_sha256(family),
         "status": "failed" if failed else "passed",
         "failed": failed,
         "clauses": {name: clauses[name] for name in CLAUSES},
@@ -536,6 +785,7 @@ def _refused(problems: list[str], family: str = "camelyon_pipeline") -> dict[str
         "task": "pipeline_contract",
         "contract_version": CONTRACT_VERSION,
         "family": family,
+        "family_sha256": pipeline_tasks.family_sha256(family),
         "status": "refused",
         "failed": list(CLAUSES),
         "clauses": {},
@@ -595,6 +845,9 @@ VERSION_CLAUSES = {
     "labels_not_filtered": ("training_labels",),
     "scheduler_not_restored": ("restart",),
     "optimizer_not_restored": ("restart",),
+    "last_epoch_delivered": ("delivery",),
+    "best_accuracy_not_restored": ("delivery",),
+    "pretrained_weights_delivered": ("delivery",),
 }
 _IMPORT = "from torch.utils.data import DataLoader, Dataset\n"
 _ITEM = "        return self.patches.image(self.indices[position]), self.labels[position]\n"
@@ -742,6 +995,47 @@ CASES = {
             ),
         ),
     ),
+    "best_before_the_restart_kept_for_good": Case(
+        ("delivery",),
+        "A repair of a lost best accuracy that, after a restart, keeps the best checkpoint "
+        "written before it whatever comes later.",
+        (
+            (
+                "train",
+                '        start, best_accuracy = state["epoch"] + 1, state["best_accuracy"]\n',
+                '        start, best_accuracy = state["epoch"] + 1, float("inf")\n',
+            ),
+        ),
+    ),
+    "accuracy_reported_as_a_percentage": Case(
+        ("validation",),
+        "run.log reports the validation accuracy times 100; the choice of the best epoch "
+        "is unchanged.",
+        (
+            (
+                "train",
+                '"validation_accuracy": correct / count',
+                '"validation_accuracy": 100 * correct / count',
+            ),
+        ),
+    ),
+    "validation_loss_summed": Case(
+        ("validation",),
+        "run.log reports the validation loss summed over the patches instead of averaged.",
+        (("train", '"validation_loss": loss / count', '"validation_loss": loss'),),
+    ),
+    "validation_on_the_first_batch": Case(
+        ("validation", "delivery"),
+        "Validation stops after its first batch, so it measures 32 of the patches; the best "
+        "epoch is then chosen on them.",
+        (
+            (
+                "train",
+                "        count += len(labels)\n    return",
+                "        count += len(labels)\n        break\n    return",
+            ),
+        ),
+    ),
 }
 
 
@@ -782,17 +1076,24 @@ def check_cases(*, sources=None, family: str = "camelyon_pipeline") -> list[dict
                 "failed": result["failed"],
                 "as_expected": sorted(result["failed"]) == sorted(expected),
                 "details": [result["clauses"][clause]["detail"] for clause in result["failed"]],
+                "notes": [
+                    f"{clause}: {outcome['detail']}"
+                    for clause, outcome in result["clauses"].items()
+                    if outcome["passed"] and outcome["detail"]
+                ],
             }
         )
     return rows
 
 
 def cases_text(rows: list[dict[str, Any]]) -> str:
+    """One line per project, why it failed, and what a passing clause could not test."""
     lines = []
     for row in rows:
         verdict = "as expected" if row["as_expected"] else f"EXPECTED {row['expected'] or 'none'}"
         lines.append(f"{row['name']:<40} {', '.join(row['failed']) or 'passes':<36} {verdict}")
         lines.extend(f"    {detail}" for detail in row["details"])
+        lines.extend(f"    note, {note}" for note in row.get("notes", []))
     agreed = sum(row["as_expected"] for row in rows)
     correct = sum(not row["expected"] for row in rows)
     lines.append(

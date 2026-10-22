@@ -1129,6 +1129,8 @@ def check_versions(
         "task": "pipeline_check",
         "settings": {
             "family": family,
+            # Results of another state of the tasks have another hash; never mix them.
+            "family_sha256": pipeline_tasks.family_sha256(family),
             "data": data,
             "config": None if config is None else str(config),
             "epochs": epochs,
@@ -1160,11 +1162,12 @@ def check_text(result: dict[str, Any]) -> str:
     """The check as a table, one line per version, then what failed runs printed.
 
     held out is the most training samples read from a held-out group, labels the share
-    of the loss's targets that are the labels of the samples read.
+    of the loss's targets that are the labels of the samples read, and delivered the
+    epochs whose weights the run delivered (init for the weights it started from).
     """
     lines = [
-        f"{'version':<24}{'split':<13}{'status':<11}{'diagnosis':<32}{'ok':<5}{'replay':<13}"
-        f"{'held out':>9}{'labels':>8}  id acc  ood acc"
+        f"{'version':<32}{'split':<13}{'status':<11}{'diagnosis':<32}{'ok':<5}{'replay':<13}"
+        f"{'held out':>9}{'labels':>8}{'delivered':>11}  id acc  ood acc"
     ]
     for row in result["versions"]:
         metrics, evidence = row["metrics"] or {}, row["evidence"] or {}
@@ -1174,11 +1177,16 @@ def check_text(result: dict[str, Any]) -> str:
         )
         held_out = evidence.get("held_out_training_samples")
         labels = evidence.get("labels_matching")
+        delivered = evidence.get("delivered")
+        if delivered is not None:
+            delivered = ",".join(
+                "init" if same == "initial state" else same.split()[1] for same in delivered
+            )
         lines.append(
-            f"{row['version']:<24}{row['split'] or '-':<13}{row['status']:<11}"
+            f"{row['version']:<32}{row['split'] or '-':<13}{row['status']:<11}"
             f"{row['diagnosis'] or '-':<32}{'yes' if row['as_expected'] else 'NO':<5}"
             f"{_replay(row['trajectory']):<13}{'-' if held_out is None else held_out:>9}"
-            f"{'-' if labels is None else f'{labels:.0%}':>8}  {accuracies}"
+            f"{'-' if labels is None else f'{labels:.0%}':>8}{delivered or '-':>11}  {accuracies}"
         )
     lines.append(f"{result['versions_as_expected']}/{len(result['versions'])} versions as expected")
     for row in result["versions"]:

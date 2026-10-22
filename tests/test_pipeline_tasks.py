@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 import warnings
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -65,16 +66,23 @@ class TaskTests(unittest.TestCase):
 
     def test_every_task_has_a_development_and_a_test_fault_and_variant(self):
         for task in TASKS:
-            versions = [item for item in CAMELYON_VERSIONS.values() if item.task == task]
+            versions = [
+                item
+                for item in CAMELYON_VERSIONS.values()
+                if item.task == task and not item.control
+            ]
             for correct in (False, True):
                 splits = sorted(item.split for item in versions if item.correct == correct)
                 self.assertEqual(splits, ["development", "test"], (task, correct))
         for name, item in CAMELYON_VERSIONS.items():
             self.assertIn(item.task, TASKS)
             self.assertIn(item.split, pipeline_tasks.SPLITS)
-            self.assertEqual(pipeline_tasks.kind(name), "variant" if item.correct else "fault")
+            kind = "variant" if item.correct else "control" if item.control else "fault"
+            self.assertEqual(pipeline_tasks.kind(name), kind)
             if item.correct:
                 self.assertIsNone(item.signature)
+                self.assertFalse(item.control)
+        self.assertEqual(pipeline_tasks.kind("pretrained_weights_delivered"), "control")
         self.assertEqual(pipeline_tasks.kind(HEALTHY), HEALTHY)
         self.assertEqual(
             pipeline_tasks.expected_diagnosis("positions_index_base"),
@@ -83,6 +91,20 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(pipeline_tasks.expected_diagnosis("labels_not_filtered"), "no_known_fault")
         with self.assertRaisesRegex(ValueError, "Unknown version"):
             pipeline_tasks.version("missing")
+
+    def test_the_family_hash_changes_with_anything_a_version_is_made_of(self):
+        family_hash = pipeline_tasks.family_sha256()
+        self.assertEqual(family_hash, pipeline_tasks.family_sha256())
+        changed = replace(CAMELYON_VERSIONS["labels_not_filtered"], split="development")
+        with patch.dict(CAMELYON_VERSIONS, {"labels_not_filtered": changed}):
+            self.assertNotEqual(pipeline_tasks.family_sha256(), family_hash)
+        family = pipeline_tasks.FAMILIES["camelyon_pipeline"]
+        with patch.dict(
+            pipeline_tasks.FAMILIES,
+            {"camelyon_pipeline": replace(family, statement=family.statement + "\n")},
+        ):
+            self.assertNotEqual(pipeline_tasks.family_sha256(), family_hash)
+        self.assertEqual(pipeline_tasks.family_sha256(), family_hash)
 
     def test_a_project_is_its_modules_and_the_statement(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -113,6 +135,8 @@ class TaskTests(unittest.TestCase):
             "`run.deliver(state_dict)`",
             "`write(name, state)`, `read(name)` and `name in run.checkpoints`",
             "`num_workers=0`",
+            "`run.log(validation_loss=..., validation_accuracy=...)`",
+            "among all the epochs of the run, before and after any restart",
         ):
             self.assertIn(stated, CAMELYON_STATEMENT)
         signatures = {item.signature for item in CAMELYON_VERSIONS.values()} - {None}
@@ -151,7 +175,7 @@ class ContractTests(unittest.TestCase):
 
     def test_codes_survive_normalization_and_nothing_else(self):
         codes = [0, 5, 46, pipeline_contract.VALIDATION_CODES + 3]
-        images = pipeline_contract.coded_images(codes)
+        images = pipeline_contract.coded_images(codes, [0.3, 0.5, 0.7, 0.4])
         mean = torch.tensor((0.485, 0.456, 0.406)).view(1, 3, 1, 1)
         std = torch.tensor((0.229, 0.224, 0.225)).view(1, 3, 1, 1)
         once = (images - mean) / std
@@ -274,6 +298,14 @@ class CheckTests(unittest.TestCase):
         self.assertLess(restored["learning_rates"][0], 1e-4)
         self.assertEqual(rebuilt["optimizer_parameters_with_state"], 0)
         self.assertEqual(rebuilt["learning_rates"], [1e-4])
+        # The delivery: the last epoch, the freshly built model, or the healthy run's best.
+        delivered = {name: row["evidence"]["delivered"] for name, row in rows.items()}
+        self.assertEqual(delivered["last_epoch_delivered"], ["epoch 3 (attempt 2)"])
+        self.assertEqual(delivered["pretrained_weights_delivered"], [])
+        self.assertEqual(len(delivered[HEALTHY]), 1)
+        self.assertEqual(
+            result["settings"]["family_sha256"], pipeline_tasks.family_sha256("camelyon_pipeline")
+        )
         saved = json.loads((self.root / "check" / "check_report.json").read_text(encoding="utf-8"))
         self.assertEqual(saved, result)
         text = pipeline_workspace.check_text(result)

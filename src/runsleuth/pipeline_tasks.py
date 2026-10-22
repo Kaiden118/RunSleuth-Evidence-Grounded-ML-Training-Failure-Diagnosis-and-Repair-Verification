@@ -5,13 +5,20 @@ runs. Unlike the scripts of agent_tasks, it filters its own training data, resum
 from its own checkpoints and chooses the weights it delivers. A task is one place
 where such a project can go wrong and still train. Every task has two faults, written
 as exact edits of the healthy project: one is development material, used to build and
-tune verifiers, and the other is held out to test them. A variant is a correct project
-written differently from the healthy one, where the statement allows it; it too
-belongs to one split.
+tune verifiers, and the other is held out to test them. The two break the same
+requirement in different ways, so the test fault is a new instance of a kind of fault
+the development material has, not a new kind: it shows whether a verifier generalizes
+within a requirement, not to fault mechanisms it was never shown. A variant is a
+correct project written differently from the healthy one, where the statement allows
+it; it too belongs to one split. A control is a fault any metric gate catches, kept so
+that the baselines are measured on easy faults too; it is checked and labelled like
+the others, but agents are not asked to repair it.
 
 The statement is the public specification of a project: pipeline_contract tests it,
 it never names a fault, and it is the same for every version of a family.
 materialize() writes a project with TASK.md, the only files an agent is given.
+family_sha256() hashes everything a family's versions are made of, so that results of
+one state of the tasks are never mixed with another's.
 
     python -m runsleuth.pipeline_tasks list
     python -m runsleuth.pipeline_tasks show positions_index_base
@@ -20,7 +27,9 @@ materialize() writes a project with TASK.md, the only files an agent is given.
 
 import argparse
 import difflib
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 TEMPLATES = Path(__file__).with_name("pipeline_templates")
@@ -73,10 +82,12 @@ Samples are read in the main process (`num_workers=0`).
 5. Restarts: after every epoch the project checkpoints what it needs, so that a run
    stopped as it starts an epoch and restarted trains exactly as the uninterrupted run
    would have: the same epochs, batches, weights, optimizer state and learning rates.
-6. Validation and delivery: after every epoch the project measures its loss and
-   accuracy on `run.data.validation` and reports them with `run.log`. At the end it
-   delivers the weights of the epoch with the highest validation accuracy, the
-   earliest such epoch on a tie.
+6. Validation and delivery: after every epoch the project measures the mean
+   cross-entropy loss and the accuracy of the network on all of `run.data.validation`
+   and reports them with `run.log(validation_loss=..., validation_accuracy=...)`. At
+   the end it delivers the weights of the epoch with the highest validation accuracy
+   among all the epochs of the run, before and after any restart, the earliest such
+   epoch on a tie.
 
 ## Your job
 
@@ -91,6 +102,8 @@ TASKS = {
     "which patches it hands to training, and with which labels.",
     "restart": "After a stop between two epochs the project resumes from its checkpoint; "
     "whether it restores everything the rest of the run depends on.",
+    "delivered_weights": "The project keeps the best epoch's weights and delivers them; "
+    "whether the weights it delivers are the best over the whole run, across a restart.",
 }
 
 
@@ -101,7 +114,8 @@ class Version:
     task is the task it belongs to, and split whether it is development or test
     material. correct says whether it meets the statement. signature is the failure
     signature its runs should be diagnosed with: None for a correct version and for a
-    fault the signature library was not written for.
+    fault the signature library was not written for. control marks a fault kept as an
+    easy control, which agents are not asked to repair.
     """
 
     task: str
@@ -110,6 +124,7 @@ class Version:
     summary: str
     edits: tuple[tuple[str, str, str], ...]
     signature: str | None = None
+    control: bool = False
 
 
 _IMPORT = "from torch.utils.data import DataLoader, Dataset\n"
@@ -125,6 +140,8 @@ _RESUMED = (
     '        scheduler.load_state_dict(state["scheduler"])\n'
     '        start, best_accuracy = state["epoch"] + 1, state["best_accuracy"]\n'
 )
+_RESUMED_PROGRESS = '        start, best_accuracy = state["epoch"] + 1, state["best_accuracy"]\n'
+_DELIVERED = "    run.deliver(run.checkpoints.read(config.BEST_CHECKPOINT))\n"
 _SAVED = (
     "        run.checkpoints.write(\n"
     "            config.LAST_CHECKPOINT,\n"
@@ -266,6 +283,79 @@ CAMELYON_VERSIONS = {
             ("train", "            config.LAST_CHECKPOINT,\n", '            f"epoch-{epoch}",\n'),
         ),
     ),
+    "last_epoch_delivered": Version(
+        "delivered_weights",
+        "development",
+        False,
+        "The run delivers the weights of its last epoch instead of the best checkpoint; "
+        "they are the same whenever the last epoch is the best.",
+        (("train", _DELIVERED, "    run.deliver(model.state_dict())\n"),),
+    ),
+    "best_accuracy_not_restored": Version(
+        "delivered_weights",
+        "test",
+        False,
+        "A restart restores the epoch but not the best accuracy so far, so the first epoch "
+        "after the restart replaces the best checkpoint even when an earlier epoch was "
+        "better. Like last_epoch_delivered it chooses the best checkpoint wrongly, by "
+        "another trigger: a delivery that is not consistent across a restart.",
+        (("train", _RESUMED_PROGRESS, '        start = state["epoch"] + 1\n'),),
+    ),
+    "pretrained_weights_delivered": Version(
+        "delivered_weights",
+        "test",
+        False,
+        "The run delivers a freshly built model, the pretrained network with an untrained "
+        "head, instead of the best checkpoint: a control any metric gate catches.",
+        (("train", _DELIVERED, "    run.deliver(build_model().state_dict())\n"),),
+        control=True,
+    ),
+    "accuracy_history_in_checkpoint": Version(
+        "delivered_weights",
+        "development",
+        True,
+        "The checkpoint keeps every epoch's validation accuracy, and an epoch is written "
+        "as the best when it is the earliest with the highest accuracy so far.",
+        (
+            ("train", "    start, best_accuracy = 1, -1.0\n", "    start, accuracies = 1, []\n"),
+            (
+                "train",
+                _RESUMED_PROGRESS,
+                '        start, accuracies = state["epoch"] + 1, state["accuracies"]\n',
+            ),
+            (
+                "train",
+                '        if metrics["validation_accuracy"] > best_accuracy:\n'
+                '            best_accuracy = metrics["validation_accuracy"]\n',
+                '        accuracies.append(metrics["validation_accuracy"])\n'
+                "        if accuracies.index(max(accuracies)) == len(accuracies) - 1:\n",
+            ),
+            (
+                "train",
+                '                "best_accuracy": best_accuracy,\n',
+                '                "accuracies": accuracies,\n',
+            ),
+        ),
+    ),
+    "best_measured_again_on_restart": Version(
+        "delivered_weights",
+        "test",
+        True,
+        "A restart measures the best checkpoint on the validation patches again instead "
+        "of reading its accuracy from the checkpoint.",
+        (
+            (
+                "train",
+                _RESUMED_PROGRESS,
+                '        start = state["epoch"] + 1\n'
+                "        best = build_model().to(run.device)\n"
+                "        best.load_state_dict(run.checkpoints.read(config.BEST_CHECKPOINT))\n"
+                "        validation = data.validation_loader(run.data.validation)\n"
+                "        measured = evaluate(best, validation, loss_function, run.device)\n"
+                '        best_accuracy = measured["validation_accuracy"]\n',
+            ),
+        ),
+    ),
 }
 
 
@@ -306,10 +396,22 @@ def version(name: str, family_name: str = "camelyon_pipeline") -> Version:
 
 
 def kind(name: str, family_name: str = "camelyon_pipeline") -> str:
-    """healthy, variant (a correct version written differently) or fault."""
+    """healthy, variant (a correct version written differently), fault or control."""
     if name == HEALTHY:
         return HEALTHY
-    return "variant" if version(name, family_name).correct else "fault"
+    item = version(name, family_name)
+    return "variant" if item.correct else "control" if item.control else "fault"
+
+
+def family_sha256(family_name: str = "camelyon_pipeline") -> str:
+    """A hash of a family's statement, its healthy project and every version."""
+    projects = family(family_name)
+    content = {
+        "statement": projects.statement,
+        "healthy": healthy_sources(family_name),
+        "versions": {name: asdict(item) for name, item in projects.versions.items()},
+    }
+    return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
 
 
 def expected_diagnosis(name: str, family_name: str = "camelyon_pipeline") -> str:
@@ -386,7 +488,9 @@ def main(argv: list[str] | None = None) -> None:
         print(f"{HEALTHY}: the healthy project, used as the reference")
         for name, item in projects.versions.items():
             truth = "correct" if item.correct else item.signature or "no signature"
-            print(f"{name} [{item.task}, {item.split}, {truth}]: {item.summary}")
+            role = ", control" if item.control else ""
+            print(f"{name} [{item.task}, {item.split}{role}, {truth}]: {item.summary}")
+        print(f"family {args.family}: {family_sha256(args.family)}")
     elif args.command == "show":
         diff = version_diff(args.version, args.family)
         print(diff or "No difference: this is the healthy project.", end="")

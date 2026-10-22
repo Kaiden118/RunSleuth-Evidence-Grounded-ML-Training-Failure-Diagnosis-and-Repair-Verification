@@ -107,6 +107,14 @@
       "status": "public_instance",
       "cases": [
         {
+          "source": "GitHub issue roboflow/rf-detr #969, fixed by pull request #973",
+          "title": "Best EMA metric not persisted across resume",
+          "url": "https://github.com/roboflow/rf-detr/issues/969",
+          "date": "2026-04-15",
+          "matches": "_best_ema, 'a plain instance attribute initialized to 0.0', is 'never persisted into Lightning checkpoints', so on resume it 'resets to 0.0' and the first validation after it passes 'ema_val > self._best_ema', 'overwriting checkpoint_best_ema.pth with inferior weights'. PR #973 (https://github.com/roboflow/rf-detr/pull/973, merged the same day) saves and restores it, with regression tests that an inferior post-resume EMA does not overwrite the checkpoint.",
+          "caveat": "A Lightning callback tracking an EMA metric that starts at 0.0; the task is a plain loop tracking validation accuracy that starts at -1. Found by an external review the user shared, then opened and read here."
+        },
+        {
           "source": "GitHub pull request, CambridgeCIA/LION #213",
           "title": "Fix resuming training from checkpoints",
           "url": "https://github.com/CambridgeCIA/LION/pull/213",

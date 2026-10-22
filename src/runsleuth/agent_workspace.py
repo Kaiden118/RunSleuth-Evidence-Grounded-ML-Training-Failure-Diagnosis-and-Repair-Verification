@@ -104,8 +104,12 @@ def _denied_attribute(name: str) -> bool:
     return name in DENIED_ATTRIBUTES or (name.startswith("_") and name != "__init__")
 
 
-def check_script(source: str) -> list[str]:
-    """Reasons to refuse a script, in line order; empty when it may run."""
+def check_script(source: str, local_modules: frozenset[str] = frozenset()) -> list[str]:
+    """Reasons to refuse a script, in line order; empty when it may run.
+
+    local_modules names the other modules of a project (see pipeline_workspace), which
+    the script may import by their plain names.
+    """
     if len(source) > MAX_SOURCE_CHARACTERS:
         return [f"the script is longer than {MAX_SOURCE_CHARACTERS} characters"]
     try:
@@ -125,6 +129,8 @@ def check_script(source: str) -> list[str]:
                 modules = [node.module]
                 members = [alias.name for alias in node.names]
             for module in modules:
+                if module in local_modules:
+                    continue
                 root, *rest = module.split(".")
                 if root not in ALLOWED_IMPORTS:
                     problems.add((node.lineno, f"import of {module!r} is not allowed"))

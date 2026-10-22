@@ -43,7 +43,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-runsleuth = ["*.json"]
+runsleuth = ["*.json", "pipeline_templates/*/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -55,3 +55,6 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+[tool.ruff.lint.isort]
+# The modules of the pipeline project templates import each other by plain names.
+known-local-folder = ["config", "data", "train"]

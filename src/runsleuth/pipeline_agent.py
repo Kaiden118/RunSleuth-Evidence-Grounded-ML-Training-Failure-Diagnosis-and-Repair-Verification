@@ -38,8 +38,10 @@ MODULE_FILES = ("config.py", "data.py", "train.py")
 FILES = (STATEMENT_NAME, *MODULE_FILES)
 MAX_TOOL_CALLS = 20
 MAX_RUNS = 3
-# Reasoning models reached stage one's 4,000 now and then.
-MAX_OUTPUT_TOKENS = 8000
+# Every model gets the same limit. In the smoke tests Muse Spark spent all of 8,000
+# on thinking in six replies and DeepSeek reached 7,967; a reply is cut only where a
+# model would think longer than this.
+MAX_OUTPUT_TOKENS = 32000
 MAX_TEXT_REPLIES = 2
 MAX_ERROR_CHARACTERS = 1500
 SHOWN_OUTPUT = 2000
@@ -328,10 +330,21 @@ def run_agent(
         message = response.choices[0].message
         calls = list(getattr(message, "tool_calls", None) or [])
         finish = getattr(response.choices[0], "finish_reason", None)
+        # Anthropic reports no reasoning tokens; its thinking shows as blocks.
+        blocks = getattr(message, "extra_content", None)
+        thinking = (
+            sum(
+                isinstance(block, dict) and block.get("type") in ("thinking", "redacted_thinking")
+                for block in blocks
+            )
+            if isinstance(blocks, list)
+            else None
+        )
         step = {
             "content": message.content or "",
             "tool_calls": [],
             "finish_reason": finish,
+            "thinking_blocks": thinking,
             **usage,
         }
         record["steps"].append(step)

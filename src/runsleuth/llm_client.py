@@ -14,6 +14,9 @@ from openai import OpenAI
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 PROVIDERS = ("gemini", "ollama", "openai", "compatible", "anthropic")
+# Seconds a hosted model may take over one reply. Thinking models took more than two
+# minutes over a first reply in the smoke tests, so every provider gets ten.
+REQUEST_TIMEOUT = 600.0
 
 
 def _setting(name: str, purpose: str) -> str:
@@ -32,7 +35,9 @@ def create_llm_client(provider: str = "gemini", model: str | None = None) -> tup
             raise RuntimeError("Set GEMINI_API_KEY before running LLM diagnosis")
         if not model:
             raise RuntimeError("Set GEMINI_MODEL before running LLM diagnosis")
-        return OpenAI(api_key=api_key, base_url=GEMINI_BASE_URL, timeout=60.0, max_retries=0), model
+        return OpenAI(
+            api_key=api_key, base_url=GEMINI_BASE_URL, timeout=REQUEST_TIMEOUT, max_retries=0
+        ), model
     if provider == "ollama":
         model = model or os.environ.get("OLLAMA_MODEL", "").strip()
         if not model:
@@ -48,12 +53,14 @@ def create_llm_client(provider: str = "gemini", model: str | None = None) -> tup
             raise RuntimeError("Set OPENAI_API_KEY before using the OpenAI provider")
         if not model:
             raise RuntimeError("Set OPENAI_MODEL or pass a model")
-        return OpenAI(api_key=api_key, timeout=120.0, max_retries=0), model
+        return OpenAI(api_key=api_key, timeout=REQUEST_TIMEOUT, max_retries=0), model
     if provider == "compatible":
         base_url = _setting("LLM_BASE_URL", "to the provider's OpenAI-compatible endpoint")
         api_key = _setting("LLM_API_KEY", "to the key for LLM_BASE_URL")
         model = model or _setting("LLM_MODEL", "or pass a model")
-        return OpenAI(api_key=api_key, base_url=base_url, timeout=120.0, max_retries=0), model
+        return OpenAI(
+            api_key=api_key, base_url=base_url, timeout=REQUEST_TIMEOUT, max_retries=0
+        ), model
     if provider == "anthropic":
         import anthropic
 
@@ -62,9 +69,9 @@ def create_llm_client(provider: str = "gemini", model: str | None = None) -> tup
         base_url = _setting("CLAUDE_BASE_URL", "to the Messages API endpoint, without /v1")
         api_key = _setting("CLAUDE_API_KEY", "to the key for CLAUDE_BASE_URL")
         model = model or _setting("LLM_MODEL", "or pass a model")
-        # Adaptive thinking can take a while before the first token.
+        # An explicit timeout also lets a large max_tokens go without streaming.
         client = anthropic.Anthropic(
-            api_key=api_key, base_url=base_url, timeout=300.0, max_retries=0
+            api_key=api_key, base_url=base_url, timeout=REQUEST_TIMEOUT, max_retries=0
         )
         return AnthropicChat(client), model
     raise ValueError(f"Unknown provider {provider!r}; expected one of {PROVIDERS}")

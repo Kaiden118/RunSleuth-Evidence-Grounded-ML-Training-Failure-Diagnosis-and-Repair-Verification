@@ -335,6 +335,11 @@ def summary_text(split: str, root: Path = ROOT) -> str:
     return "\n".join(lines)
 
 
+def _passed_smoke(record: dict[str, Any]) -> bool:
+    limit = record.get("limits", {}).get("max_output_tokens")
+    return record["status"] == "finished" and limit == pipeline_agent.MAX_OUTPUT_TOKENS
+
+
 def smoke(
     model_name: str,
     client: Any,
@@ -346,15 +351,20 @@ def smoke(
     pause: float = 0.0,
     progress: Callable[[str], None] = print,
 ) -> list[dict[str, Any]]:
-    """Two episodes of a model on development faults, with short runs on synthetic data;
-    an episode that has not finished is tried again in a new folder."""
+    """Two episodes of a model on development faults, with short runs on synthetic data.
+    An episode is kept once it finished under the loop's current limits; any other is
+    tried again in a new folder."""
     runner = runner or Runner(Path(root) / "short_runs", data=SMOKE_DATA)
     episodes = []
     for family, start in SMOKE_STARTS:
         path = Path(root) / model_name / f"{family}.json"
-        if path.exists() and _read(path)["record"]["status"] in FINISHED:
-            episodes.append(_read(path))
+        kept = _read(path) if path.exists() else None
+        if kept and _passed_smoke(kept["record"]):
+            episodes.append(kept)
             continue
+        if kept:
+            # The earlier episode is kept beside the new one, under its attempt.
+            path.rename(path.with_name(f"{family}.attempt-{kept['attempt']}.json"))
         folder = hashlib.sha256(f"{model_name}/{family}".encode()).hexdigest()[:16]
         attempt = 1
         while (Path(root) / "work" / folder / f"attempt-{attempt}").exists():
@@ -418,7 +428,8 @@ def smoke_text(episodes: list[dict[str, Any]]) -> str:
         lines.append(
             f"    tokens: {record['input_tokens']} in ({record['cached_input_tokens']} cached), "
             f"{record['output_tokens']} out ({record['reasoning_tokens']} reasoning), "
-            f"largest reply {largest} of {pipeline_agent.MAX_OUTPUT_TOKENS}; "
+            f"largest reply {largest} of {pipeline_agent.MAX_OUTPUT_TOKENS}, "
+            f"thinking blocks {sum(step.get('thinking_blocks') or 0 for step in steps)}; "
             f"served {record['served_models']}"
         )
         if record["status"] != "finished":

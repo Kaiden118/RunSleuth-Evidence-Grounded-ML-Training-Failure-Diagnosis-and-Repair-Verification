@@ -165,6 +165,7 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(second["messages"][2]["content"][0]["tool_use_id"], "t1")
         self.assertEqual(record["cached_input_tokens"], 4000)
         self.assertEqual(record["served_models"], ["claude-sonnet-5-5"])
+        self.assertEqual([step["thinking_blocks"] for step in record["steps"]], [1, 1])
         self.assertEqual(
             [step["finish_reason"] for step in record["steps"]], ["tool_calls", "tool_calls"]
         )

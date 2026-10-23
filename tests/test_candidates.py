@@ -164,6 +164,19 @@ class CandidateTests(unittest.TestCase):
             progress=lambda _line: None,
         )
         self.assertIn("NOT PASSED", candidates.smoke_text(failed))
+        retried = candidates.smoke(
+            "deepseek-v4.1-flash-1017",
+            FakeAgent(),
+            "fake",
+            root=self.root / "smoke",
+            runner=runner,
+            progress=lambda _line: None,
+        )
+        self.assertEqual([e["attempt"] for e in retried], [2, 2])
+        kept = sorted(
+            p.name for p in (self.root / "smoke" / "deepseek-v4.1-flash-1017").glob("*.json")
+        )
+        self.assertIn("camelyon_pipeline.attempt-1.json", kept)
         # Finished episodes are kept; the others are tried again.
         again = candidates.smoke(
             "gpt-6-luna",

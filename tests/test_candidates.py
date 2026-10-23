@@ -139,6 +139,42 @@ class CandidateTests(unittest.TestCase):
         folders = {path.name for path in (self.root / "workspaces").glob("*/attempt-*")}
         self.assertEqual(folders, {"attempt-1", "attempt-2"})
 
+    def test_a_smoke_test_tries_a_model_on_two_faults_and_says_whether_it_passed(self):
+        runner = candidates.Runner(self.root / "smoke-short", data=SYNTHETIC, run=run_in_process)
+        episodes = candidates.smoke(
+            "gpt-6-luna",
+            FakeAgent(),
+            "fake",
+            root=self.root / "smoke",
+            runner=runner,
+            progress=lambda _line: None,
+        )
+        self.assertEqual(
+            [(e["family"], e["start"]) for e in episodes], list(candidates.SMOKE_STARTS)
+        )
+        self.assertTrue(all(e["record"]["training_runs"] == 1 for e in episodes))
+        text = candidates.smoke_text(episodes)
+        self.assertTrue(text.endswith("PASSED"), text)
+        failed = candidates.smoke(
+            "deepseek-v4.1-flash-1017",
+            FakeAgent(RejectedError("bad request")),
+            "fake",
+            root=self.root / "smoke",
+            runner=runner,
+            progress=lambda _line: None,
+        )
+        self.assertIn("NOT PASSED", candidates.smoke_text(failed))
+        # Finished episodes are kept; the others are tried again.
+        again = candidates.smoke(
+            "gpt-6-luna",
+            FakeAgent(RejectedError("x")),
+            "fake",
+            root=self.root / "smoke",
+            runner=runner,
+            progress=lambda _line: None,
+        )
+        self.assertEqual([e["record"]["status"] for e in again], ["finished", "finished"])
+
     def test_candidates_are_run_against_references_and_labelled_by_the_hidden_tests(self):
         self.generate(FakeAgent())
         runner = candidates.Runner(self.root / "runs", data=SYNTHETIC, run=run_in_process)

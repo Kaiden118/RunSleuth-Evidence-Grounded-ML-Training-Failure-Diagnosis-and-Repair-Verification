@@ -1,7 +1,10 @@
 """LLM clients through Chat Completions APIs.
 
 Gemini, a local Ollama and OpenAI have their own settings. Any other service that
-speaks the same API (provider "compatible") is named by its endpoint.
+speaks the same API (provider "compatible") is named by its endpoint. Claude goes
+through Anthropic's own Messages API (provider "anthropic", anthropic_chat), which
+keeps its prompt caching and thinking; CLAUDE_BASE_URL and CLAUDE_API_KEY name the
+endpoint and its key, apart from the ANTHROPIC_* variables Claude Code itself reads.
 """
 
 import os
@@ -10,7 +13,7 @@ from openai import OpenAI
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
-PROVIDERS = ("gemini", "ollama", "openai", "compatible")
+PROVIDERS = ("gemini", "ollama", "openai", "compatible", "anthropic")
 
 
 def _setting(name: str, purpose: str) -> str:
@@ -51,4 +54,17 @@ def create_llm_client(provider: str = "gemini", model: str | None = None) -> tup
         api_key = _setting("LLM_API_KEY", "to the key for LLM_BASE_URL")
         model = model or _setting("LLM_MODEL", "or pass a model")
         return OpenAI(api_key=api_key, base_url=base_url, timeout=120.0, max_retries=0), model
+    if provider == "anthropic":
+        import anthropic
+
+        from runsleuth.anthropic_chat import AnthropicChat
+
+        base_url = _setting("CLAUDE_BASE_URL", "to the Messages API endpoint, without /v1")
+        api_key = _setting("CLAUDE_API_KEY", "to the key for CLAUDE_BASE_URL")
+        model = model or _setting("LLM_MODEL", "or pass a model")
+        # Adaptive thinking can take a while before the first token.
+        client = anthropic.Anthropic(
+            api_key=api_key, base_url=base_url, timeout=300.0, max_retries=0
+        )
+        return AnthropicChat(client), model
     raise ValueError(f"Unknown provider {provider!r}; expected one of {PROVIDERS}")

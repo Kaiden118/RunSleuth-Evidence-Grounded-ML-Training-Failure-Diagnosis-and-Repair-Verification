@@ -20,6 +20,7 @@ dev = [
     "ruff>=0.9",
 ]
 llm = [
+    "anthropic",
     "openai",
 ]
 

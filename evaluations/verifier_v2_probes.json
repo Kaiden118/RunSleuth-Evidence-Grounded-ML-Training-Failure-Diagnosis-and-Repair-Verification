@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "task": "verifier_v2_probes",
+  "about": "The probe runs of RunSleuth v2, fixed on development material before any test candidate is run. The seeds are recorded here so that the test seeds are never drawn among them.",
+  "self_restart": {
+    "epochs": "as the candidate's run",
+    "interrupt_after_epochs": null,
+    "evaluate_epochs": true
+  },
+  "determinism_control": "the self-restart run once more, only when the restarted run's weights alone differ",
+  "delivery": {
+    "seeds": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "epochs": 5,
+    "interrupt_after_epochs": 2,
+    "evaluate_epochs": true,
+    "max_eval_samples": 1000,
+    "data": {
+      "camelyon_pipeline": "configs/camelyon17_probe.json",
+      "ham10000_pipeline": "configs/ham10000.json"
+    },
+    "until": "both directions have been seen: a best epoch before the restart that no later epoch beats, and a new best after it"
+  },
+  "seeds": [
+    101,
+    102,
+    103,
+    104
+  ],
+  "chosen_on": "2026-10-23, from the healthy project of both families (artifacts/workspaces/delivery_feasibility-2)"
+}

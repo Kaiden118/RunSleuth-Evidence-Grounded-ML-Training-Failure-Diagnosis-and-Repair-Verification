@@ -41,6 +41,8 @@ from runsleuth.signature_matching import load_library
 ROOT = candidate_set.ROOT
 DECISIONS = ("accept", "review", "reject")
 KEYLESS = ("metric_gate", "stage_one_gate", "runsleuth_v1")
+# RunSleuth v2's results (verifier_v2), by the order its checks were chosen in.
+V2_ORDERS = {"gap": "runsleuth_v2", "fixed": "runsleuth_v2_fixed_order"}
 
 
 def _read(path: Path) -> Any:
@@ -194,6 +196,18 @@ def score(split: str, root: Path = ROOT, reviewers: tuple[str, ...] = ()) -> dic
     verdicts = dict(_read(directory / "decisions.json")["verifiers"])
     for name in reviewers:
         verdicts[f"llm_reviewer/{name}"] = reviewer_decisions(split, name, root)
+    v2_costs = {}
+    for order, name in V2_ORDERS.items():
+        path = directory / f"v2-{order}.json"
+        if path.exists():
+            decided = _read(path)["candidates"]
+            verdicts[name] = {cid: found["decision"] for cid, found in decided.items()}
+            v2_costs[name] = v2_cost([found["cost"] for found in decided.values()])
+    for name in reviewers:
+        if "runsleuth_v2" in verdicts:
+            verdicts[f"runsleuth_v2+llm_reviewer/{name}"] = combined(
+                verdicts["runsleuth_v2"], verdicts[f"llm_reviewer/{name}"]
+            )
     planned = {candidate.id: candidate for candidate in candidate_set.candidates(split)}
     groups = {
         "all": lambda _c, _l: True,
@@ -206,6 +220,7 @@ def score(split: str, root: Path = ROOT, reviewers: tuple[str, ...] = ()) -> dic
     result: dict[str, Any] = {"schema_version": 1, "task": "verifier_scores", "split": split}
     result["labels"] = dict(Counter(label["label"] for label in labels.values()))
     result["verifiers"] = {}
+    result["v2_cost"] = v2_costs
     for name, decided in verdicts.items():
         judged_ids = [cid for cid in decided if cid in labels and cid in planned]
         by_group = {}
@@ -239,6 +254,35 @@ def _cell(rate: dict[str, Any]) -> str:
     return f"{rate['count']}/{rate['of']}"
 
 
+def combined(v2: dict[str, str], reviewer: dict[str, str]) -> dict[str, str]:
+    """The rule fixed before any test result: v2's violation rejects; v2 and the
+    reviewer accepting accepts; anything else goes to review."""
+    found = {}
+    for cid in v2.keys() & reviewer.keys():
+        if v2[cid] == "reject":
+            found[cid] = "reject"
+        else:
+            both = v2[cid] == "accept" and reviewer[cid] == "accept"
+            found[cid] = "accept" if both else "review"
+    return found
+
+
+def v2_cost(costs: list[dict[str, Any]]) -> dict[str, Any]:
+    """What v2's checks cost over the candidates, as each would pay alone."""
+    total = Counter()
+    for cost in costs:
+        total.update(cost)
+    count = len(costs) or 1
+    return {
+        "candidates": len(costs),
+        "runs": total["runs"],
+        "steps": total["steps"],
+        "seconds": round(total["seconds"], 1),
+        "seconds_per_candidate": round(total["seconds"] / count, 1),
+        "runs_per_candidate": round(total["runs"] / count, 2),
+    }
+
+
 def score_text(result: dict[str, Any]) -> str:
     """One line per verifier and group, then each case's decisions."""
     lines = [f"{result['split']}: labels {result['labels']}"]
@@ -255,6 +299,12 @@ def score_text(result: dict[str, Any]) -> str:
                 f"{_cell(rated['correct_acceptance']):>9} "
                 f"{_cell(rated['false_rejection']):>9} {_cell(rated['review_share']):>8}"
             )
+    for name, cost in result.get("v2_cost", {}).items():
+        lines.append(
+            f"{name} cost: {cost['runs']} probe runs, {cost['seconds']} s for "
+            f"{cost['candidates']} candidates ({cost['runs_per_candidate']} runs, "
+            f"{cost['seconds_per_candidate']} s each)"
+        )
     lines.append("decisions by case (label decision: candidates)")
     for name, scored in result["verifiers"].items():
         lines.append(f"  {name}")

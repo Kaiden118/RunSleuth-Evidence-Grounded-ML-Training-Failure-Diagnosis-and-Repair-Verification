@@ -17,8 +17,9 @@ any record a verifier reads, so candidates are written without the verifiers'
 information.
 
 Every model call, tool call and result is recorded, with the model the provider says
-served each call and the tokens it reports, as stage one's loop records them (the
-provider handling is agent_loop's).
+served each call, the tokens it reports and why the reply ended (finish_reason,
+"length" at the output limit), as stage one's loop records them (the provider
+handling is agent_loop's).
 """
 
 import hashlib
@@ -326,7 +327,13 @@ def run_agent(
             record["served_models"].append(usage["served_model"])
         message = response.choices[0].message
         calls = list(getattr(message, "tool_calls", None) or [])
-        step = {"content": message.content or "", "tool_calls": [], **usage}
+        finish = getattr(response.choices[0], "finish_reason", None)
+        step = {
+            "content": message.content or "",
+            "tool_calls": [],
+            "finish_reason": finish,
+            **usage,
+        }
         record["steps"].append(step)
         if not calls:
             text_replies += 1

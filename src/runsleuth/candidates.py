@@ -7,7 +7,10 @@ after the first, full evaluation), and the healthy project uninterrupted on ever
 as the reference; it needs the GPU and no key. label runs the hidden tests on every
 candidate (challenge_set.label). Agent candidates come from their episodes, versions
 as they are from pipeline_tasks, partial repairs from challenge_set; an evidence-removed
-candidate has no run or label of its own but its parent's.
+candidate has no run or label of its own but its parent's. smoke tries a model in the
+loop before it writes candidates: two development faults, short runs on synthetic
+data, and whether every call was answered, by which model and within the output
+limit.
 
 Agents work in folders named by a hash of their candidate (artifacts/workspaces), so
 that no path a traceback shows names a version, task or split. An episode that ended in
@@ -19,6 +22,8 @@ family, the seed), so identical candidates are trained and tested once.
         --model gemini-3.5-flash-lite --provider gemini
     python -m runsleuth.candidates run --split development
     python -m runsleuth.candidates label --split development
+    python -m runsleuth.candidates smoke --model-name gpt-6-luna \\
+        --provider compatible --model gpt-6-luna
 """
 
 import argparse
@@ -48,6 +53,16 @@ DATA = {
     "ham10000_pipeline": ("ham10000", Path("configs/ham10000.json")),
 }
 EPOCHS = 3
+SMOKE_ROOT = Path("artifacts/smoke-pipeline")
+# One development fault of each family, trained on synthetic samples.
+SMOKE_STARTS = (
+    ("camelyon_pipeline", "positions_index_base"),
+    ("ham10000_pipeline", "epoch_count_not_restored"),
+)
+SMOKE_DATA = {
+    "camelyon_pipeline": ("synthetic", None),
+    "ham10000_pipeline": ("synthetic_ham", None),
+}
 FINISHED = ("finished", "tool_call_limit", "no_tool_call")
 
 
@@ -320,6 +335,104 @@ def summary_text(split: str, root: Path = ROOT) -> str:
     return "\n".join(lines)
 
 
+def smoke(
+    model_name: str,
+    client: Any,
+    model: str,
+    *,
+    root: Path = SMOKE_ROOT,
+    runner: Runner | None = None,
+    echo_reasoning: bool = False,
+    pause: float = 0.0,
+    progress: Callable[[str], None] = print,
+) -> list[dict[str, Any]]:
+    """Two episodes of a model on development faults, with short runs on synthetic data;
+    an episode that has not finished is tried again in a new folder."""
+    runner = runner or Runner(Path(root) / "short_runs", data=SMOKE_DATA)
+    episodes = []
+    for family, start in SMOKE_STARTS:
+        path = Path(root) / model_name / f"{family}.json"
+        if path.exists() and _read(path)["record"]["status"] in FINISHED:
+            episodes.append(_read(path))
+            continue
+        folder = hashlib.sha256(f"{model_name}/{family}".encode()).hexdigest()[:16]
+        attempt = 1
+        while (Path(root) / "work" / folder / f"attempt-{attempt}").exists():
+            attempt += 1
+        project = write_project(
+            Path(root) / "work" / folder / f"attempt-{attempt}" / "project",
+            pipeline_tasks.version_sources(start, family),
+            pipeline_tasks.family(family).statement,
+        )
+
+        def short_run(project_dir: Path, family: str = family) -> dict[str, Any]:
+            outcome = runner.train(
+                _project_sources(project_dir),
+                family,
+                7,
+                epochs=pipeline_agent.SHORT_RUN["epochs"],
+                interrupt_after_epochs=pipeline_agent.SHORT_RUN["interrupt_after_epochs"],
+            )
+            return pipeline_agent.shown_run(outcome)
+
+        record = pipeline_agent.run_agent(
+            client,
+            model,
+            project,
+            run_training=short_run,
+            echo_reasoning=echo_reasoning,
+            pause=pause,
+        )
+        episode = {
+            "schema_version": 1,
+            "task": "smoke_episode",
+            "model_name": model_name,
+            "model": model,
+            "family": family,
+            "start": start,
+            "attempt": attempt,
+            "record": record,
+            "sources": _project_sources(project),
+        }
+        _write(path, episode)
+        episodes.append(episode)
+        progress(f"{model_name} {family}: {record['status']}")
+    return episodes
+
+
+def smoke_text(episodes: list[dict[str, Any]]) -> str:
+    """What a smoke test showed, and whether the model may write candidates."""
+    lines, problems = [], []
+    for episode in episodes:
+        record = episode["record"]
+        steps = record["steps"]
+        lengths = sum(step.get("finish_reason") == "length" for step in steps)
+        refusals = sum(step.get("finish_reason") == "refusal" for step in steps)
+        largest = max((step["output_tokens"] for step in steps), default=0)
+        claim = (record["claim"] or {}).get("project_is_correct")
+        lines.append(
+            f"{episode['family']}: {record['status']}, claims {claim}, "
+            f"{record['model_calls']} calls, {record['tool_calls']} tool calls, "
+            f"{record['training_runs']} short runs, changed {record['changed_modules'] or 'nothing'}"
+        )
+        lines.append(
+            f"    tokens: {record['input_tokens']} in ({record['cached_input_tokens']} cached), "
+            f"{record['output_tokens']} out ({record['reasoning_tokens']} reasoning), "
+            f"largest reply {largest} of {pipeline_agent.MAX_OUTPUT_TOKENS}; "
+            f"served {record['served_models']}"
+        )
+        if record["status"] != "finished":
+            problems.append(f"{episode['family']} ended {record['status']}")
+        if lengths:
+            problems.append(f"{episode['family']}: {lengths} replies reached the output limit")
+        if refusals:
+            problems.append(f"{episode['family']}: {refusals} replies were refusals")
+        for error in record["api_errors"]:
+            lines.append(f"    API error {error['status_code']}: {error['message'][:200]}")
+    lines.append("PASSED" if not problems else "NOT PASSED: " + "; ".join(problems))
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="The candidates of the challenge set.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -335,11 +448,24 @@ def build_parser() -> argparse.ArgumentParser:
     shown = commands.add_parser("summary", help="Say how far a split has come.")
     for command in (generated, ran, labelled, shown):
         command.add_argument("--split", choices=challenge_set.SPLITS, required=True)
+    tried = commands.add_parser("smoke", help="Try a model on two development faults.")
+    tried.add_argument("--model-name", required=True, choices=challenge_set.MODELS)
+    tried.add_argument("--provider", choices=PROVIDERS, required=True)
+    tried.add_argument("--model", help="The provider's model, if not its environment variable.")
+    tried.add_argument("--echo-reasoning", action="store_true")
+    tried.add_argument("--pause", type=float, default=0.0, help="Seconds before every call.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "smoke":
+        client, model = create_llm_client(args.provider, args.model)
+        episodes = smoke(
+            args.model_name, client, model, echo_reasoning=args.echo_reasoning, pause=args.pause
+        )
+        print(smoke_text(episodes))
+        return 0
     if args.command == "generate":
         client, model = create_llm_client(args.provider, args.model)
         generate(

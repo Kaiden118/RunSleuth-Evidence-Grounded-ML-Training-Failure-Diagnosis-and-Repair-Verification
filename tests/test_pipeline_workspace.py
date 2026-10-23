@@ -454,6 +454,71 @@ class HamRunTests(unittest.TestCase):
 
 
 @unittest.skipIf(torch is None, "Install torch and torchvision for the pipeline tests")
+class EpochEvaluationTests(unittest.TestCase):
+    """Evaluating the weights of every epoch leaves the project's training as it was."""
+
+    # The shuffle draws from the global generator, which an evaluation must not move.
+    GLOBAL_SHUFFLE = ("data", "shuffle=True, generator=generator)", "shuffle=True)")
+
+    def run_project(self, root, name, edits, template, evaluate):
+        data = {
+            "camelyon": pipeline_workspace.synthetic_pipeline_data,
+            "ham10000": pipeline_workspace.synthetic_ham_pipeline_data,
+        }[template]
+        folder = f"{name}-{'evaluated' if evaluate else 'plain'}"
+        project = write_project(root / "projects" / folder, tiny_sources(*edits, template=template))
+        path = pipeline_workspace.run_project(
+            project,
+            root / "runs" / folder,
+            data,
+            epochs=3,
+            seed=7,
+            device=torch.device("cpu"),
+            interrupt_after_epochs=1,
+            evaluate_epochs=evaluate,
+        )
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_every_epoch_is_evaluated_without_changing_what_the_project_trains(self):
+        projects = (
+            ("healthy", (), "camelyon"),
+            ("global_shuffle", (self.GLOBAL_SHUFFLE,), "camelyon"),
+            ("ham", (), "ham10000"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            for name, edits, template in projects:
+                with self.subTest(project=name):
+                    root = Path(directory)
+                    plain = self.run_project(root, name, edits, template, False)
+                    evaluated = self.run_project(root, name, edits, template, True)
+                    self.assertEqual(evaluated["status"], "completed")
+                    for key in ("step_state_sha256", "epoch_state_sha256", "final_state_sha256"):
+                        self.assertEqual(evaluated["workspace"][key], plain["workspace"][key])
+                    epochs = evaluated["pipeline"]["epochs"]
+                    unevaluated = [
+                        {key: value for key, value in epoch.items() if key != "evaluation"}
+                        for epoch in epochs
+                    ]
+                    self.assertEqual(unevaluated, plain["pipeline"]["epochs"])
+                    self.assertNotIn("evaluation", plain["pipeline"]["epochs"][0])
+                    self.assertEqual(evaluated["final_metrics"], plain["final_metrics"])
+                    # The harness's own evaluation leaves no trace in what the project fed.
+                    self.assertEqual(evaluated["input_statistics"], plain["input_statistics"])
+                    self.assertTrue(evaluated["workspace"]["evaluate_epochs"])
+                    # A project that measures as stated reports what the harness measures.
+                    rows = evaluated["parameter_group_epochs"]
+                    self.assertEqual(len(rows), len(epochs))
+                    for row, epoch in zip(rows, epochs, strict=True):
+                        reported, measured = row["project_metrics"], epoch["evaluation"]
+                        self.assertEqual(
+                            reported["validation_accuracy"], measured["id_validation_accuracy"]
+                        )
+                        self.assertAlmostEqual(
+                            reported["validation_loss"], measured["id_validation_loss"], places=5
+                        )
+
+
+@unittest.skipIf(torch is None, "Install torch and torchvision for the pipeline tests")
 class SubprocessTests(unittest.TestCase):
     def test_a_child_process_runs_a_project_with_a_restart(self):
         with tempfile.TemporaryDirectory() as directory:

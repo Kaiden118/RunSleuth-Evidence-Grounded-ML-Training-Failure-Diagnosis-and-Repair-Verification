@@ -25,6 +25,7 @@ import argparse
 import hashlib
 import json
 import tempfile
+import time
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict
@@ -109,12 +110,15 @@ class Runner:
         self.root, self.data, self._run, self.device = Path(root), data, run, device
 
     def train(
-        self, sources: dict[str, str], family: str, seed: int, **settings: Any
+        self, sources: dict[str, str], family: str, seed: int, *, tag: str = "", **settings: Any
     ) -> dict[str, Any]:
-        """The outcome of training a project, trained once for every setting."""
+        """The outcome of training a project, trained once for every setting; seconds is
+        how long the training took when it ran. A tag trains once more what another tag
+        trained, as a check of whether training repeats."""
         source, config = self.data[family]
         digest = _sha256(
             {"sources": sources, "family": family, "seed": seed, "data": source, **settings}
+            | ({"tag": tag} if tag else {})
         )[:24]
         kept = self.root / digest / "outcome.json"
         if kept.exists():
@@ -123,6 +127,7 @@ class Runner:
         attempt = 1
         while (self.root / digest / f"run-{attempt}").exists():
             attempt += 1
+        started = time.monotonic()
         with tempfile.TemporaryDirectory() as directory:
             project = write_project(Path(directory) / "project", sources, "")
             outcome = self._run(
@@ -134,6 +139,7 @@ class Runner:
                 device=self.device,
                 **settings,
             )
+        outcome = {**outcome, "seconds": round(time.monotonic() - started, 1)}
         _write(kept, outcome)
         return outcome
 

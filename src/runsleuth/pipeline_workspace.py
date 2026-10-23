@@ -15,7 +15,9 @@ is given and what is recorded:
   and what the model and optimizer hold when an attempt starts training;
 - the monitoring of RunMonitor, a hash of the model state after each of the first
   optimizer steps and after every epoch, and the labels the loss was given;
-- an evaluation of the delivered weights on evaluation splits the project never sees.
+- an evaluation of the delivered weights on evaluation splits the project never sees;
+  with evaluate_epochs, also of the weights at the end of every epoch on the
+  validation samples, which leaves the project's training as it was.
 
 The project's modules are checked and executed as agent_workspace checks a script, and
 they may import each other. This guards against accidents and plain misuse; it is not
@@ -347,8 +349,11 @@ class Recorder:
         interrupt_after_epochs: int | None,
         hashed_steps: int,
         head: str,
+        evaluate_epochs: bool = False,
     ) -> None:
         self.run_dir, self.data, self.head = Path(run_dir), data, head
+        # While the harness evaluates an epoch's weights, its hooks record nothing.
+        self.evaluate_epochs, self.evaluating = evaluate_epochs, False
         self.interrupt_after_epochs, self.hashed_steps = interrupt_after_epochs, hashed_steps
         self.monitor: RunMonitor | None = None
         self.model: nn.Module | None = None
@@ -373,6 +378,7 @@ class Recorder:
             "epochs": epochs,
             "max_train_batches": None,
             "interrupt_after_epochs": interrupt_after_epochs,
+            "evaluate_epochs": evaluate_epochs,
             "data": data.record,
             "initial_state_sha256": None,
             "hashed_steps": hashed_steps,
@@ -439,6 +445,8 @@ class Recorder:
         monitor, steps = self.monitor, self.workspace["step_state_sha256"]
 
         def observe_inputs(_module, inputs) -> None:
+            if self.evaluating:
+                return
             if inputs and isinstance(inputs[0], torch.Tensor) and inputs[0].dim() >= 2:
                 if self.epoch is not None and torch.is_grad_enabled():
                     monitor.observe_batch("train", inputs[0])
@@ -447,7 +455,8 @@ class Recorder:
                     monitor.observe_batch("id_eval", inputs[0])
 
         def keep_output(_module, _inputs, output) -> None:
-            self.last_output = output
+            if not self.evaluating:
+                self.last_output = output
 
         def observe_loss(module, inputs) -> None:
             if self.epoch is None or module is model or len(inputs) < 2:
@@ -516,6 +525,28 @@ class Recorder:
                 "loss_targets_matching_read_labels": matching,
             }
         )
+        if self.evaluate_epochs:
+            self.epochs[-1]["evaluation"] = self.evaluate_epoch()
+
+    def evaluate_epoch(self) -> dict[str, float]:
+        """The harness's own loss and accuracy of the weights the epoch ended with, on
+        the validation samples; every module's mode and the random number generators
+        are left as they were, so that the project trains on as it would have."""
+        model = self.model
+        modes = [(module, module.training) for module in model.modules()]
+        cpu_state = torch.get_rng_state()
+        cuda_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+        device = next(model.parameters()).device
+        self.evaluating = True
+        try:
+            return evaluate_weights(model, {"id": self.data.evaluation["id"]}, device)
+        finally:
+            self.evaluating = False
+            for module, training in modes:
+                module.training = training
+            torch.set_rng_state(cpu_state)
+            if cuda_states is not None:
+                torch.cuda.set_rng_state_all(cuda_states)
 
     def read_summary(self, positions: list[int]) -> dict[str, Any]:
         groups, labels = getattr(self.data.train, self.data.group), self.data.train._labels
@@ -690,6 +721,7 @@ def run_project(
     interrupt_after_epochs: int | None = None,
     hashed_steps: int = HASHED_STEPS,
     head: str = "fc",
+    evaluate_epochs: bool = False,
 ) -> Path:
     """Run a project for a fixed budget, perhaps with a restart; return the report's path.
 
@@ -701,6 +733,9 @@ def run_project(
     delivery. final_metrics
     are the harness's evaluation of the delivered weights; the project's own metrics
     are in each epoch's project_metrics.
+
+    With evaluate_epochs every pipeline epoch also has evaluation, the harness's own
+    loss and accuracy of the epoch's weights on the validation samples.
 
     A refused project raises ScriptRefused and leaves no report. A project that fails
     after it was loaded still yields one that says so.
@@ -721,6 +756,7 @@ def run_project(
         interrupt_after_epochs=interrupt_after_epochs,
         hashed_steps=hashed_steps,
         head=head,
+        evaluate_epochs=evaluate_epochs,
     )
     recorder.workspace["project_sha256"] = state_sha256(dict(sources))
     checkpoints = Checkpoints(recorder)
@@ -1119,6 +1155,7 @@ def run_in_subprocess(
     device: str = "auto",
     interrupt_after_epochs: int | None = None,
     max_eval_samples: int | None = None,
+    evaluate_epochs: bool = False,
     timeout: float = 3600.0,
 ) -> dict[str, Any]:
     """Run a project in a child process and return its outcome.
@@ -1155,6 +1192,8 @@ def run_in_subprocess(
         command += ["--interrupt-after-epochs", str(interrupt_after_epochs)]
     if max_eval_samples is not None:
         command += ["--max-eval-samples", str(max_eval_samples)]
+    if evaluate_epochs:
+        command.append("--evaluate-epochs")
     try:
         completed = subprocess.run(
             command,
@@ -1369,6 +1408,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Stop the first attempt after this many epochs and restart the project.",
     )
+    run.add_argument(
+        "--evaluate-epochs",
+        action="store_true",
+        help="Also evaluate the weights at the end of every epoch on the validation samples.",
+    )
     check = commands.add_parser(
         "check", help="Train every version and diagnose each run against the healthy one."
     )
@@ -1432,6 +1476,7 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             device=resolve_device(args.device),
             interrupt_after_epochs=args.interrupt_after_epochs,
+            evaluate_epochs=args.evaluate_epochs,
         )
         status = json.loads(report.read_text(encoding="utf-8"))["status"]
         outcome.update(status=status, report=str(report))

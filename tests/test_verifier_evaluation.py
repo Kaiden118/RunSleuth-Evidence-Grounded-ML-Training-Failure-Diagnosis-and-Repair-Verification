@@ -45,6 +45,18 @@ class RateTests(unittest.TestCase):
             verifier_evaluation.rates([("correct", "accept")])["false_acceptance"]["rate"]
         )
 
+    def test_v2_and_the_reviewer_combine_by_the_rule_fixed_before_the_test(self):
+        v2 = {"a": "reject", "b": "accept", "c": "accept", "d": "review", "e": "accept"}
+        reviewer = {"a": "accept", "b": "accept", "c": "reject", "d": "accept"}
+        self.assertEqual(
+            verifier_evaluation.combined(v2, reviewer),
+            {"a": "reject", "b": "accept", "c": "review", "d": "review"},
+        )
+        cost = verifier_evaluation.v2_cost(
+            [{"runs": 2, "steps": 10, "seconds": 30.0}, {"runs": 0, "steps": 0, "seconds": 0.0}]
+        )
+        self.assertEqual((cost["runs_per_candidate"], cost["seconds_per_candidate"]), (1.0, 15.0))
+
     def test_an_evidence_removed_candidate_is_judged_on_its_parent_run_without_its_records(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "run_report.json"

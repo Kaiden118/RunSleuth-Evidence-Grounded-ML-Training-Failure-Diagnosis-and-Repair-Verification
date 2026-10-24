@@ -22,7 +22,7 @@ and the same again without the candidates that could not be run.
 
     python -m runsleuth.verifier_evaluation decide --split development
     python -m runsleuth.verifier_evaluation review --split development \\
-        --name gpt-6.1-sol --provider compatible --model gpt-6.1-sol
+        --name claude-opus-5.5 --provider anthropic --model claude-opus-5-5
     python -m runsleuth.verifier_evaluation score --split development
 """
 
@@ -160,6 +160,22 @@ def reviewer_decisions(split: str, name: str, root: Path = ROOT) -> dict[str, st
     }
 
 
+def vendor_groups(name: str) -> dict[str, Any]:
+    """For a verifier with an LLM reviewer in it, the agent candidates whose model its
+    reviewer's maker made, and the others."""
+    if "llm_reviewer/" not in name:
+        return {}
+    vendor = challenge_set.VENDORS.get(name.split("llm_reviewer/", 1)[1])
+
+    def same(candidate: Candidate) -> bool:
+        return challenge_set.VENDORS.get(candidate.model) == vendor
+
+    return {
+        "reviewer_same_vendor": lambda c, _l: c.origin == "agent" and same(c),
+        "reviewer_other_vendor": lambda c, _l: c.origin == "agent" and not same(c),
+    }
+
+
 def _rate(numerator: int, denominator: int) -> dict[str, Any]:
     return {
         "count": numerator,
@@ -224,7 +240,7 @@ def score(split: str, root: Path = ROOT, reviewers: tuple[str, ...] = ()) -> dic
     for name, decided in verdicts.items():
         judged_ids = [cid for cid in decided if cid in labels and cid in planned]
         by_group = {}
-        for group, member in groups.items():
+        for group, member in {**groups, **vendor_groups(name)}.items():
             rows = [
                 (labels[cid]["label"], decided[cid])
                 for cid in judged_ids

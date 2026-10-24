@@ -142,7 +142,7 @@ class CandidateTests(unittest.TestCase):
     def test_a_smoke_test_tries_a_model_on_two_faults_and_says_whether_it_passed(self):
         runner = candidates.Runner(self.root / "smoke-short", data=SYNTHETIC, run=run_in_process)
         episodes = candidates.smoke(
-            "gpt-6-luna",
+            "gpt-6.1-sol",
             FakeAgent(),
             "fake",
             root=self.root / "smoke",
@@ -179,7 +179,7 @@ class CandidateTests(unittest.TestCase):
         self.assertIn("camelyon_pipeline.attempt-1.json", kept)
         # Finished episodes are kept; the others are tried again.
         again = candidates.smoke(
-            "gpt-6-luna",
+            "gpt-6.1-sol",
             FakeAgent(RejectedError("x")),
             "fake",
             root=self.root / "smoke",

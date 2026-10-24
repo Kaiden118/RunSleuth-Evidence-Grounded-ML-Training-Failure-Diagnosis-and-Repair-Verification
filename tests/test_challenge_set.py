@@ -32,12 +32,12 @@ class PlanTests(unittest.TestCase):
     def test_the_splits_have_the_agreed_candidates(self):
         test = Counter(candidate.kind for candidate in plan("test", SEEDS))
         self.assertEqual(
-            test, {"repair": 216, "version": 13, "partial_repair": 6, "evidence_removed": 26}
+            test, {"repair": 180, "version": 13, "partial_repair": 6, "evidence_removed": 26}
         )
         development = Counter(candidate.kind for candidate in plan("development"))
         self.assertEqual(development, {"repair": 36, "version": 12})
         text = challenge_set.plan_text(plan("test", SEEDS))
-        self.assertTrue(text.startswith("261 candidates"))
+        self.assertTrue(text.startswith("225 candidates"))
 
     def test_agents_start_from_every_fault_and_variant_but_the_control(self):
         for split in SPLITS:

@@ -45,6 +45,33 @@ class RateTests(unittest.TestCase):
             verifier_evaluation.rates([("correct", "accept")])["false_acceptance"]["rate"]
         )
 
+    def test_a_reviewer_judging_its_makers_candidates_is_scored_apart(self):
+        def candidate(model, origin="agent"):
+            return challenge_set.Candidate(
+                "id",
+                "camelyon_pipeline",
+                "restart",
+                "optimizer_not_restored",
+                "test",
+                origin,
+                "repair",
+                model=model,
+            )
+
+        groups = verifier_evaluation.vendor_groups("llm_reviewer/gemini-4-argon")
+        same, other = groups["reviewer_same_vendor"], groups["reviewer_other_vendor"]
+        self.assertTrue(same(candidate("gemini-3.5-flash-lite"), None))
+        self.assertTrue(other(candidate("gpt-6.1-sol"), None))
+        self.assertFalse(
+            same(candidate(None, "human"), None) or other(candidate(None, "human"), None)
+        )
+        combined = verifier_evaluation.vendor_groups("runsleuth_v2+llm_reviewer/claude-opus-5.5")
+        self.assertFalse(combined["reviewer_same_vendor"](candidate("muse-spark-1.3"), None))
+        self.assertEqual(verifier_evaluation.vendor_groups("runsleuth_v1"), {})
+        for reviewer in challenge_set.REVIEWERS:
+            self.assertNotIn(reviewer, challenge_set.MODELS)
+            self.assertIn(reviewer, challenge_set.VENDORS)
+
     def test_v2_and_the_reviewer_combine_by_the_rule_fixed_before_the_test(self):
         v2 = {"a": "reject", "b": "accept", "c": "accept", "d": "review", "e": "accept"}
         reviewer = {"a": "accept", "b": "accept", "c": "reject", "d": "accept"}

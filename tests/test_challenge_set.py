@@ -92,19 +92,30 @@ class PlanTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     split_of(name, family)
 
-    def test_test_seeds_are_drawn_once_from_seeds_never_used(self):
+    def test_test_seeds_are_drawn_once_from_seeds_never_used_after_the_freeze(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "seeds.json"
             draws = [7, 42, 5, 5, 6, 8]
-            # The draw records the commit; the Docker image has no repository.
+            # The draw records the commit and the freeze; the Docker image has no repository.
+            with (
+                patch("runsleuth.freeze.check", return_value={}),
+                patch("runsleuth.freeze.committed", return_value=False),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "Commit"):
+                    challenge_set.draw_test_seeds(path)
+            self.assertFalse(path.exists())
             with (
                 patch.object(challenge_set.secrets, "randbelow", side_effect=draws),
                 patch.object(challenge_set, "_commit", return_value="0" * 40),
+                patch("runsleuth.freeze.check", return_value={}),
+                patch("runsleuth.freeze.committed", return_value=True),
+                patch("runsleuth.freeze._file_sha256", return_value="f" * 64),
             ):
                 seeds = challenge_set.draw_test_seeds(path)
             self.assertEqual(seeds, [5, 6, 8])
             record = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(record["seeds"], seeds)
+            self.assertEqual(record["freeze_sha256"], "f" * 64)
             self.assertIn(7, record["excluded_seeds"])
             with self.assertRaises(FileExistsError):
                 challenge_set.draw_test_seeds(path)

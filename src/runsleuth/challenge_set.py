@@ -387,10 +387,16 @@ def _commit() -> str:
 def draw_test_seeds(path: Path = SEEDS_FILE) -> list[int]:
     """Draw the test seeds at random from seeds no earlier run used, and record them.
 
-    Refuses to draw again once they are recorded.
+    Refuses to draw again once they are recorded, and to draw before the freeze is
+    committed with no frozen file changed since.
     """
+    from runsleuth import freeze
+
     if Path(path).exists():
         raise FileExistsError(f"{path} already records the test seeds")
+    freeze.check()
+    if not freeze.committed(freeze.FREEZE_FILE):
+        raise RuntimeError(f"Commit {freeze.FREEZE_FILE} before the test seeds are drawn")
     used = set(used_seeds()) | set(USED_SEEDS) | {DEVELOPMENT_SEED}
     seeds: list[int] = []
     while len(seeds) < TEST_SEED_COUNT:
@@ -404,6 +410,7 @@ def draw_test_seeds(path: Path = SEEDS_FILE) -> list[int]:
         "excluded_seeds": sorted(used),
         "drawn_on": date.today().isoformat(),
         "commit": _commit(),
+        "freeze_sha256": freeze._file_sha256(freeze.FREEZE_FILE),
     }
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")

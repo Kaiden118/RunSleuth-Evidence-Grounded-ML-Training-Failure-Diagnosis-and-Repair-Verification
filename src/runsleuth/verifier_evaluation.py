@@ -18,7 +18,11 @@ are not independent, so every case (starting version) is listed with the decisio
 its candidates. Rates follow the plan: false acceptance (accepted wrong / wrong), wrong
 among accepted (which depends on how many candidates are wrong), correct acceptance and
 false rejection (of the correct ones), the share sent to review and automatic coverage;
-and the same again without the candidates that could not be run.
+and the same again without the candidates that could not be run. The intervals of
+false acceptance, false rejection and the review share come from a bootstrap over
+cases, which draws a case's candidates together (BOOTSTRAP); a partial repair counts
+in its fault's case. A verifier that never errs in a kind, or always does, has every
+draw agree; its interval then reaches the exact bound with the cases as units.
 
     python -m runsleuth.verifier_evaluation decide --split development
     python -m runsleuth.verifier_evaluation review --split development \\
@@ -28,6 +32,7 @@ and the same again without the candidates that could not be run.
 
 import argparse
 import json
+import random
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -43,6 +48,9 @@ DECISIONS = ("accept", "review", "reject")
 KEYLESS = ("metric_gate", "stage_one_gate", "runsleuth_v1")
 # RunSleuth v2's results (verifier_v2), by the order its checks were chosen in.
 V2_ORDERS = {"gap": "runsleuth_v2", "fixed": "runsleuth_v2_fixed_order"}
+# The bootstrap over cases behind every interval, fixed at the freeze.
+BOOTSTRAP = {"resamples": 2000, "seed": 0, "level": 0.95}
+INTERVAL_RATES = ("false_acceptance", "false_rejection", "review_share")
 
 
 def _read(path: Path) -> Any:
@@ -205,6 +213,76 @@ def rates(rows: list[tuple[str, str]]) -> dict[str, Any]:
     }
 
 
+def case_of(candidate: Candidate) -> str:
+    """The case a candidate is drawn with: its starting version, or a partial repair's
+    fault."""
+    start = candidate.start
+    if candidate.kind == "partial_repair":
+        start = challenge_set.PARTIAL_REPAIRS[start].fault
+    return f"{candidate.family}/{start}"
+
+
+def _quantile(values: list[float], q: float) -> float:
+    position = q * (len(values) - 1)
+    low = int(position)
+    high = min(low + 1, len(values) - 1)
+    return values[low] + (values[high] - values[low]) * (position - low)
+
+
+def _interval_counts(table: Counter) -> dict[str, tuple[int, int]]:
+    """The numerator and denominator of every rate in INTERVAL_RATES."""
+    wrong = sum(table[("wrong", decision)] for decision in DECISIONS)
+    correct = sum(table[("correct", decision)] for decision in DECISIONS)
+    reviewed = table[("wrong", "review")] + table[("correct", "review")]
+    return {
+        "false_acceptance": (table[("wrong", "accept")], wrong),
+        "false_rejection": (table[("correct", "reject")], correct),
+        "review_share": (reviewed, wrong + correct),
+    }
+
+
+def intervals(
+    rows: list[tuple[str, str, str]], settings: dict[str, Any] = BOOTSTRAP
+) -> dict[str, Any]:
+    """Intervals of the rates in INTERVAL_RATES from (case, label, decision) rows, by
+    drawing cases with all their candidates; a draw without a rate's denominator does
+    not count for that rate. When none or all of a rate's candidates count, every draw
+    agrees, and the interval reaches the exact (Clopper-Pearson) bound for none or all
+    of the cases that have the rate's denominator."""
+    by_case: dict[str, Counter] = defaultdict(Counter)
+    for case, label, decision in rows:
+        by_case[case][(label, decision)] += 1
+    cases = [by_case[case] for case in sorted(by_case)]
+    generator = random.Random(settings["seed"])
+    drawn: dict[str, list[float]] = {name: [] for name in INTERVAL_RATES}
+    for _ in range(settings["resamples"]):
+        table = Counter()
+        for _case in cases:
+            table.update(generator.choice(cases))
+        for name, (numerator, denominator) in _interval_counts(table).items():
+            if denominator:
+                drawn[name].append(numerator / denominator)
+    observed = _interval_counts(sum(cases, Counter()))
+    by_case_counts = [_interval_counts(case) for case in cases]
+    tail = (1 - settings["level"]) / 2
+    found: dict[str, Any] = {}
+    for name, values in drawn.items():
+        if not values:
+            found[name] = None
+            continue
+        values.sort()
+        low, high = _quantile(values, tail), _quantile(values, 1 - tail)
+        numerator, denominator = observed[name]
+        units = sum(1 for counts in by_case_counts if counts[name][1])
+        if numerator == 0:
+            high = max(high, 1 - tail ** (1 / units))
+        elif numerator == denominator:
+            low = min(low, tail ** (1 / units))
+        found[name] = {"low": round(low, 4), "high": round(high, 4), "draws": len(values)}
+    found["cases"] = len(cases)
+    return found
+
+
 def score(split: str, root: Path = ROOT, reviewers: tuple[str, ...] = ()) -> dict[str, Any]:
     """Every verifier's rates on a split, overall and by group, and its decisions by case."""
     directory = _split_dir(split, root)
@@ -242,12 +320,13 @@ def score(split: str, root: Path = ROOT, reviewers: tuple[str, ...] = ()) -> dic
         by_group = {}
         for group, member in {**groups, **vendor_groups(name)}.items():
             rows = [
-                (labels[cid]["label"], decided[cid])
+                (case_of(planned[cid]), labels[cid]["label"], decided[cid])
                 for cid in judged_ids
                 if member(planned[cid], labels[cid])
             ]
             if rows:
-                by_group[group] = rates(rows)
+                by_group[group] = rates([(label, decision) for _, label, decision in rows])
+                by_group[group]["intervals"] = intervals(rows)
         cases: dict[str, Counter] = defaultdict(Counter)
         for cid in judged_ids:
             candidate = planned[cid]
@@ -299,8 +378,13 @@ def v2_cost(costs: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _interval(found: dict[str, Any] | None) -> str:
+    return "-" if found is None else f"[{found['low']:.3f}, {found['high']:.3f}]"
+
+
 def score_text(result: dict[str, Any]) -> str:
-    """One line per verifier and group, then each case's decisions."""
+    """One line per verifier and group, the agent candidates' intervals, then each
+    case's decisions."""
     lines = [f"{result['split']}: labels {result['labels']}"]
     header = (
         f"{'verifier':<30} {'group':<18} {'false acc':>9} {'wrong/acc':>9} "
@@ -321,6 +405,15 @@ def score_text(result: dict[str, Any]) -> str:
             f"{cost['candidates']} candidates ({cost['runs_per_candidate']} runs, "
             f"{cost['seconds_per_candidate']} s each)"
         )
+    lines.append(f"{BOOTSTRAP['level']:.0%} intervals on agent candidates, bootstrap over cases")
+    for name, scored in result["verifiers"].items():
+        found = scored["groups"].get("agent", {}).get("intervals")
+        if found:
+            lines.append(
+                f"{name:<30} false acc {_interval(found['false_acceptance'])}, "
+                f"false rej {_interval(found['false_rejection'])}, "
+                f"review {_interval(found['review_share'])} ({found['cases']} cases)"
+            )
     lines.append("decisions by case (label decision: candidates)")
     for name, scored in result["verifiers"].items():
         lines.append(f"  {name}")

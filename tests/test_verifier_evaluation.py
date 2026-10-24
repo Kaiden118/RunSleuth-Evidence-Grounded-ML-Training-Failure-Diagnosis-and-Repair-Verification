@@ -45,6 +45,37 @@ class RateTests(unittest.TestCase):
             verifier_evaluation.rates([("correct", "accept")])["false_acceptance"]["rate"]
         )
 
+    def test_intervals_draw_whole_cases_and_reach_the_exact_bound_without_errors(self):
+        rows = [("a", "wrong", "reject")] * 3
+        rows += [("b", "wrong", "accept")] * 2 + [("b", "correct", "accept")]
+        rows += [("c", "correct", "accept")] * 4
+        found = verifier_evaluation.intervals(rows)
+        self.assertEqual(found, verifier_evaluation.intervals(rows))
+        self.assertEqual(found["cases"], 3)
+        accepted = found["false_acceptance"]
+        self.assertTrue(accepted["low"] <= 0.4 <= accepted["high"])
+        # Drawing case a alone gives 0, case b alone 1.
+        self.assertEqual((accepted["low"], accepted["high"]), (0.0, 1.0))
+        # No correct candidate is rejected: the bound over the two cases with correct ones.
+        self.assertEqual(found["false_rejection"]["low"], 0.0)
+        self.assertEqual(found["false_rejection"]["high"], round(1 - 0.025**0.5, 4))
+        self.assertEqual(found["review_share"]["high"], round(1 - 0.025 ** (1 / 3), 4))
+        every = verifier_evaluation.intervals([("a", "wrong", "accept"), ("b", "wrong", "accept")])
+        self.assertEqual(every["false_acceptance"]["low"], round(0.025**0.5, 4))
+        self.assertIsNone(every["false_rejection"])
+        repair = challenge_set.Candidate(
+            "camelyon_pipeline/labels_cut_to_length",
+            "camelyon_pipeline",
+            "training_data_filter",
+            "labels_cut_to_length",
+            "test",
+            "human",
+            "partial_repair",
+        )
+        self.assertEqual(
+            verifier_evaluation.case_of(repair), "camelyon_pipeline/labels_not_filtered"
+        )
+
     def test_a_reviewer_judging_its_makers_candidates_is_scored_apart(self):
         def candidate(model, origin="agent"):
             return challenge_set.Candidate(

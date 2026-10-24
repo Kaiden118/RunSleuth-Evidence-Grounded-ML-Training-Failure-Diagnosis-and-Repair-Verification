@@ -20,14 +20,20 @@ the set:
   project is development material. Contract cases certify the hidden tests and belong
   to no split.
 - Candidates. Agents start from every fault and correct variant of a split, the
-  control excepted: in the test split six models, three repetitions each, one test
-  seed per repetition; in the development split Gemini Flash-Lite alone on seed 7.
+  control excepted: in the test split five models (MODELS), three repetitions each,
+  one test seed per repetition; in the development split Gemini Flash-Lite alone on
+  seed 7.
   The versions of a split are handed in as they are as well; in the test split, so
   are six partial repairs, written before any verifier was developed, and two
   evidence-removed runs of every version. Partial repairs and evidence-removed runs
   are reported apart from agent repairs; the main results rest on the latter.
 - Seeds. The three test seeds are drawn at random when the set is frozen, from seeds
   no earlier run has used, and recorded; development runs use seed 7 only.
+- Models. Settled on 2026-10-23 after the smoke tests: GPT-6.1 Sol writes candidates
+  in place of GPT-6 Luna, and Claude Sonnet 5.5 writes none, so that the two LLM
+  reviewers (REVIEWERS), Gemini 4 Argon and Claude Opus 5.5, never judge a candidate
+  of their own model; only Argon judges some of its maker's (Flash-Lite's), and those
+  are scored apart (VENDORS).
 
     python -m runsleuth.challenge_set plan --split test
 """
@@ -51,12 +57,23 @@ from runsleuth.pipeline_tasks import HEALTHY, SPLITS
 FAMILIES = ("camelyon_pipeline", "ham10000_pipeline")
 MODELS = (
     "gemini-3.5-flash-lite",
-    "gpt-6-luna",
+    "gpt-6.1-sol",
     "deepseek-v4.1-flash-1017",
     "muse-spark-1.3",
     "qwen3.8-27b",
-    "claude-sonnet-5.5",
 )
+# The LLM reviewers, a baseline verifier; none of them writes candidates.
+REVIEWERS = ("gemini-4-argon", "claude-opus-5.5")
+# Who made each model, so that a reviewer judging its maker's candidates shows apart.
+VENDORS = {
+    "gemini-3.5-flash-lite": "google",
+    "gpt-6.1-sol": "openai",
+    "deepseek-v4.1-flash-1017": "deepseek",
+    "muse-spark-1.3": "meta",
+    "qwen3.8-27b": "alibaba",
+    "gemini-4-argon": "google",
+    "claude-opus-5.5": "anthropic",
+}
 DEVELOPMENT_MODELS = ("gemini-3.5-flash-lite",)
 REPETITIONS = 3
 DEVELOPMENT_SEED = 7

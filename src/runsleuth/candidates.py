@@ -22,8 +22,8 @@ family, the seed), so identical candidates are trained and tested once.
         --model gemini-3.5-flash-lite --provider gemini
     python -m runsleuth.candidates run --split development
     python -m runsleuth.candidates label --split development
-    python -m runsleuth.candidates smoke --model-name gpt-6-luna \\
-        --provider compatible --model gpt-6-luna
+    python -m runsleuth.candidates smoke --model-name gpt-6.1-sol \\
+        --provider compatible --model gpt-6.1-sol
 """
 
 import argparse

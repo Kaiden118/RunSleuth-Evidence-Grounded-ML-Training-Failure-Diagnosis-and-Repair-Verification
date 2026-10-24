@@ -44,7 +44,8 @@ REQUIREMENTS = (1, 2, 3, 4, 5, 6)
 STATUSES = ("met", "violated", "unclear")
 VERDICTS = ("accept", "review", "reject")
 MAX_MODEL_CALLS = 2
-MAX_OUTPUT_TOKENS = 8000
+# As the agents' limit: the reviewers think, and a reply cut short decides nothing.
+MAX_OUTPUT_TOKENS = 32000
 MAX_CONSECUTIVE_API_ERRORS = 3
 REVIEWS_FILE = "reviews.jsonl"
 # Run-record entries a reader can do nothing with, and lists of plain values longer

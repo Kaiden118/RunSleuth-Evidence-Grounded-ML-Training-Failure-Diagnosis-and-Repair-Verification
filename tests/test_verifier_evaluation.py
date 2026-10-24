@@ -65,7 +65,7 @@ class RateTests(unittest.TestCase):
         self.assertFalse(
             same(candidate(None, "human"), None) or other(candidate(None, "human"), None)
         )
-        combined = verifier_evaluation.vendor_groups("runsleuth_v2+llm_reviewer/claude-opus-5.5")
+        combined = verifier_evaluation.vendor_groups("runsleuth_v2+llm_reviewer/claude-sonnet-5.5")
         self.assertFalse(combined["reviewer_same_vendor"](candidate("muse-spark-1.3"), None))
         self.assertEqual(verifier_evaluation.vendor_groups("runsleuth_v1"), {})
         for reviewer in challenge_set.REVIEWERS:

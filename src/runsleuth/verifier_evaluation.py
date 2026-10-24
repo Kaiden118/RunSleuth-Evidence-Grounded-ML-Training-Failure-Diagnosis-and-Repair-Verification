@@ -22,7 +22,7 @@ and the same again without the candidates that could not be run.
 
     python -m runsleuth.verifier_evaluation decide --split development
     python -m runsleuth.verifier_evaluation review --split development \\
-        --name claude-opus-5.5 --provider anthropic --model claude-opus-5-5
+        --name claude-sonnet-5.5 --provider anthropic --model claude-sonnet-5-5
     python -m runsleuth.verifier_evaluation score --split development
 """
 

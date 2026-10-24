@@ -164,12 +164,14 @@ is written differently, at a bounded cost?
   labels, every checkpoint and the weights, and evaluates the delivered weights itself.
 - **Tasks:** faults that show only at run time, each with one case for development and
   one held out for testing.
-- **Candidates:** repairs by six LLM agents (Gemini 3.5 Flash-Lite, GPT-6 Luna,
-  DeepSeek V4.1 Flash, Muse Spark 1.3, Qwen3.8-27B, Claude Sonnet 5.5; DeepSeek and Qwen
-  are open-weight), plus constructed wrong repairs and correct variants, reported apart.
-- **Verifiers:** a metric gate, an LLM reviewer (GPT-6.1 Sol), RunSleuth, and RunSleuth
-  checking one requirement at a time, choosing the next check by what the evidence
-  still leaves open, and sending the rest to review when its budget runs out.
+- **Candidates:** repairs by five LLM agents (Gemini 3.5 Flash-Lite, GPT-6.1 Sol,
+  DeepSeek V4.1 Flash, Muse Spark 1.3, Qwen3.8-27B; DeepSeek and Qwen are open-weight),
+  plus partial repairs and correct variants written by hand, reported apart.
+- **Verifiers:** a metric gate calibrated on correct runs; two LLM reviewers from other
+  vendors than the agents (Gemini 4 Argon and Claude Sonnet 5.5), given the same code and run
+  records; RunSleuth; and RunSleuth v2, which judges every requirement as supported,
+  violated or untested, runs short probes chosen by what is still untested, and sends
+  the rest to review, against a control that runs the same probes in a fixed order.
 - **Labels:** hidden behavioural tests, checked on correct and wrong projects before
   use, and blind review by two annotators. No verifier sees either.
 - **Reported:** wrong repairs accepted, correct ones rejected, the share decided
@@ -189,8 +191,10 @@ candidate is generated.
 
 ```bash
 python -m runsleuth.pipeline_tasks list
-python -m runsleuth.pipeline_contract check
-python -m runsleuth.pipeline_workspace check --output <dir> --data camelyon --config configs/camelyon17_clean.json
+python -m runsleuth.challenge_set plan --split test
+python -m runsleuth.candidates generate --split development --model-name gemini-3.5-flash-lite --provider gemini
+python -m runsleuth.verifier_v2 verify --split development
+python -m runsleuth.verifier_evaluation score --split development
 ```
 
 ## Roadmap
@@ -206,9 +210,10 @@ python -m runsleuth.pipeline_workspace check --output <dir> --data camelyon --co
 | Agent study: 22 tasks, 5 conditions, 2 LLMs            |   ☑    |
 | Pipeline harness and hidden behavioural tests          |   ☑    |
 | Six run-time tasks                                     |   ☑    |
-| Baseline verifiers on development cases                |   ☐    |
-| RunSleuth checking one requirement at a time           |   ☐    |
-| Freeze, then test candidates from six LLM agents       |   ☐    |
+| Challenge set, agent loop, model smoke tests           |   ☑    |
+| Baseline verifiers on development cases                |   ☑    |
+| RunSleuth checking one requirement at a time           |   ☑    |
+| Freeze, then test candidates from five LLM agents      |   ◐    |
 | Verifier comparison and blind review                   |   ☐    |
 | Report and release                                     |   ☐    |
 

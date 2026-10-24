@@ -31,9 +31,11 @@ the set:
   no earlier run has used, and recorded; development runs use seed 7 only.
 - Models. Settled on 2026-10-23 after the smoke tests: GPT-6.1 Sol writes candidates
   in place of GPT-6 Luna, and Claude Sonnet 5.5 writes none, so that the two LLM
-  reviewers (REVIEWERS), Gemini 4 Argon and Claude Opus 5.5, never judge a candidate
+  reviewers (REVIEWERS), Gemini 4 Argon and Claude Sonnet 5.5, never judge a candidate
   of their own model; only Argon judges some of its maker's (Flash-Lite's), and those
-  are scored apart (VENDORS).
+  are scored apart (VENDORS). Claude Opus 5.5 reviewed the development candidates as
+  well and judged them as Argon did, at about seven times the cost, so Sonnet took
+  its place.
 
     python -m runsleuth.challenge_set plan --split test
 """
@@ -63,7 +65,7 @@ MODELS = (
     "qwen3.8-27b",
 )
 # The LLM reviewers, a baseline verifier; none of them writes candidates.
-REVIEWERS = ("gemini-4-argon", "claude-opus-5.5")
+REVIEWERS = ("gemini-4-argon", "claude-sonnet-5.5")
 # Who made each model, so that a reviewer judging its maker's candidates shows apart.
 VENDORS = {
     "gemini-3.5-flash-lite": "google",
@@ -72,6 +74,7 @@ VENDORS = {
     "muse-spark-1.3": "meta",
     "qwen3.8-27b": "alibaba",
     "gemini-4-argon": "google",
+    "claude-sonnet-5.5": "anthropic",
     "claude-opus-5.5": "anthropic",
 }
 DEVELOPMENT_MODELS = ("gemini-3.5-flash-lite",)

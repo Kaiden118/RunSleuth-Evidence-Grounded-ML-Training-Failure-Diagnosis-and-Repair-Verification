@@ -10,7 +10,8 @@ as they are from pipeline_tasks, partial repairs from challenge_set; an evidence
 candidate has no run or label of its own but its parent's. smoke tries a model in the
 loop before it writes candidates: two development faults, short runs on synthetic
 data, and whether every call was answered, by which model and within the output
-limit.
+limit. Nothing runs on the test split before the freeze, nor once a frozen file has
+changed (freeze.check).
 
 Agents work in folders named by a hash of their candidate (artifacts/workspaces), so
 that no path a traceback shows names a version, task or split. An episode that ended in
@@ -38,7 +39,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from runsleuth import challenge_set, pipeline_agent, pipeline_tasks
+from runsleuth import challenge_set, freeze, pipeline_agent, pipeline_tasks
 from runsleuth.challenge_set import SEEDS_FILE, Candidate
 from runsleuth.llm_client import PROVIDERS, create_llm_client
 from runsleuth.pipeline_contract import run_contract_in_subprocess
@@ -53,6 +54,7 @@ DATA = {
     "ham10000_pipeline": ("ham10000", Path("configs/ham10000.json")),
 }
 EPOCHS = 3
+INTERRUPT_AFTER_EPOCHS = 1
 SMOKE_ROOT = Path("artifacts/smoke-pipeline")
 # One development fault of each family, trained on synthetic samples.
 SMOKE_STARTS = (
@@ -81,9 +83,11 @@ def _write(path: Path, value: Any) -> None:
 
 
 def candidates(split: str) -> list[Candidate]:
-    """The split's plan, on the drawn test seeds once they exist."""
+    """The split's plan, on the drawn test seeds once they exist; the test split
+    only while no frozen file has changed."""
     seeds = None
     if split == "test":
+        freeze.check()
         if not SEEDS_FILE.exists():
             raise FileNotFoundError(f"The test seeds are drawn at the freeze, into {SEEDS_FILE}")
         seeds = tuple(_read(SEEDS_FILE)["seeds"])
@@ -268,7 +272,11 @@ def run_all(
         if candidate.kind == "evidence_removed" or sources is None:
             continue
         outcome = runner.train(
-            sources, candidate.family, candidate.seed, epochs=EPOCHS, interrupt_after_epochs=1
+            sources,
+            candidate.family,
+            candidate.seed,
+            epochs=EPOCHS,
+            interrupt_after_epochs=INTERRUPT_AFTER_EPOCHS,
         )
         runs[candidate.id] = outcome
         progress(f"{candidate.id}: {outcome['status']}")

@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "task": "freeze",
+  "frozen_on": "2026-10-23",
+  "commit": "44c8289a3403b1dee78be8822bbd65ba5fe65242",
+  "files": {
+    "src/runsleuth/__init__.py": "2a6ca2971e96e96edda1ed2d7c84ab84e186de37d56d352e39b51d60edaf9853",
+    "src/runsleuth/agent_analysis.py": "72e0f05fd607974ab5f5c369f9237a1e07e130a88f8c3f652b88de099eecf2c6",
+    "src/runsleuth/agent_contract.py": "b36067c01afd19534943abb50f1ee75d0f0a56dc8722049d0b8cf754efb42c2e",
+    "src/runsleuth/agent_episodes.py": "e06339bfeb3dce0ef820bff12c3d429f1d4378ea5fe9fb6b3544b746f1c72512",
+    "src/runsleuth/agent_loop.py": "34b5528e60dc74302c84d86c479a76c0ce7a46ef126e0eb8ccd46bfb5dd84872",
+    "src/runsleuth/agent_review.py": "56ece391e157c10a9f180f70d31a1d5345e653bd19f689022f8ec1cb17732448",
+    "src/runsleuth/agent_study.py": "7736856b4cccb9faf5ba32056447bed58e5e20952b7258eb2dbf69449366708b",
+    "src/runsleuth/agent_task_template.py": "f084572057217a46ebc39dea8be3649babc9b7cb0ae1437fe09a946da634ccfc",
+    "src/runsleuth/agent_task_template_ham.py": "9bad69c7345852d7c94357b0d1f20a88e6a3e2b43c7895b227b8106cdb207a35",
+    "src/runsleuth/agent_task_template_structured.py": "82b1aab07204096082a5a9b0cb10a702a45489bfe5749b5b82f190da62b892f6",
+    "src/runsleuth/agent_tasks.py": "9440ea8265664073e8262701e20d1a97bbded1bca0cc0701b9d42696331e9c23",
+    "src/runsleuth/agent_verification.py": "7248d7a9239ec95afffa3c2eaf1d92468535c5abdc4f04b5721ee9b852d419fb",
+    "src/runsleuth/agent_workspace.py": "ca1dff9594734379bffe03a3fdf47dac7f6b40d5f4c66af201060563c90545f7",
+    "src/runsleuth/anthropic_chat.py": "fc4f774bf60424f99e5f7526e4579ed4f791c7f449fe98a5136f8160d84d911c",
+    "src/runsleuth/camelyon.py": "920ef9229da93047f69b21d212df3e1970ec0378fabc424be4f5cf07f07d86d8",
+    "src/runsleuth/camelyon_config.py": "63a0916fdc124e4ef42d2342fc32ed5dedf8ab8200794b6b32ee50c1c515490e",
+    "src/runsleuth/camelyon_config_faults.py": "fa72177cddeffa0970aba453de885aaab7fe4d50f40ca2ee8587fdc469ca2c34",
+    "src/runsleuth/camelyon_data.py": "aded3fb9f129d7a00195effc6c84ea0c4cb5d093adb3f96805aac2ac81f9f7eb",
+    "src/runsleuth/camelyon_frozen_head_probe.py": "3015c7924d3a7217508b8ec6904c314c992329e7e36e92ece31c1f57b5681850",
+    "src/runsleuth/camelyon_frozen_head_training.py": "2adb49874e3eb5e5c40ee104abdb3ca99cfaf49e6256e0eaca265bc8dfeaf0a7",
+    "src/runsleuth/camelyon_loop_faults.py": "6c5693b07df55d339b5147ebe75f58aff8a5c12162ede17e0c2a42750b829b1d",
+    "src/runsleuth/camelyon_optimizer_probe.py": "0cf6902d8f03955ade9a4ff5cbc24dae3e89b903e70014e7199a80a02848108e",
+    "src/runsleuth/camelyon_optimizer_sweep.py": "e7bc4683550da1835a47fbefee7cf8cf368097eb3849a16cd2611994680de737",
+    "src/runsleuth/camelyon_optimizer_training.py": "3af189eb72d306fac7389dc9cdf926452bf442b9eeb12bcad8d1e8bb107314b7",
+    "src/runsleuth/camelyon_variant_runner.py": "6c3d6e3cf010bfde0b2379ed072ecc2a3e7af41c871ce61762f8ca9361b97b58",
+    "src/runsleuth/camelyon_vit.py": "2bfb811fb6c1f90aa1bdee11e15e5ef7fe6899c897933067d0ad897fa479d9ad",
+    "src/runsleuth/candidates.py": "68855dc18d4b8088c6be89d6bfb60534b36363b3fd717e3e9b5009f289151a3b",
+    "src/runsleuth/challenge_set.py": "49373b5514c3e53d87219e5067c8c87ecacedec433dd4188a8e23175780308aa",
+    "src/runsleuth/cli.py": "a0564676a4406951f89b3f36dc78b694cbc2ac8c9e0dc0c7dd8acd1c79024788",
+    "src/runsleuth/demo.py": "086efad0e3d7907e4d6744428692249f374b80e8806d22d372a17a7db2ea7cca",
+    "src/runsleuth/diagnose_run.py": "f658c20fb98f297f04d27549943d7a22fdf80a55dd95e93358503c409bb33426",
+    "src/runsleuth/failure_signatures.json": "b72a7ba6ea6b2274fc1fba237d5de431b77aea0344325890930b228336202508",
+    "src/runsleuth/freeze.py": "bf23f34fc03908b31496c21fd50bbaa40d2ccb71535087bf1e81b21c713a3910",
+    "src/runsleuth/frozen_head_probe.py": "9569555f3a4b01ea5a209f5977d0226e660e0af1d5c1bbffa0e8e6c27021a3b7",
+    "src/runsleuth/ham10000_data.py": "01ce9f54aba9041f7f72bf3f6256e86bc81570ce65c1bc70542bc182d3a5b281",
+    "src/runsleuth/heldout.py": "b2fbdbaba5f7c874f7d74b0cb2f3acc7d2080521a07f5bf4ddaee9215375c03f",
+    "src/runsleuth/hf_callback.py": "cbecf45dc722bc3bc413ebf4ec5c9d3a9d6b5d3e107a2359c14c5fd5d7927cb3",
+    "src/runsleuth/llm_client.py": "e1c7ecadcb471af10391dcb56d4a85adfa35178811232aa1b0589c9a8e5a91bb",
+    "src/runsleuth/llm_review_eval.py": "ad15d32149d3772ea0c7fadff3ea251d6e081d6e3916dfa4cc4a092fa65ab901",
+    "src/runsleuth/llm_reviewer.py": "56b9be0f43c5d75055d99f8ec6d0da660d1baa916aa591b0effb9874988b83fa",
+    "src/runsleuth/metric_gate.py": "b7521cfe168207d752dceb0fb1b9dce2abc822aa1495018775150964a1317603",
+    "src/runsleuth/optimizer_evidence.py": "20cd6a1acad403e1e677122d4dd5c3970a5410de231df53a198ca04b5aa9e13f",
+    "src/runsleuth/optimizer_probe.py": "70a99df42fa7c0f3bbcaa71fc99f40d4ad97710dd8b8f2c1a97f60901259c214",
+    "src/runsleuth/parameter_group_monitor.py": "35e28982efb8ea3f7e5a11e2b663b441197e80572f1852c6606df2877df6df9a",
+    "src/runsleuth/pipeline_agent.py": "2e1a1945a99f55fd40068d04339a54d83b7d5081d613dad394536e36ef5af90a",
+    "src/runsleuth/pipeline_contract.py": "a78eb733d4e4a5acc162dcfed5573c198bd34beb3b3f547812bc4b31c83d8c2b",
+    "src/runsleuth/pipeline_tasks.py": "00fc6ea9fb2a485f629fb22a66fdb6e83a454a984c8ee3653482dc28c93c480c",
+    "src/runsleuth/pipeline_templates/camelyon/config.py": "441da55a72623340920e732bb68e5db64f6dd4507a7247a2b1f6ea155a895382",
+    "src/runsleuth/pipeline_templates/camelyon/data.py": "74b8bc454ac86c1cd0de5dc4e004a0c85ee8d4f9bb83ad959d9103b47c3ec1d5",
+    "src/runsleuth/pipeline_templates/camelyon/train.py": "552bb59ff5c7cda13a0916c9ba65d68e6f688b4f33a73e1da950b79a59daac17",
+    "src/runsleuth/pipeline_templates/ham10000/config.py": "031364de0afd54eb402f5d3ab84543284b94e90ff38224093ed89f1c118781ba",
+    "src/runsleuth/pipeline_templates/ham10000/data.py": "138ad480fe9893ee070c0b90756eb19e49c7041b8e3522f9da516e1e44bbf186",
+    "src/runsleuth/pipeline_templates/ham10000/train.py": "15b927abc2f7ec6da46a67b18296c8d89a96e27f2ff5149f70968ff096dfe170",
+    "src/runsleuth/pipeline_workspace.py": "40593edb915974bee7952c36fe055d52d0be8df5e74a29893bc5b11c656d5b1b",
+    "src/runsleuth/rescore_repairs.py": "086dad748f47c72d302b187fbf5a744c79e902a0d06f332fb26221cbfd328336",
+    "src/runsleuth/run_monitor.py": "35a6d1052d29a4edcb08191689e2d60b04159a62d9c2fa0de09bb4a727403f88",
+    "src/runsleuth/signature_matching.py": "641e4027cd30bc13bdc488b41d2d65e4a07b52b07d63a465ce2def3fb2a7f2ab",
+    "src/runsleuth/train.py": "4c49e003545ee41692b4d45c5cf081d40355b9e3a6c087db70ec729a5799ec7d",
+    "src/runsleuth/verifier_evaluation.py": "0dc4bbac9ad7b0b19e20d6d5d27e6211fce787dc8263176d4e438a684b8ed586",
+    "src/runsleuth/verifier_v1.py": "6bb5bff922e3f2346c5e9e8aafdb29ae5761dda56fdc16a848d92aaec01cce9b",
+    "src/runsleuth/verifier_v2.py": "9e065ab2b8c76f687fc72404362fcc1378c495adc04f123a7d6211e34b076094",
+    "configs/camelyon17_clean.json": "cdbf25243641713bb026f385366668a8fd3d816affc102088d720171083b3d6b",
+    "configs/camelyon17_probe.json": "dd325b2a8a52c66c9cf8250118b65c0e54dac1ebfebe1c9e85ae96c000d17757",
+    "configs/ham10000.json": "c362202893d25706c52fed5490916cd2b726cb9036ccce858cd0e3dd90ac6c55",
+    "evaluations/metric_gate.json": "7620fe5115bb895a17c0ab76bd548388a468318452202d99dfc43875b08d748f",
+    "evaluations/verifier_v2_probes.json": "124a4f3362466844a1516d3d5633938f7198bcca0a01ffcc40565cc1ec058404"
+  },
+  "settings": {
+    "models": [
+      "gemini-3.5-flash-lite",
+      "gpt-6.1-sol",
+      "deepseek-v4.1-flash-1017",
+      "muse-spark-1.3",
+      "qwen3.8-27b"
+    ],
+    "repetitions": 3,
+    "test_seeds": 3,
+    "reviewers": [
+      "gemini-4-argon",
+      "claude-sonnet-5.5"
+    ],
+    "vendors": {
+      "gemini-3.5-flash-lite": "google",
+      "gpt-6.1-sol": "openai",
+      "deepseek-v4.1-flash-1017": "deepseek",
+      "muse-spark-1.3": "meta",
+      "qwen3.8-27b": "alibaba",
+      "gemini-4-argon": "google",
+      "claude-sonnet-5.5": "anthropic",
+      "claude-opus-5.5": "anthropic"
+    },
+    "plan": {
+      "repair": 180,
+      "version": 13,
+      "partial_repair": 6,
+      "evidence_removed": 26
+    },
+    "agent": {
+      "prompt_version": 1,
+      "max_tool_calls": 20,
+      "max_runs": 3,
+      "max_output_tokens": 32000,
+      "short_run": {
+        "epochs": 2,
+        "interrupt_after_epochs": 1,
+        "max_eval_samples": 1000
+      }
+    },
+    "reviewer": {
+      "prompt_version": 1,
+      "system_prompt_sha256": "2ddfaef07ddfe9f37cbdd1b908fd7e73971e18d112deadef97b7e4344aa26d80",
+      "max_model_calls": 2,
+      "max_output_tokens": 32000
+    },
+    "request_timeout_seconds": 600.0,
+    "candidate_runs": {
+      "epochs": 3,
+      "interrupt_after_epochs": 1
+    },
+    "v2": {
+      "orders": [
+        "gap",
+        "fixed"
+      ],
+      "validation_tolerance": {
+        "accuracy": 0.01,
+        "loss": 0.01
+      },
+      "probes": {
+        "schema_version": 1,
+        "task": "verifier_v2_probes",
+        "about": "The probe runs of RunSleuth v2, fixed on development material before any test candidate is run. The seeds are recorded here so that the test seeds are never drawn among them.",
+        "self_restart": {
+          "epochs": "as the candidate's run",
+          "interrupt_after_epochs": null,
+          "evaluate_epochs": true
+        },
+        "determinism_control": "the self-restart run once more, only when the restarted run's weights alone differ",
+        "delivery": {
+          "seeds": [
+            101,
+            102,
+            103,
+            104
+          ],
+          "epochs": 5,
+          "interrupt_after_epochs": 2,
+          "evaluate_epochs": true,
+          "max_eval_samples": 1000,
+          "data": {
+            "camelyon_pipeline": "configs/camelyon17_probe.json",
+            "ham10000_pipeline": "configs/ham10000.json"
+          },
+          "until": "both directions have been seen: a best epoch before the restart that no later epoch beats, and a new best after it"
+        },
+        "seeds": [
+          101,
+          102,
+          103,
+          104
+        ],
+        "chosen_on": "2026-10-23, from the healthy project of both families (artifacts/workspaces/delivery_feasibility-2)"
+      }
+    },
+    "contract": {
+      "version": 5,
+      "family_sha256": {
+        "camelyon_pipeline": "6e7406bbc9c7d03a56bea822e9a7ef734920e8c64ad18e0a103bfdbfe5a2c023",
+        "ham10000_pipeline": "0a10c2e512e34013a8576602f8e9ca4cdc243f1c5fcc9fb07728abb864da5f7e"
+      }
+    },
+    "bootstrap": {
+      "resamples": 2000,
+      "seed": 0,
+      "level": 0.95
+    }
+  },
+  "combination": "RunSleuth v2 with an LLM reviewer (verifier_evaluation.combined): v2 finding a part violated rejects; v2 and the reviewer both accepting accepts; anything else goes to review.",
+  "analysis": {
+    "main": "The agent candidates of the test split. For every verifier: wrong candidates accepted (of the wrong), correct candidates rejected (of the correct), the share sent to review and the cost of checking, each with its denominator.",
+    "verifiers": "metric_gate, stage_one_gate, runsleuth_v1, llm_reviewer/<each reviewer>, runsleuth_v2, runsleuth_v2_fixed_order and runsleuth_v2+llm_reviewer/<each reviewer>.",
+    "not_runnable": "A candidate the harness refuses or whose hidden tests crash or time out is wrong; the rates are given again without these candidates.",
+    "apart": "Hand-written versions and partial repairs, evidence-removed runs, each family, and for a reviewer the candidates of its maker's models are reported apart.",
+    "uncertainty": "95% intervals by a bootstrap over cases: the candidates that start from one version (a partial repair with its fault) are drawn together, since they are not independent; settings in verifier_evaluation.BOOTSTRAP. A verifier that never errs in a kind, or always does, gets the exact bound with the cases as units. No significance tests.",
+    "order": "v2's gap order against the fixed order: probe runs and GPU seconds per candidate, and whether their decisions agree.",
+    "labels": "The hidden tests decide every label; the blind review of two annotators audits them and changes none."
+  },
+  "budget": {
+    "cap_usd": 20,
+    "rule": "Spending on test candidates and reviews is counted from the providers' bills. Should it be about to pass the cap, every remaining model runs two repetitions (the first two test seeds) instead of three; no model is dropped."
+  },
+  "independence": [
+    "RunSleuth v2 never sees the hidden tests, their assertions or inputs, nor any label: verifier_v2 imports neither pipeline_contract nor anything that reads labels, and its probes run the candidate's own project with the statement's numbers.",
+    "v2's probe settings (evaluations/verifier_v2_probes.json, its probe data and seeds) and its validation tolerance were fixed on development material alone: the healthy project, the development versions and the development candidates.",
+    "Development results served only to debug the verifiers. No verifier has seen a test candidate, and none exists before this record."
+  ],
+  "deviations": []
+}

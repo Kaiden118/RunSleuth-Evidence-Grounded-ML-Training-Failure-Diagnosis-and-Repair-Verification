@@ -6,11 +6,12 @@
 ![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20GPT%20%7C%20Claude%20%7C%20DeepSeek%20%7C%20Qwen%20%7C%20Muse-8E75B2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-RunSleuth decides whether to accept the repairs that LLM agents make to medical-imaging
+RunSleuth decides whether to accept the repairs that LLM agents make to deep-learning
 training code. Training faults are often silent: the run completes and accuracy barely
 moves. RunSleuth judges each requirement of a task from evidence recorded while the
 repaired project trains and from short probe runs, then accepts the repair, rejects it,
-or sends it to human review.
+or sends it to human review. The requirements it checks are common to supervised
+training; we evaluate it on medical image classification.
 
 On a held-out test split of 180 repairs written by five LLM agents for six faults in
 pathology (Camelyon17-WILDS) and dermoscopy (HAM10000) training pipelines, RunSleuth v2
@@ -109,6 +110,8 @@ python -m runsleuth.verifier_evaluation score --split test --reviewers gemini-4-
 ```
 
 Agent-edited code runs in a subprocess under a Python-level guard, not in a container.
+The results cover two image classification pipelines with ResNet18, written for
+RunSleuth's harness; other tasks, models and code structures are untested.
 
 ## Agent Study
 

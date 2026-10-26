@@ -6,24 +6,33 @@
 ![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20GPT%20%7C%20Claude%20%7C%20DeepSeek%20%7C%20Qwen%20%7C%20Muse-8E75B2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-RunSleuth checks the repairs LLM agents make to medical-imaging training code. A
-training run can be wrong without crashing and with accuracy barely moved; RunSleuth
-accepts an agent's "fixed" only when evidence from the run supports it, and otherwise
-rejects the repair or sends it to review.
+RunSleuth decides whether to accept the repairs that LLM agents make to medical-imaging
+training code. Training faults are often silent: the run completes and accuracy barely
+moves. RunSleuth judges each requirement of a task from evidence recorded while the
+repaired project trains and from short probe runs, then accepts the repair, rejects it,
+or sends it to human review.
 
-![How RunSleuth works](docs/pipeline.svg)
+On a held-out test split of 180 repairs written by five LLM agents for six faults in
+pathology (Camelyon17-WILDS) and dermoscopy (HAM10000) training pipelines, RunSleuth v2
+accepted none of the 16 wrong repairs, rejected none of the 164 correct ones, and sent
+44 to review. The strongest LLM reviewer accepted 2 of the wrong repairs and a
+calibrated metric gate 12. The results are preliminary until the blind review of the
+labels is complete.
 
-The repository has three parts:
+<p align="center"><img src="docs/overview.svg" alt="Verifying an LLM agent's repair" width="100%"></p>
+<p align="center"><em>Figure 1. A repair is trained in a harness that may stop and restart it. RunSleuth v2
+judges every requirement from the run's records and from probe runs chosen by what is
+still untested. Hidden behavioural tests label the candidates; no verifier sees them.</em></p>
 
-1. **Diagnosis and repair verification** of PyTorch training runs: silent faults in
-   ResNet18 and DeiT-small (Hugging Face) on Camelyon17-WILDS pathology patches.
-2. **Agent study:** does RunSleuth's evidence help LLM agents repair training scripts,
-   or only catch their mistakes? 22 tasks, 5 conditions, 2 models.
-3. **Repair verification** (in progress): can acceptance catch wrong agent repairs
-   without rejecting correct ones written differently, at bounded cost? Six run-time
-   tasks on Camelyon17 and HAM10000, repairs by five LLM agents.
+## Contents
 
-## Install
+| Component | Question | Status |
+|---|---|---|
+| [Repair verification](#repair-verification) | Can acceptance catch wrong agent repairs without rejecting correct ones written differently, at bounded cost? | Test split complete; blind review pending |
+| [Agent study](#agent-study) | Does RunSleuth's evidence help LLM agents repair training scripts, or only catch their mistakes? | Complete; results in the report |
+| [Diagnosis](#diagnosis-of-training-runs) | Can silent faults be diagnosed from a run's evidence, and repairs verified by retraining? | Complete |
+
+## Installation
 
 ```bash
 git clone https://github.com/Kaiden118/RunSleuth-Evidence-Grounded-ML-Training-Failure-Diagnosis-and-Repair-Verification.git
@@ -32,14 +41,129 @@ pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytor
 pip install -e ".[dev,llm,hf,camelyon]"
 ```
 
-Python 3.11. Diagnosis runs on CPU; training needs an NVIDIA GPU with 8 GB. Or use
-Docker: `docker build --target runtime -t runsleuth .`
+Python 3.11. Diagnosis runs on CPU; training needs an NVIDIA GPU with 8 GB. A Docker
+image is available: `docker build --target runtime -t runsleuth .`
 
-## Quick Start
+## Repair Verification
 
-A ResNet18 whose classification head was frozen by mistake reaches 98.2% validation
-accuracy, above the healthy run's 97.9%. Its metrics pass every check; its evidence
-does not (output shortened):
+### Benchmark
+
+| | |
+|---|---|
+| Tasks | Six faults that show only at run time, in small training pipelines (`config.py`, `data.py`, `train.py`) that own their data, checkpoints and delivered weights: training-data filter, restart after a stop and delivered weights on Camelyon17-WILDS; restart after a stop, image cache and label mapping on HAM10000. Each task has a development case and a held-out test case. |
+| Agents | Gemini 3.5 Flash-Lite, GPT-6.1 Sol, DeepSeek V4.1 Flash, Muse Spark 1.3 and Qwen3.8-27B, at provider defaults and under the same limits: 20 tool calls, 3 short runs, 32,000 output tokens. |
+| Test candidates | 180 agent repairs: every agent starts from 12 versions (6 faults, 6 correct variants) on 3 seeds. Another 45 candidates (hand-written versions, partial repairs and runs with evidence removed) are reported apart. |
+| Labels | Hidden behavioural tests: 182 candidates correct, 43 wrong, of which 16 are agent repairs. A blind review by two annotators audits the labels. |
+| Protocol | Verifiers, hidden tests and analysis were frozen on 2026-10-23, before the first test candidate ([`freeze.json`](evaluations/freeze.json)); the test seeds were drawn afterwards. |
+
+### Verifiers
+
+| Verifier | Evidence | Decisions |
+|---|---|---|
+| Metric gate | Validation accuracy against the healthy run on the same seed; thresholds calibrated on correct runs | accept, reject |
+| Stage-one gate | Validation accuracy and loss within fixed margins | accept, reject |
+| RunSleuth v1 | Failure signatures and the metric gate | accept, review, reject |
+| LLM reviewers | Task statement, code, diff and run records; Gemini 4 Argon and Claude Sonnet 5.5, from other vendors than the agents | accept, review, reject |
+| RunSleuth v2 | Run records, then probe runs chosen by the evidence gap; a control runs the same probes in a fixed order | accept, review, reject |
+
+### Results
+
+*Table 1. Test results on the 180 agent repairs. Brackets give 95% intervals from a
+bootstrap over the 12 starting versions.*
+
+| Verifier | Wrong accepted | Correct rejected | Sent to review | Cost per candidate |
+|---|---:|---:|---:|---|
+| Metric gate | 12/16 [0.50, 0.93] | 7/164 | 0/180 | none beyond its run |
+| Stage-one gate | 12/16 [0.43, 0.94] | 9/164 | 0/180 | none beyond its run |
+| RunSleuth v1 | 3/16 [0.00, 0.55] | 7/164 | 46/180 | none beyond its run |
+| Gemini 4 Argon | 13/16 [0.57, 1.00] | 0/164 | 0/180 | 14.2k + 1.0k tokens, 10 s |
+| Claude Sonnet 5.5 | 2/16 [0.00, 0.36] | 0/164 | 2/180 | 17.9k + 3.7k tokens, 58 s |
+| **RunSleuth v2** | **0/16 [0.00, 0.41]** | **0/164** | 44/180 | 2.6 probe runs, 152 GPU s |
+
+<p align="center"><img src="docs/results.svg" alt="Test results on the agent repairs" width="100%"></p>
+<p align="center"><em>Figure 2. Rates on the agent repairs with 95% intervals. Where a verifier made no error
+of a kind, the interval reaches the exact bound with the 12 starting versions as units.</em></p>
+
+- **Order of checks.** In the fixed order, v2 made the same 225 decisions with 3.2 probe
+  runs and 227 GPU seconds per candidate; choosing probes by the evidence gap saved a
+  third of the GPU time and was never dearer. Combined with either reviewer by the rule
+  fixed before testing, v2 decided as it did alone.
+- **All candidates.** Over all 225 test candidates, v2 accepted 0 of 43 wrong and
+  rejected 0 of 182 correct, sending 59 to review; Claude Sonnet 5.5 accepted 4 of the
+  43 wrong and Gemini 4 Argon 31.
+- **Reviews.** Every agent repair v2 sent to review was correct but did not train step
+  by step as the reference did (for example, in another batch order), so several
+  requirements stayed untested.
+- **Reviewer stability.** Gemini 4 Argon rejected all 17 wrong development candidates
+  but accepted 13 of the 16 wrong test repairs.
+
+```bash
+python -m runsleuth.freeze check
+python -m runsleuth.candidates generate --split test --model-name <agent> --provider <provider>
+python -m runsleuth.candidates run --split test
+python -m runsleuth.candidates label --split test
+python -m runsleuth.verifier_evaluation decide --split test
+python -m runsleuth.verifier_evaluation review --split test --name <reviewer> --provider <provider>
+python -m runsleuth.verifier_v2 verify --split test --order gap
+python -m runsleuth.verifier_evaluation score --split test --reviewers gemini-4-argon claude-sonnet-5.5
+```
+
+Agent-edited code runs in a subprocess under a Python-level guard, not in a container.
+
+## Agent Study
+
+| | |
+|---|---|
+| Question | When an agent says a training script is fixed, is it? Does RunSleuth's evidence help the agent, or catch it? |
+| Tasks | 22 Camelyon17 scripts: 9 faults RunSleuth knows, 7 it does not, 5 correct scripts that look faulty, 1 healthy |
+| Conditions | Code only, training runs, raw evidence, diagnosis, a verdict on the agent's own runs |
+| Models | Gemini 3.5 Flash-Lite and GPT-6 Luna, 550 episodes each |
+| Labels | Hidden contract tests written from the task statement |
+
+The study was frozen on 2026-10-13, before the first episode. Every episode has run;
+its results will appear in the report.
+
+## Diagnosis of Training Runs
+
+<p align="center"><img src="docs/pipeline.svg" alt="Diagnosis and repair verification of a training run" width="100%"></p>
+<p align="center"><em>Figure 3. A recorded run is matched against failure signatures, compared with a healthy
+reference run, and a repair is accepted only after retraining verifies it.</em></p>
+
+*Table 2. Faults and the evidence that decides them.*
+
+| Fault | Decisive evidence |
+|---|---|
+| Stale optimizer binding | The new head gets gradients but never updates |
+| Frozen classifier head\* | The head is untrainable; the reference trains it |
+| Learning rate far too high | Rate inferred from AdamW's first update |
+| Missing `optimizer.step()` | Gradients exist, no parameter changes |
+| Train/eval normalization mismatch | Training and evaluation inputs differ |
+| Head larger than the label set | 1000 outputs for 2 classes |
+| Partly frozen backbone\* | Some backbone tensors never get gradients |
+| Training in eval mode\* | Steps train on eval-mode forwards |
+| Per-epoch schedule stepped every batch\* | The rate falls and rises within an epoch |
+
+\*Confirmed only with a healthy reference run; without one, RunSleuth defers. Two
+further signatures, training on a held-out group and an epoch at zero learning rate,
+were checked on one development seed only.
+
+*Table 3. Diagnosis on Camelyon17-WILDS with ResNet18 and DeiT-small (Hugging Face).
+Held-out seeds were drawn after signatures, prompt and thresholds were frozen.*
+
+| | Development | Held-out |
+|---|---:|---:|
+| Correct diagnosis, given a healthy reference | 56/56 | 42/42 |
+| Without a reference: correct · deferred · wrong | 46 · 10 · 0 | 34 · 8 · 0 |
+| False positives on healthy runs | 0/32 | 0/24 |
+| Repairs accepted after retraining | 18/18 | 19/20 |
+
+In 11 of 38 faulty runs, validation metrics stayed within the thresholds of the healthy
+run. Faults were injected by the author; the numbers come from the
+[records](evaluations/results).
+
+**Example.** A ResNet18 whose classification head was frozen by mistake reaches 98.2%
+validation accuracy, above the healthy run's 97.9%. Its metrics pass every check; its
+evidence does not (output shortened):
 
 ```bash
 runsleuth diagnose --run examples/frozen_head/run_report.json --reference examples/clean/run_report.json --no-llm
@@ -59,126 +183,13 @@ No regression against the reference:
 Reason: re-diagnosis against the reference found frozen_head
 ```
 
-To record your own run, wrap the training loop:
+Runs are recorded with `runsleuth.run_monitor.RunMonitor`, or with
+`runsleuth.hf_callback.RunSleuthCallback` for the Hugging Face `Trainer`. An optional
+LLM explanation must cite the evidence and cannot change the diagnosis.
 
-```python
-from runsleuth.run_monitor import RunMonitor
-
-monitor = RunMonitor(model, optimizer, "runs/my-run", head="fc")
-for epoch in range(epochs):
-    with monitor.epoch():
-        ...  # your training loop, unchanged
-    monitor.log(id_validation_accuracy=accuracy, id_validation_loss=loss)
-monitor.close()
-```
-
-With the Hugging Face `Trainer`, pass `callbacks=[RunSleuthCallback("runs/my-run",
-head="classifier")]` from `runsleuth.hf_callback`. An optional LLM explanation
-(`GEMINI_API_KEY` and `GEMINI_MODEL`, or `--provider ollama`) must cite the evidence
-and cannot change the diagnosis.
-
-## Diagnosis Results
-
-| Fault | Decisive evidence |
-|---|---|
-| Stale optimizer binding | The new head gets gradients but never updates |
-| Frozen classifier head\* | The head is untrainable; the reference trains it |
-| Learning rate far too high | Rate inferred from AdamW's first update |
-| Missing `optimizer.step()` | Gradients exist, no parameter changes |
-| Train/eval normalization mismatch | Training and evaluation inputs differ |
-| Head larger than the label set | 1000 outputs for 2 classes |
-| Partly frozen backbone\* | Some backbone tensors never get gradients |
-| Training in eval mode\* | Steps train on eval-mode forwards |
-| Per-epoch schedule stepped every batch\* | The rate falls and rises within an epoch |
-
-\*Confirmed only with a healthy reference run; without one RunSleuth waits instead of
-guessing. Two more signatures, training on a held-out group and an epoch at zero
-learning rate, were added later and checked on one development seed only.
-
-| Camelyon17-WILDS, ResNet18 and DeiT-small | Development | Held-out |
-|---|---:|---:|
-| Correct diagnosis, given a healthy reference | 56/56 | 42/42 |
-| Without a reference: correct · deferred · wrong | 46 · 10 · 0 | 34 · 8 · 0 |
-| False positives on healthy runs | 0/32 | 0/24 |
-| Repairs accepted after retraining | 18/18 | 19/20 |
-
-Held-out seeds were drawn after signatures, prompt and thresholds were frozen. 11 of
-38 faulty runs stayed within the metric thresholds of their healthy runs. Faults were
-injected by the author, so this is not a statistical benchmark; numbers come from the
-[records](evaluations/results).
-
-## Agent Study
-
-| | |
-|---|---|
-| Question | When an agent says a training script is fixed, is it? Does RunSleuth's evidence help the agent, or catch it? |
-| Tasks | 22 Camelyon17 scripts: 9 faults RunSleuth knows, 7 it does not, 5 correct scripts that look faulty, 1 healthy |
-| Conditions | Code only, training runs, raw evidence, diagnosis, a verdict on the agent's own runs |
-| Models | Gemini 3.5 Flash-Lite and GPT-6 Luna, 550 episodes each |
-| Labels | Hidden contract tests written from the task statement |
-
-Frozen on 2026-10-13 before the first episode; every episode has run, and the results
-go into the report.
-
-## Repair Verification
-
-| | |
-|---|---|
-| Projects | Small pipelines (`config.py`, `data.py`, `train.py`) that own their data, checkpoints and delivered weights. The harness may stop and restart a run, and records which samples trained with which labels |
-| Tasks | Camelyon17: training-data filter, restart after a stop, delivered weights. HAM10000: restart after a stop, image cache, label mapping. Each has a development case and a held-out test case |
-| Candidates | 180 test repairs by Gemini 3.5 Flash-Lite, GPT-6.1 Sol, DeepSeek V4.1 Flash, Muse Spark 1.3 and Qwen3.8-27B, plus hand-written versions, partial repairs and runs with evidence removed, reported apart |
-| Verifiers | A calibrated metric gate; LLM reviewers Gemini 4 Argon and Claude Sonnet 5.5, from other vendors than the agents; RunSleuth v1; RunSleuth v2, which judges every requirement as supported, violated or untested and runs short probes chosen by what is still untested, against the same probes in a fixed order |
-| Labels | Hidden behavioural tests; blind review by two annotators audits them |
-| Reported | Wrong repairs accepted, correct ones rejected, share sent to review and cost, with denominators and 95% intervals from a bootstrap over cases |
-
-The verifiers, hidden tests and analysis were frozen on 2026-10-23, before the first
-test candidate ([`freeze.json`](evaluations/freeze.json)); the test seeds were drawn
-after. Agent-edited code runs in a subprocess under a Python-level guard, not in a
-container.
-
-Preliminary test results on the 180 agent repairs, 16 of them wrong (14 by
-Flash-Lite; Sol, Muse and Qwen repaired every test case):
-
-| Verifier | Wrong accepted | Correct rejected | Sent to review |
-|---|---:|---:|---:|
-| Metric gate | 12/16 | 7/164 | 0/180 |
-| RunSleuth v1 | 3/16 | 7/164 | 46/180 |
-| Gemini 4 Argon | 13/16 | 0/164 | 0/180 |
-| Claude Sonnet 5.5 | 2/16 | 0/164 | 2/180 |
-| RunSleuth v2 | 0/16 | 0/164 | 44/180 |
-
-The 16 wrong repairs come from 7 starting versions, so 95% intervals are wide (0/16
-reaches 0.41). v2 sends a correct repair to review when its batch order differs from
-the reference. The fixed-order control and the blind review of labels are still
-running.
-
-```bash
-python -m runsleuth.challenge_set plan --split test
-python -m runsleuth.candidates generate --split test --model-name gemini-3.5-flash-lite --provider gemini
-python -m runsleuth.verifier_v2 verify --split test --order gap
-python -m runsleuth.verifier_evaluation score --split test --reviewers gemini-4-argon claude-sonnet-5.5
-```
-
-## Roadmap
-
-| Stage                                                         | Status |
-| ------------------------------------------------------------- | :----: |
-| Training monitor, nine faults, ResNet18 and DeiT              |   ☑    |
-| Repair verification, held-out seeds, LLM explanation          |   ☑    |
-| Command line, Hugging Face callback, CI, Docker               |   ☑    |
-| Agent study: 22 tasks, 5 conditions, 2 LLMs                   |   ☑    |
-| Pipeline harness, hidden tests, six run-time tasks            |   ☑    |
-| Baselines and RunSleuth v2 on development cases, then freeze  |   ☑    |
-| Test repairs from five LLM agents                             |   ☑    |
-| Verifier comparison and blind review                          |   ◐    |
-| Report and release                                            |   ☐    |
-
-☑ done · ◐ in progress · ☐ planned
-
-## Reproduce
-
-Set `data_dir` in [`configs/camelyon17_clean.json`](configs/camelyon17_clean.json)
-(about 20 GB). Names in angle brackets are run directories that earlier commands print.
+To reproduce Table 3, set `data_dir` in
+[`configs/camelyon17_clean.json`](configs/camelyon17_clean.json) (about 20 GB); names
+in angle brackets are run directories printed by earlier commands.
 
 ```bash
 python -m runsleuth.camelyon --download --prepare-only
@@ -193,10 +204,25 @@ python -m runsleuth.heldout draw --count 2
 python -m runsleuth.heldout run --reference-run <baseline-run>
 ```
 
+## Roadmap
+
+| Stage                                                         | Status |
+| ------------------------------------------------------------- | :----: |
+| Training monitor, nine faults, ResNet18 and DeiT              |   ☑    |
+| Repair verification, held-out seeds, LLM explanation          |   ☑    |
+| Command line, Hugging Face callback, CI, Docker               |   ☑    |
+| Agent study: 22 tasks, 5 conditions, 2 LLMs                   |   ☑    |
+| Pipeline harness, hidden tests, six run-time tasks            |   ☑    |
+| Baselines and RunSleuth v2 on development cases, then freeze  |   ☑    |
+| Test repairs from five LLM agents, all verifiers              |   ☑    |
+| Blind review of the labels                                    |   ☐    |
+| Report and release                                            |   ☐    |
+
+☑ done · ☐ planned
+
+## Tests and License
+
 `python -m pytest` runs every test on CPU with tiny models and synthetic data;
 [GitHub Actions](.github/workflows/ci.yml) runs it on every push and inside the
-[Docker image](Dockerfile).
-
-## License
-
-[MIT](LICENSE). Datasets and pretrained weights keep their own licenses.
+[Docker image](Dockerfile). The code is released under the [MIT License](LICENSE);
+datasets and pretrained weights keep their own licenses.

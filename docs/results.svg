@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 284" width="1000" height="284" role="img" aria-labelledby="title desc" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title id="title">Test results on the agent repairs</title>
+  <desc id="desc">For each verifier, the share of the 16 wrong agent repairs it accepted, of the 164 correct ones it rejected, and of the 180 it sent to review, each with a 95% interval from a bootstrap over the 12 starting versions.</desc>
+  <rect x="0" y="0" width="1000" height="284" rx="10" fill="#ffffff"/>
+  <rect x="12" y="208" width="976" height="30" rx="6" fill="#f8e6ed" opacity="0.6"/>
+  <text x="178" y="77" text-anchor="end" font-size="13" fill="#1d1a26">Metric gate</text>
+  <text x="178" y="107" text-anchor="end" font-size="13" fill="#1d1a26">Stage-one gate</text>
+  <text x="178" y="137" text-anchor="end" font-size="13" fill="#1d1a26">RunSleuth v1</text>
+  <text x="178" y="167" text-anchor="end" font-size="13" fill="#1d1a26">Gemini 4 Argon</text>
+  <text x="178" y="197" text-anchor="end" font-size="13" fill="#1d1a26">Claude Sonnet 5.5</text>
+  <text x="178" y="227" text-anchor="end" font-size="13" fill="#1d1a26" font-weight="600">RunSleuth v2</text>
+  <text x="200" y="30" font-size="13" font-weight="600" fill="#1d1a26">Wrong repairs accepted</text>
+  <text x="200" y="46" font-size="12" fill="#5e5870">of 16 agent repairs</text>
+  <line x1="200" y1="58" x2="200" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="200" y="268" text-anchor="middle" font-size="11" fill="#5e5870">0%</text>
+  <line x1="255.0" y1="58" x2="255.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="255.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">25%</text>
+  <line x1="310.0" y1="58" x2="310.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="310.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">50%</text>
+  <line x1="365.0" y1="58" x2="365.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="365.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">75%</text>
+  <line x1="420.0" y1="58" x2="420.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="420.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">100%</text>
+  <line x1="310.0" y1="73" x2="404.3" y2="73" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="365.0" cy="73" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="294.3" y1="103" x2="406.2" y2="103" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="365.0" cy="103" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="200.0" y1="133" x2="320.1" y2="133" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="241.2" cy="133" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="325.7" y1="163" x2="420.0" y2="163" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="378.8" cy="163" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="200.0" y1="193" x2="280.0" y2="193" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="227.5" cy="193" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="200.0" y1="223" x2="290.1" y2="223" stroke="#b8325f" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="200.0" cy="223" r="5" fill="#b8325f" stroke="#ffffff" stroke-width="2"/>
+  <text x="470" y="30" font-size="13" font-weight="600" fill="#1d1a26">Correct repairs rejected</text>
+  <text x="470" y="46" font-size="12" fill="#5e5870">of 164 agent repairs</text>
+  <line x1="470" y1="58" x2="470" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="470" y="268" text-anchor="middle" font-size="11" fill="#5e5870">0%</text>
+  <line x1="525.0" y1="58" x2="525.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="525.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">25%</text>
+  <line x1="580.0" y1="58" x2="580.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="580.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">50%</text>
+  <line x1="635.0" y1="58" x2="635.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="635.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">75%</text>
+  <line x1="690.0" y1="58" x2="690.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="690.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">100%</text>
+  <line x1="470.0" y1="73" x2="494.3" y2="73" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="479.4" cy="73" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="470.0" y1="103" x2="500.7" y2="103" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="482.1" cy="103" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="470.0" y1="133" x2="494.3" y2="133" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="479.4" cy="133" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="470.0" y1="163" x2="528.2" y2="163" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="470.0" cy="163" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="470.0" y1="193" x2="528.2" y2="193" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="470.0" cy="193" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="470.0" y1="223" x2="528.2" y2="223" stroke="#b8325f" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="470.0" cy="223" r="5" fill="#b8325f" stroke="#ffffff" stroke-width="2"/>
+  <text x="740" y="30" font-size="13" font-weight="600" fill="#1d1a26">Sent to review</text>
+  <text x="740" y="46" font-size="12" fill="#5e5870">of 180 agent repairs</text>
+  <line x1="740" y1="58" x2="740" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="740" y="268" text-anchor="middle" font-size="11" fill="#5e5870">0%</text>
+  <line x1="795.0" y1="58" x2="795.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="795.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">25%</text>
+  <line x1="850.0" y1="58" x2="850.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="850.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">50%</text>
+  <line x1="905.0" y1="58" x2="905.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="905.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">75%</text>
+  <line x1="960.0" y1="58" x2="960.0" y2="250" stroke="#e6e4ee" stroke-width="1"/>
+  <text x="960.0" y="268" text-anchor="middle" font-size="11" fill="#5e5870">100%</text>
+  <line x1="740.0" y1="73" x2="798.2" y2="73" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="740.0" cy="73" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="740.0" y1="103" x2="798.2" y2="103" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="740.0" cy="103" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="758.3" y1="133" x2="839.0" y2="133" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="796.2" cy="133" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="740.0" y1="163" x2="798.2" y2="163" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="740.0" cy="163" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="740.0" y1="193" x2="746.1" y2="193" stroke="#3d3a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="742.4" cy="193" r="5" fill="#3d3a8c" stroke="#ffffff" stroke-width="2"/>
+  <line x1="749.8" y1="223" x2="843.9" y2="223" stroke="#b8325f" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="793.8" cy="223" r="5" fill="#b8325f" stroke="#ffffff" stroke-width="2"/>
+</svg>

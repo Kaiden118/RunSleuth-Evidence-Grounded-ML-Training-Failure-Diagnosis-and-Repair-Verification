@@ -102,6 +102,8 @@ class BlindReviewTests(unittest.TestCase):
     def test_packets_name_neither_candidates_nor_labels_and_order_items_apart(self):
         key = self.packets()
         self.assertEqual(sorted(key["items"]), [f"R{n:02d}" for n in range(1, 13)])
+        written = json.loads((self.root / "review" / "test" / "key.json").read_text("utf-8"))
+        self.assertEqual(written["audit"], blind_review.AUDIT)
         orders = []
         for annotator in ("author", "second"):
             packet = self.root / "review" / "test" / annotator
@@ -167,7 +169,15 @@ class BlindReviewTests(unittest.TestCase):
         labels = report["labels"]
         self.assertEqual((labels["agreed_units"], labels["agreed_candidates"]), (11, 33))
         self.assertEqual([item["id"] for item in labels["disputed"]], [ids[1]])
-        self.assertTrue((self.root / "review" / "test" / "report.json").exists())
+        written = json.loads((self.root / "review" / "test" / "report.json").read_text("utf-8"))
+        self.assertEqual(written["audit"], blind_review.AUDIT)
+
+    def test_the_audit_amends_the_freeze_and_keeps_the_main_labels(self):
+        audit = blind_review.AUDIT
+        self.assertEqual(audit["amends"], "evaluations/freeze.json analysis.labels")
+        self.assertIn("never edited", audit["main"])
+        self.assertIn("unsure never overturns", audit["confirmed"])
+        self.assertIn("nothing trains", audit["sensitivity"])
 
     def test_a_sheet_must_answer_every_item_once_with_a_known_verdict(self):
         key = self.packets()

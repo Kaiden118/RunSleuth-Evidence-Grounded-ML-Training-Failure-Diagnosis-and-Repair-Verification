@@ -1,7 +1,9 @@
 """The blind review that audits the hidden tests' labels.
 
 Labels come from the hidden tests alone; two annotators review the candidates' code to
-check them, and change none (evaluations/freeze.json). A label belongs to a project's
+check them. The main analysis keeps every label (evaluations/freeze.json); AUDIT, added
+after the freeze, says when a label counts as confirmed wrong and how audited labels
+enter a sensitivity analysis beside it. A label belongs to a project's
 code, so the review is of every distinct project a split's candidates hand in (units):
 an evidence-removed candidate hands in its parent's, and candidates whose modules agree
 hand in one. Settled with the user on 2026-10-26:
@@ -21,7 +23,7 @@ hand in one. Settled with the user on 2026-10-26:
   kappa, with unsure as its own category and again without the items either called
   unsure; then the annotators settle their disagreements together (consensus), and the
   consensus is compared with the labels, by unit and weighted by candidates. A label
-  the consensus disputes is checked and reported with its cause; it is not changed.
+  the consensus disputes is checked under AUDIT and reported with its cause.
 - Annotators. The second annotator is blind. The author reviews as well and knows the
   tasks, which the report states.
 
@@ -53,6 +55,38 @@ PILOT = {"wrong": 5, "correct": 5}
 VERDICTS = ("correct", "wrong", "unsure")
 DATASETS = {"camelyon_pipeline": "camelyon17", "ham10000_pipeline": "ham10000"}
 COLUMNS = ("id", "dataset", "verdict", "violated", "reason", "minutes")
+# Amends the freeze's analysis of labels. Decided with the user after an external review,
+# knowing every verifier's test results and before any answer of the test round.
+AUDIT = {
+    "decided_on": "2026-10-26",
+    "amends": "evaluations/freeze.json analysis.labels",
+    "known_when_decided": "every verifier's test results; no answer of the test round",
+    "main": "The main analysis keeps the hidden tests' labels; labels.json is never edited.",
+    "confirmed": (
+        "A label is confirmed wrong only when (1) the consensus verdict is the other of "
+        "correct and wrong (unsure never overturns a label); (2) for an item the "
+        "consensus calls wrong, it names the requirements broken and a run or input "
+        "anyone can repeat shows the item breaking them; for an item it calls correct, "
+        "the hidden test that fails it is shown to ask for something the statement does "
+        "not, or to be faulty; (3) both annotators accept that evidence."
+    ),
+    "audited": (
+        "Audited labels are the hidden tests' labels with every confirmed-wrong label "
+        "turned, for every candidate of its unit; written apart, each change with the "
+        "requirements and the evidence that confirm it."
+    ),
+    "sensitivity": (
+        "Every verifier is scored again from its stored decisions on the audited labels, "
+        "and again without the units still disputed; no agent is called and nothing "
+        "trains. Both are reported beside the main results, which stay as they are."
+    ),
+    "disputed": (
+        "A consensus that differs from a label without being confirmed leaves the label "
+        "disputed; it is reported with both sides."
+    ),
+    "hidden_tests": "A fault found in a hidden test is recorded, not fixed.",
+    "pilot": "The pilot follows the same rule for practice; its results are not reported.",
+}
 INSTRUCTIONS = """\
 # Blind review
 
@@ -207,6 +241,7 @@ def write_packets(
         "written_on": date.today().isoformat(),
         "seed": seed,
         "annotators": annotators,
+        "audit": AUDIT,
         "items": {
             item_id: {key: unit[key] for key in ("sha256", "family", "label", "candidates")}
             for item_id, unit in items.items()
@@ -335,6 +370,7 @@ def score(
         "round": round_name,
         "items": len(key["items"]),
         "minutes_per_item": round(sum(minutes) / len(minutes), 1) if minutes else None,
+        "audit": AUDIT,
         "agreement": {
             f"{a} / {b}": agreement(read[a], read[b])
             for n, a in enumerate(names)

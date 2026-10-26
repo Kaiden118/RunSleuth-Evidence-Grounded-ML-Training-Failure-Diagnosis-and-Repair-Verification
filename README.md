@@ -136,6 +136,22 @@ test candidate ([`freeze.json`](evaluations/freeze.json)); the test seeds were d
 after. Agent-edited code runs in a subprocess under a Python-level guard, not in a
 container.
 
+Preliminary test results on the 180 agent repairs, 16 of them wrong (14 by
+Flash-Lite; Sol, Muse and Qwen repaired every test case):
+
+| Verifier | Wrong accepted | Correct rejected | Sent to review |
+|---|---:|---:|---:|
+| Metric gate | 12/16 | 7/164 | 0/180 |
+| RunSleuth v1 | 3/16 | 7/164 | 46/180 |
+| Gemini 4 Argon | 13/16 | 0/164 | 0/180 |
+| Claude Sonnet 5.5 | 2/16 | 0/164 | 2/180 |
+| RunSleuth v2 | 0/16 | 0/164 | 44/180 |
+
+The 16 wrong repairs come from 7 starting versions, so 95% intervals are wide (0/16
+reaches 0.41). v2 sends a correct repair to review when its batch order differs from
+the reference. The fixed-order control and the blind review of labels are still
+running.
+
 ```bash
 python -m runsleuth.challenge_set plan --split test
 python -m runsleuth.candidates generate --split test --model-name gemini-3.5-flash-lite --provider gemini

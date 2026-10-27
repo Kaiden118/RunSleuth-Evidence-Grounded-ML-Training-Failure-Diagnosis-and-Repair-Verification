@@ -26,11 +26,19 @@ hand in one. Settled with the user on 2026-10-26:
   the consensus disputes is checked under AUDIT and reported with its cause.
 - Annotators. The second annotator is blind. The author reviews as well and knows the
   tasks, which the report states.
+- Audit. After the consensus, an audit sheet gives one row for every item whose
+  consensus differs from its label: confirmed or not, and for a confirmed one the
+  requirements, the evidence and the annotators who accept it (AUDIT_COLUMNS). audit
+  checks every row against AUDIT, writes the audited labels apart from the frozen ones,
+  and scores every verifier again with verifier_evaluation.score, unchanged, on copies
+  of its stored decisions: on the frozen labels (which must give the main scores again),
+  on the audited labels, and on the audited labels without the units still disputed.
 
     python -m runsleuth.blind_review packets --round pilot --annotators author second
     python -m runsleuth.blind_review packets --round test --annotators author second
     python -m runsleuth.blind_review score --round test --answers A.csv B.csv \\
         [--consensus C.csv]
+    python -m runsleuth.blind_review audit --round test --consensus C.csv --audit D.csv
 """
 
 import argparse
@@ -40,13 +48,14 @@ import hashlib
 import json
 import random
 import secrets
+import shutil
 from collections import Counter
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from runsleuth import candidates as candidate_set
-from runsleuth import pipeline_tasks
+from runsleuth import challenge_set, llm_reviewer, pipeline_tasks, verifier_evaluation
 from runsleuth.pipeline_tasks import HEALTHY
 
 ROOT = Path("artifacts/blind_review")
@@ -55,6 +64,9 @@ PILOT = {"wrong": 5, "correct": 5}
 VERDICTS = ("correct", "wrong", "unsure")
 DATASETS = {"camelyon_pipeline": "camelyon17", "ham10000_pipeline": "ham10000"}
 COLUMNS = ("id", "dataset", "verdict", "violated", "reason", "minutes")
+AUDIT_COLUMNS = ("id", "confirmed", "requirements", "evidence", "accepted_by")
+# The labels every verifier is scored on again; main must give the main scores again.
+RESCORED = ("main", "audited", "without_disputed")
 # Amends the freeze's analysis of labels. Decided with the user after an external review,
 # knowing every verifier's test results and before any answer of the test round.
 AUDIT = {
@@ -251,16 +263,23 @@ def write_packets(
     return key
 
 
-def read_answers(path: Path, key: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """An annotator's rows by item; every item of the round answered once. A sheet
-    saved by Excel on a Chinese Windows may be in GBK."""
+def _sheet(path: Path) -> list[dict[str, str]]:
+    """A sheet's rows; one saved by Excel on a Chinese Windows may be in GBK."""
     try:
         text = Path(path).read_text(encoding="utf-8-sig")
     except UnicodeDecodeError:
         text = Path(path).read_text(encoding="gbk")
-    rows = list(csv.DictReader(text.splitlines()))
+    return list(csv.DictReader(text.splitlines()))
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def read_answers(path: Path, key: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """An annotator's rows by item; every item of the round answered once."""
     answers = {}
-    for row in rows:
+    for row in _sheet(path):
         verdict = (row.get("verdict") or "").strip().lower()
         if verdict not in VERDICTS:
             raise ValueError(f"{path}: item {row.get('id')} has verdict {verdict!r}")
@@ -400,6 +419,255 @@ def report_text(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _numbers(text: str | None) -> list[int]:
+    return [int(part) for part in (text or "").split(";") if part.strip()]
+
+
+def _names(text: str | None) -> list[str]:
+    return sorted({part.strip() for part in (text or "").split(";") if part.strip()})
+
+
+def read_audit(
+    path: Path, key: dict[str, Any], consensus: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """The audit sheet by item: one row for every item whose consensus differs from its
+    label, and a confirmed row only where AUDIT's conditions hold."""
+    disputed = {
+        item_id: consensus[item_id]["verdict"]
+        for item_id, item in key["items"].items()
+        if consensus[item_id]["verdict"] != item["label"]
+    }
+    annotators = set(key["annotators"])
+    rows: dict[str, dict[str, Any]] = {}
+    for row in _sheet(path):
+        item_id = (row.get("id") or "").strip()
+        if item_id not in disputed:
+            raise ValueError(f"{path}: item {item_id!r} is not disputed")
+        if item_id in rows:
+            raise ValueError(f"{path}: item {item_id} is audited twice")
+        confirmed = (row.get("confirmed") or "").strip().lower()
+        if confirmed not in ("yes", "no"):
+            raise ValueError(f"{path}: item {item_id} has confirmed {confirmed!r}")
+        found = {
+            "confirmed": confirmed == "yes",
+            "verdict": disputed[item_id],
+            "requirements": _numbers(row.get("requirements")),
+            "evidence": (row.get("evidence") or "").strip(),
+            "accepted_by": _names(row.get("accepted_by")),
+        }
+        unknown = sorted(set(found["accepted_by"]) - annotators)
+        if unknown:
+            raise ValueError(f"{path}: item {item_id} names unknown annotators {unknown}")
+        if found["confirmed"]:
+            if found["verdict"] == "unsure":
+                raise ValueError(f"{path}: item {item_id}: an unsure consensus overturns nothing")
+            if not found["evidence"]:
+                raise ValueError(f"{path}: item {item_id} is confirmed without evidence")
+            if found["verdict"] == "wrong" and not found["requirements"]:
+                raise ValueError(
+                    f"{path}: item {item_id} is confirmed wrong without the requirements it breaks"
+                )
+            missing = sorted(annotators - set(found["accepted_by"]))
+            if missing:
+                raise ValueError(
+                    f"{path}: item {item_id} is confirmed without the annotators {missing}"
+                )
+        rows[item_id] = found
+    missing = sorted(set(disputed) - set(rows))
+    if missing:
+        raise ValueError(f"{path}: disputed items not audited: {missing}")
+    return rows
+
+
+def audited_labels(
+    key: dict[str, Any],
+    labels: dict[str, dict[str, Any]],
+    consensus: dict[str, dict[str, Any]],
+    sheet: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """The labels with every confirmed-wrong one turned, for every candidate of its unit;
+    the changes, and the units still disputed with both sides."""
+    audited = {cid: dict(found) for cid, found in labels.items()}
+    changes, disputed = [], []
+    for item_id, row in sorted(sheet.items()):
+        item = key["items"][item_id]
+        members = [cid for cid in item["candidates"] if cid in labels]
+        entry = {
+            "id": item_id,
+            "sha256": item["sha256"],
+            "candidates": members,
+            "label": item["label"],
+            "consensus": row["verdict"],
+        }
+        if row["confirmed"]:
+            for cid in members:
+                audited[cid] = dict(
+                    labels[cid], label=row["verdict"], audit={"item": item_id, "was": item["label"]}
+                )
+            changes.append(
+                {
+                    **entry,
+                    "requirements": row["requirements"],
+                    "evidence": row["evidence"],
+                    "accepted_by": row["accepted_by"],
+                }
+            )
+        else:
+            failed = sorted({c for cid in members for c in labels[cid].get("failed_clauses", [])})
+            disputed.append(
+                {
+                    **entry,
+                    "hidden_tests": f"failed {', '.join(failed)}" if failed else "passed",
+                    "consensus_reason": consensus[item_id]["reason"],
+                    "audit_note": row["evidence"],
+                }
+            )
+    return {"labels": audited, "changes": changes, "disputed": disputed}
+
+
+def rescore(
+    directory: Path,
+    split: str,
+    labels: dict[str, dict[str, dict[str, Any]]],
+    *,
+    candidates_root: Path = candidate_set.ROOT,
+    reviewers: tuple[str, ...] = challenge_set.REVIEWERS,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Every verifier scored by verifier_evaluation.score on each set of labels, from
+    copies of the split's stored decisions, each checked against its original."""
+    source = Path(candidates_root) / split
+    present = tuple(
+        name
+        for name in reviewers
+        if (source / "reviews" / name / llm_reviewer.REVIEWS_FILE).exists()
+    )
+    files = [
+        name
+        for name in (
+            "decisions.json",
+            *(f"v2-{order}.json" for order in verifier_evaluation.V2_ORDERS),
+        )
+        if (source / name).exists()
+    ]
+    files += [f"reviews/{name}/{llm_reviewer.REVIEWS_FILE}" for name in present]
+    copied = {name: _file_sha256(source / name) for name in files}
+    results = {}
+    for name, found in labels.items():
+        mirror = Path(directory) / "rescored" / name
+        for file in files:
+            target = mirror / split / file
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / file, target)
+            if _file_sha256(target) != copied[file]:
+                raise RuntimeError(f"{target} differs from {source / file}")
+        _write(
+            mirror / split / "labels.json",
+            json.dumps({"schema_version": 1, "task": f"labels_{name}", "labels": found}, indent=2)
+            + "\n",
+        )
+        results[name] = verifier_evaluation.score(split, mirror, present)
+    return results, copied
+
+
+def audit(
+    round_name: str,
+    consensus_path: Path,
+    audit_path: Path,
+    *,
+    root: Path = ROOT,
+    candidates_root: Path = candidate_set.ROOT,
+    reviewers: tuple[str, ...] = challenge_set.REVIEWERS,
+) -> dict[str, Any]:
+    """Check the audit sheet, write the audited labels beside the round's key and score
+    every verifier again (RESCORED); the frozen labels and scores stay as they are."""
+    directory = Path(root) / round_name
+    key = json.loads((directory / "key.json").read_text(encoding="utf-8"))
+    consensus = read_answers(consensus_path, key)
+    sheet = read_audit(audit_path, key, consensus)
+    split = ROUNDS[round_name]
+    labels_path = Path(candidates_root) / split / "labels.json"
+    labels = json.loads(labels_path.read_text(encoding="utf-8"))["labels"]
+    found = audited_labels(key, labels, consensus, sheet)
+    still = {cid for unit in found["disputed"] for cid in unit["candidates"]}
+    scores, copied = rescore(
+        directory,
+        split,
+        {
+            "main": labels,
+            "audited": found["labels"],
+            "without_disputed": {
+                cid: label for cid, label in found["labels"].items() if cid not in still
+            },
+        },
+        candidates_root=candidates_root,
+        reviewers=reviewers,
+    )
+    main_scores = Path(candidates_root) / split / "scores.json"
+    reproduces = None
+    if main_scores.exists():
+        stored = json.loads(main_scores.read_text(encoding="utf-8"))["verifiers"]
+        again = json.loads(json.dumps(scores["main"]["verifiers"]))
+        reproduces = {name: stored.get(name) for name in again} == again
+    record = {
+        "schema_version": 1,
+        "task": "audited_labels",
+        "round": round_name,
+        "split": split,
+        "audited_on": date.today().isoformat(),
+        "audit": AUDIT,
+        "inputs": {
+            "labels_sha256": _file_sha256(labels_path),
+            "consensus_sha256": _file_sha256(consensus_path),
+            "audit_sha256": _file_sha256(audit_path),
+        },
+        "copied": copied,
+        "main_reproduces_scores": reproduces,
+        "changes": found["changes"],
+        "disputed": found["disputed"],
+        "labels": found["labels"],
+    }
+    _write(directory / "audited_labels.json", json.dumps(record, indent=2) + "\n")
+    return {"record": record, "scores": scores}
+
+
+def audit_text(result: dict[str, Any]) -> str:
+    """Each verifier's rates under the frozen labels, the audited ones and the audited
+    ones without the units still disputed."""
+    record, scores = result["record"], result["scores"]
+    reproduces = {True: "yes", False: "NO", None: "no scores.json to compare"}
+    lines = [
+        f"{record['round']}: {len(record['changes'])} labels confirmed wrong, "
+        f"{len(record['disputed'])} units still disputed; main reproduces scores.json: "
+        f"{reproduces[record['main_reproduces_scores']]}"
+    ]
+    for change in record["changes"]:
+        lines.append(
+            f"  {change['id']}: {change['label']} -> {change['consensus']} "
+            f"({len(change['candidates'])} candidates): {change['evidence']}"
+        )
+    for unit in record["disputed"]:
+        lines.append(
+            f"  {unit['id']}: label {unit['label']} ({unit['hidden_tests']}), consensus "
+            f"{unit['consensus']}: {unit['consensus_reason']}"
+        )
+    groups = {g for scored in scores["main"]["verifiers"].values() for g in scored["groups"]}
+    group = "agent" if "agent" in groups else "all"
+    lines.append(f"{group} candidates: false acceptance, false rejection, review")
+    for name in scores["main"]["verifiers"]:
+        for labels in RESCORED:
+            rated = scores[labels]["verifiers"][name]["groups"].get(group)
+            if rated is None:
+                continue
+            interval = verifier_evaluation._interval(rated["intervals"]["false_acceptance"])
+            lines.append(
+                f"{name if labels == 'main' else '':<45} {labels:<17} "
+                f"{verifier_evaluation._cell(rated['false_acceptance']):>7} {interval:<17} "
+                f"{verifier_evaluation._cell(rated['false_rejection']):>8} "
+                f"{verifier_evaluation._cell(rated['review_share']):>8}"
+            )
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="The blind review of the labels.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -408,7 +676,11 @@ def build_parser() -> argparse.ArgumentParser:
     scored = commands.add_parser("score", help="Agreement, and the consensus against labels.")
     scored.add_argument("--answers", nargs="+", required=True, type=Path)
     scored.add_argument("--consensus", type=Path)
-    for command in (written, scored):
+    audited = commands.add_parser("audit", help="Audited labels and every verifier rescored.")
+    audited.add_argument("--consensus", type=Path, required=True)
+    audited.add_argument("--audit", type=Path, required=True)
+    audited.add_argument("--reviewers", nargs="*", default=challenge_set.REVIEWERS)
+    for command in (written, scored, audited):
         command.add_argument("--round", choices=tuple(ROUNDS), required=True)
     return parser
 
@@ -418,8 +690,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "packets":
         key = write_packets(args.round, args.annotators)
         print(f"{len(key['items'])} items for {args.annotators}: {ROOT / args.round}")
-    else:
+    elif args.command == "score":
         print(report_text(score(args.round, args.answers, args.consensus)))
+    else:
+        found = audit(args.round, args.consensus, args.audit, reviewers=tuple(args.reviewers))
+        print(audit_text(found))
     return 0
 
 

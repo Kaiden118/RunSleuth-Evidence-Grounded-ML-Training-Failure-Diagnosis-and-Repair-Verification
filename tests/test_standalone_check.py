@@ -1,4 +1,4 @@
-"""CPU tests for the checks of a program from outside: the screen, the two verdicts on
+"""CPU tests for the checks of a program from outside: the screen, the verdicts on
 made-up runs, and whole checks of a tiny program and of faulty edits of it."""
 
 import json
@@ -110,6 +110,12 @@ main()
 """
 EDITS = {
     "optimizer_not_restored": ('        optimizer.load_state_dict(state["optimizer"])\n', ""),
+    # The learning rates are restored, Adam's moments are not.
+    "moments_not_restored": (
+        '        optimizer.load_state_dict(state["optimizer"])\n',
+        '        optimizer.load_state_dict({**state["optimizer"], "state": {}})\n',
+    ),
+    "scheduler_not_restored": ('        scheduler.load_state_dict(state["scheduler"])\n', ""),
     "shuffled_by_the_clock": (
         "torch.Generator().manual_seed(1000 * args.seed + epoch)",
         'torch.Generator().manual_seed(int.from_bytes(os.urandom(4), "little"))',
@@ -130,11 +136,14 @@ def tiny_model():
     )
 
 
-def made_up_run(correct, delivered, reported=None, epochs=None):
-    """A run by what the checker measured: epoch n has the weights "w<n>" unless named."""
+def made_up_run(correct, delivered, reported=None, epochs=None, rates=None, last=0.0):
+    """A run by what the checker measured: epoch n has the weights "w<n>" unless named,
+    was trained at the rate 0.1 unless given, and the last weights are the number last."""
     names = epochs or [f"w{n}" for n in range(1, len(correct) + 1)]
     accuracies = reported or [count / 100 for count in correct]
+    rates = rates or [0.1] * len(correct)
     return {
+        "last_state": {"w": torch.tensor([last])},
         "epochs": [
             {"sha256": name, "correct": count} for name, count in zip(names, correct, strict=True)
         ],
@@ -143,8 +152,8 @@ def made_up_run(correct, delivered, reported=None, epochs=None):
             "correct": dict(zip(names, correct, strict=True)).get(delivered),
         },
         "log": [
-            {"epoch": n, "validation_accuracy": accuracy, "learning_rate": 0.1}
-            for n, accuracy in enumerate(accuracies, start=1)
+            {"epoch": n, "validation_accuracy": accuracy, "learning_rate": rate}
+            for n, (accuracy, rate) in enumerate(zip(accuracies, rates, strict=True), start=1)
         ],
         "log_order": None,
     }
@@ -231,6 +240,53 @@ class VerdictTests(unittest.TestCase):
             (tie["history"]["best_before_stop"], tie["history"]["strictly"]), (True, False)
         )
 
+    def test_the_same_run_twice_must_write_the_same_weights(self):
+        straight = made_up_run([70, 90, 80], "w2")
+        same = standalone_check.repeat_verdict(straight, made_up_run([70, 90, 80], "w2"))
+        self.assertEqual(
+            same,
+            {
+                "status": "holds",
+                "first_difference": None,
+                "largest_difference": 0.0,
+                "learning_rates_agree": True,
+            },
+        )
+        other = made_up_run([70, 90, 81], "w2", epochs=["w1", "x2", "x3"], last=0.25)
+        verdict = standalone_check.repeat_verdict(straight, other)
+        self.assertEqual((verdict["status"], verdict["first_difference"]), ("violated", 2))
+        self.assertEqual(verdict["largest_difference"], 0.25)
+
+    def test_restart_is_decided_by_the_log_before_the_weights(self):
+        restart = standalone_check.restart_verdict
+        straight = made_up_run([70, 90, 80], "w2", rates=[0.1, 0.075, 0.025])
+        repeats = standalone_check.repeat_verdict(straight, straight)
+        wanders = {**repeats, "status": "violated"}
+        same = made_up_run([70, 90, 80], "w2", rates=[0.1, 0.075, 0.025 + 1e-17])
+        self.assertEqual(restart(straight, same, repeats)["status"], "holds")
+        self.assertIsNone(restart(straight, same, repeats)["witness"])
+        # Other weights at the end: a violation for a program that repeats itself only.
+        ends = ["w1", "w2", "y3"]
+        moved = made_up_run([70, 90, 79], "w2", epochs=ends, rates=[0.1, 0.075, 0.025], last=0.5)
+        verdict = restart(straight, moved, repeats)
+        self.assertEqual((verdict["status"], verdict["witness"]), ("violated", "weights"))
+        self.assertEqual((verdict["first_difference"], verdict["largest_difference"]), (3, 0.5))
+        self.assertEqual(restart(straight, moved, wanders)["status"], "undecided")
+        # The schedule one epoch behind shows in the log, whatever the weights do.
+        behind = made_up_run([70, 90, 79], "w2", epochs=ends, rates=[0.1, 0.075, 0.075], last=0.5)
+        for repeat in (repeats, wanders):
+            verdict = restart(straight, behind, repeat)
+            self.assertEqual(
+                (verdict["status"], verdict["witness"]), ("violated", "learning_rates")
+            )
+        # Learning rates that already differ between two uninterrupted runs prove nothing.
+        unsteady = {**wanders, "learning_rates_agree": False}
+        self.assertEqual(restart(straight, behind, unsteady)["status"], "undecided")
+        # An epoch logged twice by the resumed run alone.
+        twice = {**same, "log_order": "the log's epochs are [1, 2, 2, 3], not 1 to 3"}
+        verdict = restart(straight, twice, wanders)
+        self.assertEqual((verdict["status"], verdict["witness"]), ("violated", "log_epochs"))
+
 
 @unittest.skipIf(torch is None, "Install torch and torchvision for the standalone tests")
 class CheckTests(unittest.TestCase):
@@ -258,71 +314,105 @@ class CheckTests(unittest.TestCase):
             self.root / "work" / name,
             seed=3,
             epochs=3,
-            stop_after=1,
             device="cpu",
             model_factory=tiny_model,
             **options,
         )
 
+    def names(self):
+        return {"model_name": "m", "dataset": "camelyon", "attempt": 1, "claim": "meets"}
+
     def test_a_program_that_resumes_exactly_holds_on_its_runs(self):
         record = self.check("healthy")
         self.assertEqual(record["category"], "decided")
         self.assertEqual(record["screen"], [])
-        self.assertEqual(list(record["trajectories"]), ["straight", "repeat", "resumed"])
-        restart = record["restart"]
-        self.assertEqual(restart["status"], "holds")
-        self.assertIsNone(restart["repeat_first_difference"])
-        self.assertIsNone(restart["resumed_first_difference"])
-        self.assertEqual(restart["resumed_largest_difference"], 0.0)
-        self.assertTrue(restart["learning_rates_agree"])
-        for name in ("straight", "resumed"):
-            self.assertEqual(record["delivery"][name]["status"], "holds")
+        self.assertEqual(record["stops"], [1, 2])
         self.assertEqual(
-            record["delivery"]["straight"]["correct"], record["delivery"]["resumed"]["correct"]
+            list(record["trajectories"]), ["straight", "repeat", "resumed-1", "resumed-2"]
         )
-        resumed = record["trajectories"]["resumed"]
-        self.assertEqual(
-            [call["arguments"][-2:] for call in resumed["calls"]][0], ["--stop-after", "1"]
-        )
+        self.assertEqual(record["repeat"]["status"], "holds")
+        self.assertEqual(record["restart"]["status"], "holds")
+        self.assertEqual(sorted(record["restart"]["stops"]), ["1", "2"])
+        for verdict in record["restart"]["stops"].values():
+            self.assertEqual((verdict["status"], verdict["witness"]), ("holds", None))
+            self.assertEqual(verdict["largest_difference"], 0.0)
+            self.assertTrue(verdict["learning_rates_agree"])
+        straight = record["delivery"]["straight"]
+        self.assertEqual(straight["status"], "holds")
+        for stop, verdict in record["delivery"]["resumed"].items():
+            self.assertEqual(verdict["status"], "holds")
+            self.assertEqual(verdict["correct"], straight["correct"])
+            self.assertEqual(
+                verdict["history"]["best_before_stop"], straight["best_epoch"] <= int(stop)
+            )
+        resumed = record["trajectories"]["resumed-1"]
+        self.assertEqual(resumed["calls"][0]["arguments"][-2:], ["--stop-after", "1"])
         self.assertEqual(resumed["calls"][1]["arguments"][-1], "--resume")
         self.assertIn("epoch_1.pt", resumed["files_after_stop"])
         self.assertNotIn("delivered.pt", resumed["files_after_stop"])
         self.assertNotIn("epoch_2.pt", resumed["files_after_stop"])
+        self.assertIn("epoch_2.pt", record["trajectories"]["resumed-2"]["files_after_stop"])
         # The log's accuracies are the checker's own counts over the validation samples.
-        straight = record["trajectories"]["straight"]
-        logged = [round(entry["validation_accuracy"] * 12) for entry in straight["log"]]
-        self.assertEqual(logged, [epoch["correct"] for epoch in straight["epochs"]])
+        run = record["trajectories"]["straight"]
+        logged = [round(entry["validation_accuracy"] * 12) for entry in run["log"]]
+        self.assertEqual(logged, [epoch["correct"] for epoch in run["epochs"]])
         self.assertEqual(record["validation_samples"], 12)
         self.assertFalse((self.root / "work" / "healthy").exists())
+        self.assertEqual(standalone_check.findings(record), [])
         json.dumps(record)
 
-    def test_an_optimizer_left_behind_violates_restart(self):
-        record = self.check("optimizer_not_restored")
+    def test_an_optimizer_left_behind_shows_in_the_log(self):
+        # The new optimizer starts again at the initial learning rate, which the log shows.
+        record = self.check("optimizer_not_restored", stops=[1])
+        verdict = record["restart"]["stops"]["1"]
+        self.assertEqual((verdict["status"], verdict["witness"]), ("violated", "learning_rates"))
+        self.assertEqual(verdict["first_difference"], 2)
+
+    def test_moments_left_behind_show_in_the_weights_alone(self):
+        record = self.check("moments_not_restored", stops=[1])
         self.assertEqual(record["category"], "decided")
+        self.assertEqual(record["repeat"]["status"], "holds")
+        verdict = record["restart"]["stops"]["1"]
+        self.assertEqual((verdict["status"], verdict["witness"]), ("violated", "weights"))
+        self.assertEqual(verdict["first_difference"], 2)
+        self.assertGreater(verdict["largest_difference"], 0)
+        self.assertTrue(verdict["learning_rates_agree"])
         self.assertEqual(record["restart"]["status"], "violated")
-        self.assertIsNone(record["restart"]["repeat_first_difference"])
-        self.assertEqual(record["restart"]["resumed_first_difference"], 2)
-        self.assertGreater(record["restart"]["resumed_largest_difference"], 0)
+        self.assertEqual(standalone_check.findings(record), ["restart (weights)"])
 
-    def test_a_program_that_does_not_repeat_itself_leaves_restart_undecided(self):
-        record = self.check("shuffled_by_the_clock")
+    def test_a_schedule_left_behind_shows_in_the_log(self):
+        record = self.check("scheduler_not_restored", stops=[1])
+        verdict = record["restart"]["stops"]["1"]
+        self.assertEqual((verdict["status"], verdict["witness"]), ("violated", "learning_rates"))
+        self.assertFalse(verdict["learning_rates_agree"])
+        self.assertEqual(standalone_check.findings(record), ["restart (learning_rates)"])
+
+    def test_a_program_that_does_not_repeat_itself_violates_repeat_and_leaves_restart_undecided(
+        self,
+    ):
+        record = self.check("shuffled_by_the_clock", stops=[1])
         self.assertEqual(record["category"], "decided")
+        self.assertEqual(record["repeat"]["status"], "violated")
+        self.assertEqual(record["repeat"]["first_difference"], 1)
+        self.assertTrue(record["repeat"]["learning_rates_agree"])
         self.assertEqual(record["restart"]["status"], "undecided")
-        self.assertEqual(record["restart"]["repeat_first_difference"], 1)
         self.assertIn(record["delivery"]["straight"]["status"], ("holds", "undecided"))
+        self.assertEqual(standalone_check.findings(record)[0], "repeat")
 
-    def test_a_resume_that_fails_is_a_runtime_failure(self):
+    def test_a_resume_that_fails_is_told_from_a_run_that_fails(self):
         record = self.check("resume_fails")
-        self.assertEqual(record["category"], "runtime_failure")
-        resumed = record["trajectories"]["resumed"]
+        self.assertEqual(record["category"], "resume_failure")
+        self.assertEqual(list(record["trajectories"]), ["straight", "repeat", "resumed-1"])
+        resumed = record["trajectories"]["resumed-1"]
         self.assertEqual([call["status"] for call in resumed["calls"]], ["completed", "crashed"])
         self.assertIn("KeyError", resumed["calls"][1]["output"])
-        self.assertIsNone(record["restart"])
+        self.assertEqual(record["restart"], {"status": None, "stops": {}})
+        self.assertEqual(record["repeat"]["status"], "holds")
         self.assertEqual(record["delivery"]["straight"]["status"], "holds")
-        self.assertIn(
-            "runtime_failure (resumed: completed crashed)",
-            standalone_check.line({**record, **self.names()}),
-        )
+        self.assertEqual(standalone_check.findings(record), ["resume_failure"])
+        text = standalone_check.line({**record, **self.names()})
+        self.assertIn("resume_failure (resumed-1: completed crashed); repeat holds", text)
+        self.assertIn("found: resume_failure; claims meets", text)
 
     def test_missing_files_are_an_unsupported_interface_and_end_the_check(self):
         record = self.check("nothing_delivered")
@@ -331,10 +421,12 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(
             record["trajectories"]["straight"]["problems"], ["delivered.pt is missing"]
         )
-        self.assertEqual(record["delivery"], {})
+        self.assertEqual(record["delivery"], {"straight": None, "resumed": {}})
+        self.assertEqual(standalone_check.findings(record), ["unsupported_interface"])
 
     def test_the_last_epoch_delivered_is_judged_by_the_checkers_counts(self):
-        record = self.check("last_epoch_delivered")
+        record = self.check("last_epoch_delivered", stops=[])
+        self.assertEqual(list(record["trajectories"]), ["straight", "repeat"])
         verdict = record["delivery"]["straight"]
         self.assertEqual(verdict["delivered_epochs"][-1], 3)
         expected = "holds" if verdict["best_epoch"] in verdict["delivered_epochs"] else None
@@ -342,6 +434,9 @@ class CheckTests(unittest.TestCase):
             best, last = (verdict["correct"][n - 1] for n in (verdict["best_epoch"], 3))
             expected = "violated" if last < best else "violated_tie"
         self.assertEqual(verdict["status"], expected)
+        self.assertEqual(
+            standalone_check.findings(record), [] if expected == "holds" else ["delivery"]
+        )
 
     def test_a_refused_program_is_not_run(self):
         program = self.root / "refused.py"
@@ -352,6 +447,7 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(record["category"], "refused")
         self.assertEqual(record["trajectories"], {})
         self.assertFalse((self.root / "work" / "refused").exists())
+        self.assertIn("refused (line 1", standalone_check.line({**record, **self.names()}))
 
     def test_an_existing_work_directory_is_never_touched(self):
         work = self.root / "work" / "taken"
@@ -365,25 +461,35 @@ class CheckTests(unittest.TestCase):
             )
         self.assertEqual((work / "mine.txt").read_text(encoding="utf-8"), "keep")
 
-    def names(self):
-        return {"model_name": "m", "dataset": "camelyon", "attempt": 1, "claim": "meets"}
-
-    def test_the_report_counts_categories_verdicts_and_informative_runs(self):
+    def test_the_report_counts_categories_verdicts_and_claims(self):
         self.assertEqual(standalone_check.report_text([]), "no checks")
         records = [
-            {**self.check("healthy", keep_weights=True), **self.names()},
-            {**self.check("nothing_delivered"), **self.names(), "attempt": 2},
+            {**self.check("healthy", stops=[1], keep_weights=True), **self.names()},
+            {**self.check("scheduler_not_restored", stops=[1]), **self.names(), "attempt": 2},
+            {**self.check("nothing_delivered"), **self.names(), "attempt": 3, "claim": None},
         ]
-        self.assertTrue((self.root / "work" / "healthy" / "resumed" / "delivered.pt").is_file())
+        self.assertTrue((self.root / "work" / "healthy" / "resumed-1" / "delivered.pt").is_file())
         text = standalone_check.report_text(records)
-        self.assertIn("m camelyon 1 seed 3: restart holds, delivery holds / resumed holds", text)
         self.assertIn(
-            "m camelyon 2 seed 3: unsupported_interface (straight: completed; delivered.pt is missing)",
+            "m camelyon 1 seed 3: decided; repeat holds; restart holds [1:holds]; "
+            "delivery holds, resumed [1:holds]; correct [",
             text,
         )
-        self.assertIn("2 checks: 1 unsupported_interface, 1 decided", text)
-        self.assertIn("restart: {'holds': 1}", text)
-        self.assertIn("best lies before the stop (resumed): ", text)
+        self.assertIn("found: nothing; claims meets", text)
+        self.assertIn("restart violated [1:violated]", text)
+        self.assertIn("found: restart (learning_rates); claims meets", text)
+        self.assertIn(
+            "m camelyon 3 seed 3: unsupported_interface "
+            "(straight: completed; delivered.pt is missing); claims None",
+            text,
+        )
+        self.assertIn("3 checks: 1 unsupported_interface, 2 decided", text)
+        self.assertIn("repeat: {'holds': 2}", text)
+        self.assertIn("restart: {'holds': 1, 'violated': 1}", text)
+        self.assertIn("delivery, resumed runs: {'holds': 2}", text)
+        self.assertIn(
+            "claims to meet every requirement: 2 of 3, of which something was found in 1", text
+        )
 
 
 if __name__ == "__main__":

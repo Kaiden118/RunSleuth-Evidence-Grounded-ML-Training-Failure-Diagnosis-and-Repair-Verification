@@ -160,7 +160,9 @@ It may write other files there for its own use.
    batches of 32 in the order given, and logs them. At the end it delivers the weights
    of the epoch with the highest validation accuracy among all the epochs of the run,
    before and after any restart, the earliest such epoch on a tie.
+"""
 
+_ANSWER = """
 ## Your answer
 
 Reply with the whole of `{program}` in one ```python block and nothing else of code.
@@ -175,10 +177,14 @@ def dataset(name: str) -> Dataset:
     return DATASETS[name]
 
 
-def statement(name: str, size: int | None = None) -> str:
-    """The task statement for a dataset; size is the images' side when not the dataset's."""
+def statement(name: str, size: int | None = None, *, answer: bool = True) -> str:
+    """The task statement for a dataset; size is the images' side when not the dataset's.
+
+    answer adds how to reply in one message. A model that works through tools
+    (standalone_agent) is told how to end by its own instructions instead.
+    """
     chosen = dataset(name)
-    return _STATEMENT.format(
+    return (_STATEMENT + (_ANSWER if answer else "")).format(
         program=PROGRAM,
         task=chosen.task,
         size=size or chosen.size,
@@ -268,6 +274,33 @@ def export(
         "sha256": {name: _sha256(directory / f"{name}.npy") for name in ARRAYS},
     }
     (directory / RECORD).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    return record
+
+
+def shrink(
+    source: Path, target: Path, *, max_train: int, max_validation: int, subset_seed: int = 2026
+) -> dict[str, Any]:
+    """Write a small copy of a --data directory: seeded subsets of both splits, in order."""
+    source, target = Path(source), Path(target)
+    target.mkdir(parents=True, exist_ok=True)
+    generator = torch.Generator().manual_seed(subset_seed)
+    counts = {}
+    for split, cap in (("train", max_train), ("validation", max_validation)):
+        images, labels = (np.load(source / f"{split}_{part}.npy") for part in ("images", "labels"))
+        kept = sorted(torch.randperm(len(labels), generator=generator)[:cap].tolist())
+        np.save(target / f"{split}_images.npy", images[kept])
+        np.save(target / f"{split}_labels.npy", labels[kept])
+        counts[split] = {"samples": len(kept), "of": len(labels), "positive": int(labels[kept].sum())}
+    record = {
+        "schema_version": 1,
+        "task": "standalone_data_subset",
+        "of_sha256": {name: _sha256(source / f"{name}.npy") for name in ARRAYS},
+        "subset_seed": subset_seed,
+        **counts,
+        "sha256": {name: _sha256(target / f"{name}.npy") for name in ARRAYS},
+    }
+    (target / RECORD).write_text(json.dumps(record, indent=2) + "
+", encoding="utf-8")
     return record
 
 

@@ -104,6 +104,32 @@ class StandaloneTaskTests(unittest.TestCase):
         ]
         self.assertEqual(positions, sorted(positions))
 
+    def test_a_tool_using_model_gets_the_statement_without_the_answer_format(self):
+        whole = standalone_task.statement("camelyon")
+        body = standalone_task.statement("camelyon", answer=False)
+        self.assertTrue(whole.startswith(body))
+        self.assertIn("## Your answer", whole)
+        self.assertNotIn("## Your answer", body)
+        self.assertNotIn("CLAIM", body)
+        self.assertTrue(body.rstrip().endswith("the earliest such epoch on a tie."))
+
+    def test_a_small_copy_is_a_seeded_subset_of_both_splits(self):
+        data = pipeline_workspace.synthetic_pipeline_data(7)
+        standalone_task.export(data, self.root / "whole")
+        options = {"max_train": 10, "max_validation": 5}
+        record = standalone_task.shrink(self.root / "whole", self.root / "small", **options)
+        again = standalone_task.shrink(self.root / "whole", self.root / "again", **options)
+        self.assertEqual((record["train"]["samples"], record["train"]["of"]), (10, 24))
+        self.assertEqual((record["validation"]["samples"], record["validation"]["of"]), (5, 12))
+        self.assertEqual(record["sha256"], again["sha256"])
+        images = np.load(self.root / "small" / "validation_images.npy")
+        labels = np.load(self.root / "small" / "validation_labels.npy")
+        self.assertEqual((images.shape, images.dtype), ((5, 3, 16, 16), np.uint8))
+        self.assertEqual(record["validation"]["positive"], int(labels.sum()))
+        whole = np.load(self.root / "whole" / "validation_images.npy").reshape(12, -1).tolist()
+        positions = [whole.index(image) for image in images.reshape(5, -1).tolist()]
+        self.assertEqual(positions, sorted(positions))
+
     def test_ham_labels_come_from_the_malignant_diagnoses(self):
         data = pipeline_workspace.synthetic_ham_pipeline_data(7)
         record = standalone_task.export(data, self.root)

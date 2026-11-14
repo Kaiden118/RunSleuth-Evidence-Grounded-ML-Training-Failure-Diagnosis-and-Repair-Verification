@@ -290,7 +290,11 @@ def shrink(
         kept = sorted(torch.randperm(len(labels), generator=generator)[:cap].tolist())
         np.save(target / f"{split}_images.npy", images[kept])
         np.save(target / f"{split}_labels.npy", labels[kept])
-        counts[split] = {"samples": len(kept), "of": len(labels), "positive": int(labels[kept].sum())}
+        counts[split] = {
+            "samples": len(kept),
+            "of": len(labels),
+            "positive": int(labels[kept].sum()),
+        }
     record = {
         "schema_version": 1,
         "task": "standalone_data_subset",
@@ -299,8 +303,7 @@ def shrink(
         **counts,
         "sha256": {name: _sha256(target / f"{name}.npy") for name in ARRAYS},
     }
-    (target / RECORD).write_text(json.dumps(record, indent=2) + "
-", encoding="utf-8")
+    (target / RECORD).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     return record
 
 

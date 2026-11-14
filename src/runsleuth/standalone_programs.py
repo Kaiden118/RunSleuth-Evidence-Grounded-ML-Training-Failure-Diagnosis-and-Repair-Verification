@@ -108,6 +108,7 @@ def write_program(client: Any, model: str, prompt: str) -> dict[str, Any]:
         "model": model,
         "prompt_version": PROMPT_VERSION,
         "system_prompt_sha256": _sha256(SYSTEM_PROMPT),
+        "statement_version": standalone_task.STATEMENT_VERSION,
         "statement_sha256": _sha256(prompt),
         "generation": GENERATION,
         "status": "api_error",

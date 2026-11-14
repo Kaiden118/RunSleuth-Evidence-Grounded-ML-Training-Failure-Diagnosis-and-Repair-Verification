@@ -43,6 +43,8 @@ class StandaloneTaskTests(unittest.TestCase):
         for number in range(1, 7):
             self.assertIn(f"\n{number}. ", text)
         self.assertIn("the same run made twice writes the same weights", text)
+        self.assertIn("are already in torchvision's cache", text)
+        self.assertEqual(standalone_task.STATEMENT_VERSION, 2)
         self.assertIn("trains\n   exactly as the uninterrupted run would have", text)
         self.assertIn("the earliest such epoch on a tie", text)
         for claim in standalone_task.CLAIMS:

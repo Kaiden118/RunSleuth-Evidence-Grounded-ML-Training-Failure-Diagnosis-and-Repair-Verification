@@ -123,6 +123,7 @@ class AttemptTests(unittest.TestCase):
         )
         self.assertEqual(record["status"], "written")
         self.assertEqual(record["generation"], "one call, no tools")
+        self.assertEqual(record["statement_version"], standalone_task.STATEMENT_VERSION)
         self.assertEqual(record["claim"], "meets")
         self.assertEqual(record["program_lines"], 3)
         self.assertEqual(record["call"]["served_model"], "fake-1")

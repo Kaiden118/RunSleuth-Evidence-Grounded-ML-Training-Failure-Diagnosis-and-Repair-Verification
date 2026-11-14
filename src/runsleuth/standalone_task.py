@@ -32,6 +32,9 @@ import torch
 
 from runsleuth import ham10000_data, pipeline_workspace
 
+# 2: says that the pretrained weights are in torchvision's cache. Version 1 did not, and
+# a model rightly answered that without a network it could not promise requirement 3.
+STATEMENT_VERSION = 2
 PROGRAM = "train.py"
 EPOCH_WEIGHTS = "epoch_{epoch}.pt"
 DELIVERED_WEIGHTS = "delivered.pt"
@@ -97,7 +100,7 @@ Write one Python file, `{program}`, that fine-tunes an ImageNet-pretrained ResNe
 {task}.
 
 Python 3.11 with torch, torchvision and numpy is installed; there is no network and no
-other package.
+other package. The ImageNet weights of ResNet18 are already in torchvision's cache.
 
 ## How the program is called
 

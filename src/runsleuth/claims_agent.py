@@ -35,7 +35,7 @@ from typing import Any
 
 import numpy as np
 
-from runsleuth import claims_run, claims_task, standalone_agent, standalone_check
+from runsleuth import claims_freeze, claims_run, claims_task, standalone_agent, standalone_check
 from runsleuth.llm_client import PROVIDERS, create_llm_client
 
 PROMPT_VERSION = 1
@@ -458,6 +458,13 @@ def write_attempts(
         raise ValueError(f"Unknown condition {condition!r}; choose from {', '.join(CONDITIONS)}")
     if not _NAME.match(model_name):
         raise ValueError(f"{model_name!r} cannot name a directory")
+    claims_freeze.guard(
+        output,
+        writer={"model_name": model_name, "provider": provider, "model": model},
+        dataset=dataset,
+        condition=condition,
+        attempts=attempts,
+    )
     chosen = claims_task.spec(dataset)
     given = Path(data) / chosen.name / claims_task.GIVEN
     small = Path(work) / "data-small" / chosen.name

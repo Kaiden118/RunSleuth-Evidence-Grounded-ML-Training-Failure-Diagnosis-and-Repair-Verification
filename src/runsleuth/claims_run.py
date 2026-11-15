@@ -34,7 +34,7 @@ from typing import Any
 
 import numpy as np
 
-from runsleuth import claims_task, standalone_check
+from runsleuth import claims_freeze, claims_task, standalone_check
 from runsleuth.agent_workspace import clean_environment
 
 SEED = 1
@@ -44,6 +44,10 @@ BOOTSTRAP_SAMPLES = 2000
 BOOTSTRAP_SEED = 2026
 SHOWN_OUTPUT = 4000
 RESULT_FILE = "submission.json"
+# The study's programs are labelled from their source, by both readers, before any
+# official run (claims_freeze.RULES).
+READERS = ("claude", "gpt-6-astra")
+LABEL_FILE = "labels-{reader}.json"
 OUTPUT_FILE = "output.txt"
 PREDICTIONS = "predictions.npy"
 # refused: the screen; runtime_failure and timeout: the training call; unsupported_interface:
@@ -380,8 +384,20 @@ def run_attempts(
 ) -> list[dict[str, Any]]:
     """The official run of every attempt with a program that has none yet, one at a time.
 
-    data holds a dataset's export per directory, as claims_task writes it.
+    data holds a dataset's export per directory, as claims_task writes it. In the study's
+    output the freeze must hold and every program must carry both readers' labels.
     """
+    claims_freeze.guard(output)
+    if Path(output).resolve() == Path(claims_freeze.PLAN["output"]).resolve():
+        unlabelled = [
+            f"{directory} has no {LABEL_FILE.format(reader=reader)}"
+            for directory in attempt_directories(output)
+            if (directory / claims_task.PROGRAM).is_file()
+            for reader in READERS
+            if not (directory / LABEL_FILE.format(reader=reader)).is_file()
+        ]
+        if unlabelled:
+            raise RuntimeError("label every program first: " + "; ".join(unlabelled))
     done = []
     for directory in attempt_directories(output):
         attempt = json.loads((directory / "attempt.json").read_text(encoding="utf-8"))

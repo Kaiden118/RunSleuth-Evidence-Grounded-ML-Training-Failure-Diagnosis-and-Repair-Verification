@@ -6,32 +6,31 @@
 ![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20ChatGPT%20%7C%20Claude%20%7C%20DeepSeek%20%7C%20Qwen%20%7C%20Muse-8E75B2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-RunSleuth decides whether to accept the repairs that LLM agents make to deep-learning
-training code. Training faults are often silent: the run completes and accuracy barely
-moves. RunSleuth judges each requirement of a task from evidence recorded while the
-repaired project trains and from short probe runs, then accepts the repair, rejects it,
-or sends it to human review. The requirements it checks are common to supervised
-training; we evaluate it on medical image classification.
+RunSleuth checks what LLM agents claim about the training code and the models they
+build, against evidence rather than their words. Its current study asks whether AI
+auditors can tell when an agent's claim about a medical image classifier is supported:
+how well the delivered network will work on lesions or slides it never saw, and on an
+image source or hospital absent from its data. Such a claim can agree with the agent's
+own code, logs and reruns and still fail where the network is used.
 
-On a held-out test split of 180 repairs written by five LLM agents for six faults in
-pathology (Camelyon17-WILDS) and dermoscopy (HAM10000) training pipelines, RunSleuth v2
-accepted none of the 16 wrong repairs, rejected none of the 164 correct ones, and sent
-44 to review. The strongest LLM reviewer accepted 2 of the wrong repairs and a
-calibrated metric gate 12. The results are preliminary until the blind review of the
-labels is complete. We now study when AI auditors give false assurance about the
-classifiers that agents build ([Claim Audit](#claim-audit)).
+Earlier work verified agents' repairs of training code. On 180 repairs written by five
+LLM agents for six silent faults in pathology (Camelyon17-WILDS) and dermoscopy
+(HAM10000) pipelines, RunSleuth v2 accepted none of the 16 wrong repairs and rejected
+none of the 164 correct ones, sending 44 to review; the strongest LLM reviewer accepted
+2 wrong repairs and a calibrated metric gate 12. These results are preliminary until the
+blind review of the labels.
 
-<p align="center"><img src="docs/overview.svg" alt="Verifying an LLM agent's repair" width="100%"></p>
-<p align="center"><em>Figure 1. A repair is trained in a harness that may stop and restart it. RunSleuth v2
-judges every requirement from the run's records and from probe runs chosen by what is
-still untested. Hidden behavioural tests label the candidates; no verifier sees them.</em></p>
+<p align="center"><img src="docs/claim_audit.svg" alt="Auditing the claims of an agent-built classifier" width="100%"></p>
+<p align="center"><em>Figure 1. An agent builds a classifier and states, for each use, how well it will work.
+A deterministic check and a regime-matched probe produce evidence that AI auditors may be
+given. Regimes sealed before any agent ran label every claim; no agent or auditor sees them.</em></p>
 
 ## Contents
 
 | Component | Question | Status |
 |---|---|---|
+| [Claim audit](#claim-audit) | When do AI auditors endorse performance claims about agent-built classifiers that the evidence does not support? | Pilot done; task version 2 built; confirmatory study being set up |
 | [Repair verification](#repair-verification) | Can acceptance catch wrong agent repairs without rejecting correct ones written differently, at bounded cost? | Test split complete; blind review pending |
-| [Claim audit](#claim-audit) | When do AI auditors give false assurance about the performance claims of agent-built classifiers? | Frozen; no results yet |
 | [Agent study](#agent-study) | Does RunSleuth's evidence help LLM agents repair training scripts, or only catch their mistakes? | Complete; results in the report |
 | [Diagnosis](#diagnosis-of-training-runs) | Can silent faults be diagnosed from a run's evidence, and repairs verified by retraining? | Complete |
 
@@ -47,7 +46,53 @@ pip install -e ".[dev,llm,hf,camelyon]"
 Python 3.11. Diagnosis runs on CPU; training needs an NVIDIA GPU with 8 GB. A Docker
 image is available: `docker build --target runtime -t runsleuth .`
 
+## Claim Audit
+
+### Design
+
+| | |
+|---|---|
+| Question | An agent builds a classifier and states how well it will work on new lesions or slides and on a new image source or hospital. Is the claim supported by its evidence, is it true on data no one saw, and can AI auditors tell? |
+| Data | HAM10000 (dermoscopy) and Camelyon17-WILDS (histopathology). Sealed before any agent ran: the vienna_dias source and 15% of the lesions of every other source; hospital 1 and two slides of every other hospital. |
+| Task | The agent gets every development image with its metadata and splits them itself. For each use, its program reports balanced accuracy and AUROC with 95% intervals, or says the data cannot support an estimate. It also writes `report.md` for the people who decide on the network and `partition.json`, the rows each network it trained was trained, chosen and measured on. |
+| Labels | Two per claim: warrant, whether the evidence supports it, judged without the sealed results; and optimism, how far the estimate exceeds what the delivered network measures on the sealed regime, with a bootstrap over lesions or slides. |
+| Auditors | LLM auditors given the report, then the code and log, then a checklist or our evidence. |
+| Our check | A deterministic check of the partition record and the code against the claim's scope, and a probe that re-runs the agent's program holding out a source or hospital of the development data. |
+
+### Pilot
+
+Version 1 of the task asked for point estimates only
+([`claims_freeze.json`](evaluations/claims_freeze.json); code at commit `d0a7e12`).
+Gemini 3.5 Flash-Lite wrote eight programs, and every agent said its program met every
+requirement.
+
+*Table 1. Pilot estimates of balanced accuracy against the sealed data.*
+
+| Dataset | Use | Estimate above the sealed 95% interval | By |
+|---|---|---:|---|
+| HAM10000 | new lesions | 1/4 | 0.06 |
+| HAM10000 | new source | 4/4 | 0.09–0.24 |
+| Camelyon17 | new slides | 0/4 | |
+| Camelyon17 | new hospital | 0/4 | |
+
+Three of the four HAM10000 programs never measured the new-source estimate on a source
+they had not trained on; the fourth held one out but trained on other images of some of
+its lesions. The Camelyon17 programs held out slides and a hospital.
+
+```bash
+python -m runsleuth.claims_task statement --dataset ham10000
+python -m runsleuth.claims_agent write --dataset ham10000 --condition neutral --model-name <writer> --provider <provider> --data <exports> --out <attempts> --work <work>
+python -m runsleuth.claims_run run --out <attempts> --data <exports> --work <runs>
+```
+
+Programs run in a subprocess under a Python-level guard, not in a container.
+
 ## Repair Verification
+
+<p align="center"><img src="docs/overview.svg" alt="Verifying an LLM agent's repair" width="100%"></p>
+<p align="center"><em>Figure 2. A repair is trained in a harness that may stop and restart it. RunSleuth v2
+judges every requirement from the run's records and from probe runs chosen by what is
+still untested. Hidden behavioural tests label the candidates; no verifier sees them.</em></p>
 
 ### Benchmark
 
@@ -71,7 +116,7 @@ image is available: `docker build --target runtime -t runsleuth .`
 
 ### Results
 
-*Table 1. Test results on the 180 agent repairs. Brackets give 95% intervals from a
+*Table 2. Test results on the 180 agent repairs. Brackets give 95% intervals from a
 bootstrap over the 12 starting versions.*
 
 | Verifier | Wrong accepted | Correct rejected | Sent to review | Cost per candidate |
@@ -84,7 +129,7 @@ bootstrap over the 12 starting versions.*
 | **RunSleuth v2** | **0/16 [0.00, 0.41]** | **0/164** | 44/180 | 2.6 probe runs, 152 GPU s |
 
 <p align="center"><img src="docs/results.svg" alt="Test results on the agent repairs" width="100%"></p>
-<p align="center"><em>Figure 2. Rates on the agent repairs with 95% intervals. Where a verifier made no error
+<p align="center"><em>Figure 3. Rates on the agent repairs with 95% intervals. Where a verifier made no error
 of a kind, the interval reaches the exact bound with the 12 starting versions as units.</em></p>
 
 - **Order of checks.** In the fixed order, v2 made the same 225 decisions with 3.2 probe
@@ -120,26 +165,6 @@ Agent-edited code runs in a subprocess under a Python-level guard, not in a cont
 The results cover two image classification pipelines with ResNet18, written for
 RunSleuth's harness; other tasks, models and code structures are untested.
 
-## Claim Audit
-
-| | |
-|---|---|
-| Question | An agent builds a classifier and reports how well it will work on new lesions or a new hospital. When do AI auditors accept claims the evidence does not support? |
-| Task | The agent gets all development images of HAM10000 or Camelyon17 with their metadata, splits them itself, delivers a ResNet18 and a report of balanced accuracy and AUROC on new lesions and a new source, or new slides and a new hospital. |
-| Sealed data | HAM10000: the vienna_dias source and 15% of the lesions of every other source. Camelyon17: hospital 1 and two slides of every other hospital. No program sees them. |
-| Errors | Nothing is planted. The data allow errors documented elsewhere: images of one lesion or patches of one slide on both sides of a split, a source that predicts the label, an estimate for a new site measured on known sites, choices made on the data an estimate is measured on. |
-| Writers | Gemini 3.5 Flash-Lite and GPT-6.1 Sol, with and without pressure to report high scores, two attempts each: 16 submissions |
-| Labels | The official run measures every estimate on the sealed data with a bootstrap over lesions or slides. Two readers label each program's code before any result is read. |
-
-The study was frozen on 2026-11-14 ([`claims_freeze.json`](evaluations/claims_freeze.json)),
-before its first submission.
-
-```bash
-python -m runsleuth.claims_freeze check
-python -m runsleuth.claims_agent write --dataset ham10000 --condition neutral --model-name <writer> --provider <provider> --attempts 2 --data <exports> --out artifacts/claims/study --work <work>
-python -m runsleuth.claims_run run --out artifacts/claims/study --data <exports> --work <runs>
-```
-
 ## Agent Study
 
 | | |
@@ -156,10 +181,10 @@ its results will appear in the report.
 ## Diagnosis of Training Runs
 
 <p align="center"><img src="docs/pipeline.svg" alt="Diagnosis and repair verification of a training run" width="100%"></p>
-<p align="center"><em>Figure 3. A recorded run is matched against failure signatures, compared with a healthy
+<p align="center"><em>Figure 4. A recorded run is matched against failure signatures, compared with a healthy
 reference run, and a repair is accepted only after retraining verifies it.</em></p>
 
-*Table 2. Faults and the evidence that decides them.*
+*Table 3. Faults and the evidence that decides them.*
 
 | Fault | Decisive evidence |
 |---|---|
@@ -177,7 +202,7 @@ reference run, and a repair is accepted only after retraining verifies it.</em><
 further signatures, training on a held-out group and an epoch at zero learning rate,
 were checked on one development seed only.
 
-*Table 3. Diagnosis on Camelyon17-WILDS with ResNet18 and DeiT-small (Hugging Face).
+*Table 4. Diagnosis on Camelyon17-WILDS with ResNet18 and DeiT-small (Hugging Face).
 Held-out seeds were drawn after signatures, prompt and thresholds were frozen.*
 
 | | Development | Held-out |
@@ -217,7 +242,7 @@ Runs are recorded with `runsleuth.run_monitor.RunMonitor`, or with
 `runsleuth.hf_callback.RunSleuthCallback` for the Hugging Face `Trainer`. An optional
 LLM explanation must cite the evidence and cannot change the diagnosis.
 
-To reproduce Table 3, set `data_dir` in
+To reproduce Table 4, set `data_dir` in
 [`configs/camelyon17_clean.json`](configs/camelyon17_clean.json) (about 20 GB); names
 in angle brackets are run directories printed by earlier commands.
 
@@ -236,21 +261,18 @@ python -m runsleuth.heldout run --reference-run <baseline-run>
 
 ## Roadmap
 
-| Stage                                                         | Status |
-| ------------------------------------------------------------- | :----: |
-| Training monitor, nine faults, ResNet18 and DeiT              |   ☑    |
-| Repair verification, held-out seeds, LLM explanation          |   ☑    |
-| Command line, Hugging Face callback, CI, Docker               |   ☑    |
-| Agent study: 22 tasks, 5 conditions, 2 LLMs                   |   ☑    |
-| Pipeline harness, hidden tests, six run-time tasks            |   ☑    |
-| Baselines and RunSleuth v2 on development cases, then freeze  |   ☑    |
-| Test repairs from five LLM agents, all verifiers              |   ☑    |
-| Same-evidence screening of the LLM reviewer                   |   ☑    |
-| Claim audit: task, sealed data, agent, official run, freeze   |   ☑    |
-| Claim audit: 16 submissions and code labels                   |   ◐    |
-| Claim audit: auditors with and without experiments            |   ☐    |
-| Blind review of the labels                                    |   ☐    |
-| Report and release                                            |   ☐    |
+| Stage | Sep | Oct | Nov | Dec | Jan | Feb–May | Status |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Diagnosis: monitor, nine faults, ResNet18 and DeiT, CLI, CI | ███ | ██ | | | | | ☑ |
+| Agent study: 22 tasks, 5 conditions, 2 LLMs | | ███ | | | | | ☑ |
+| Repair verification: harness, hidden tests, v2, five agents | | ███ | █ | | | | ☑ |
+| Claim audit pilot: sealed data, eight programs, code labels | | | ██ | | | | ☑ |
+| Claim audit task v2, sealed-data isolation, freeze | | | ███ | | | | ◐ |
+| Writers: 96 programs, official runs, labels | | | | ███ | | | ☐ |
+| Auditors, deterministic check, regime-matched probe | | | | ███ | | | ☐ |
+| Analysis and report | | | | █ | ██ | | ☐ |
+| Blind review of the repair labels | | | | | | ███ | ☐ |
+| A third dataset; release of code, splits and prompts | | | | | | ███ | ☐ |
 
 ☑ done · ◐ in progress · ☐ planned
 

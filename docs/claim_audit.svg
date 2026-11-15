@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 340" width="1000" height="340" role="img" aria-labelledby="title desc" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title id="title">Auditing the claims of an agent-built classifier</title>
+  <desc id="desc">An LLM agent gets the development data, writes a training program and tries it on a small copy. The official run delivers a network, a report and a record of the rows each trained network used. For each use the report gives an estimate with a 95% interval, or says the use is not estimable. A deterministic check of the partition record and the code, and a probe that re-runs the program holding out a source or hospital, produce evidence that AI auditors may be given along with the report, code and log. Regimes sealed before any agent ran label every claim: its warrant, judged without the sealed results, and its optimism, the delivered network's measured performance on the sealed regime.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#3d3a8c"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="340" rx="10" fill="#ffffff"/>
+  <rect x="12" y="30" width="150" height="74" rx="8" fill="#eeecf8" stroke="#3d3a8c" stroke-width="1.5"/>
+  <text x="87.0" y="55" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">Development data</text>
+  <text x="87.0" y="74" text-anchor="middle" font-size="12" fill="#5e5870">images and metadata;</text>
+  <text x="87.0" y="91" text-anchor="middle" font-size="12" fill="#5e5870">the agent splits them</text>
+  <rect x="190" y="30" width="160" height="74" rx="8" fill="#eeecf8" stroke="#3d3a8c" stroke-width="1.5"/>
+  <text x="270.0" y="55" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">LLM agent</text>
+  <text x="270.0" y="74" text-anchor="middle" font-size="12" fill="#5e5870">writes train.py and runs</text>
+  <text x="270.0" y="91" text-anchor="middle" font-size="12" fill="#5e5870">it on a small copy</text>
+  <rect x="378" y="30" width="170" height="74" rx="8" fill="#eeecf8" stroke="#3d3a8c" stroke-width="1.5"/>
+  <text x="463.0" y="55" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">Official run</text>
+  <text x="463.0" y="74" text-anchor="middle" font-size="12" fill="#5e5870">delivered network, report,</text>
+  <text x="463.0" y="91" text-anchor="middle" font-size="12" fill="#5e5870">partition record</text>
+  <rect x="576" y="30" width="196" height="74" rx="8" fill="#eeecf8" stroke="#3d3a8c" stroke-width="1.5"/>
+  <text x="674.0" y="55" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">Claim per use</text>
+  <text x="674.0" y="74" text-anchor="middle" font-size="12" fill="#5e5870">estimate and 95% interval,</text>
+  <text x="674.0" y="91" text-anchor="middle" font-size="12" fill="#5e5870">or not estimable</text>
+  <rect x="270" y="150" width="200" height="70" rx="8" fill="#f8e6ed" stroke="#b8325f" stroke-width="1.5"/>
+  <text x="370.0" y="173" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">Deterministic check</text>
+  <text x="370.0" y="192" text-anchor="middle" font-size="12" fill="#5e5870">partition record and code</text>
+  <text x="370.0" y="209" text-anchor="middle" font-size="12" fill="#5e5870">against the claim's scope</text>
+  <rect x="498" y="150" width="220" height="70" rx="8" fill="#f8e6ed" stroke="#b8325f" stroke-width="1.5"/>
+  <text x="608.0" y="173" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">Regime-matched probe</text>
+  <text x="608.0" y="192" text-anchor="middle" font-size="12" fill="#5e5870">re-runs train.py holding out</text>
+  <text x="608.0" y="209" text-anchor="middle" font-size="12" fill="#5e5870">a source or a hospital</text>
+  <rect x="746" y="150" width="242" height="70" rx="8" fill="#eeecf8" stroke="#3d3a8c" stroke-width="1.5"/>
+  <text x="867.0" y="173" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">AI auditors</text>
+  <text x="867.0" y="192" text-anchor="middle" font-size="12" fill="#5e5870">report, then code and log, then</text>
+  <text x="867.0" y="209" text-anchor="middle" font-size="12" fill="#5e5870">a checklist or our evidence</text>
+  <rect x="12" y="262" width="230" height="62" rx="8" fill="#ffffff" stroke="#3d3a8c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="127.0" y="281" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">Sealed regimes</text>
+  <text x="127.0" y="300" text-anchor="middle" font-size="12" fill="#5e5870">fixed before any agent ran;</text>
+  <text x="127.0" y="317" text-anchor="middle" font-size="12" fill="#5e5870">no agent or auditor sees them</text>
+  <rect x="270" y="262" width="718" height="62" rx="8" fill="#ffffff" stroke="#3d3a8c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="629.0" y="281" text-anchor="middle" font-size="14" font-weight="600" fill="#1d1a26">Labels per claim</text>
+  <text x="629.0" y="300" text-anchor="middle" font-size="12" fill="#5e5870">warrant: does the evidence support the claim (blind to sealed results)</text>
+  <text x="629.0" y="317" text-anchor="middle" font-size="12" fill="#5e5870">optimism: the delivered network on the sealed regime</text>
+  <g fill="none" stroke="#3d3a8c" stroke-width="1.5" marker-end="url(#arrow)">
+    <path d="M162 67 H187"/>
+    <path d="M350 67 H375"/>
+    <path d="M548 67 H573"/>
+    <path d="M420 104 V147"/>
+    <path d="M520 104 V147"/>
+    <path d="M640 104 V147"/>
+    <path d="M760 104 V147"/>
+    <path d="M470 185 H495"/>
+    <path d="M718 185 H743"/>
+  </g>
+  <path d="M242 293 H267" fill="none" stroke="#3d3a8c" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+</svg>

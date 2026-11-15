@@ -1,5 +1,6 @@
-"""Writes docs/overview.svg (the framework) and docs/results.svg (test results on the agent
-repairs, from artifacts/candidates/test/scores.json). Same style as docs/pipeline.svg."""
+"""Writes docs/claim_audit.svg (the claim audit), docs/overview.svg (repair verification) and
+docs/results.svg (test results on the agent repairs, from artifacts/candidates/test/scores.json).
+Same style as docs/pipeline.svg."""
 
 import json
 from pathlib import Path
@@ -88,6 +89,93 @@ def overview() -> str:
 """
 
 
+def claim_audit() -> str:
+    parts = [
+        box(12, 30, 150, 74, "Development data", ("images and metadata;", "the agent splits them")),
+        box(190, 30, 160, 74, "LLM agent", ("writes train.py and runs", "it on a small copy")),
+        box(378, 30, 170, 74, "Official run", ("delivered network, report,", "partition record")),
+        box(576, 30, 196, 74, "Claim per use", ("estimate and 95% interval,", "or not estimable")),
+        box(
+            270,
+            150,
+            200,
+            70,
+            "Deterministic check",
+            ("partition record and code", "against the claim's scope"),
+            fill=ACCENT_FILL,
+            stroke=ACCENT,
+        ),
+        box(
+            498,
+            150,
+            220,
+            70,
+            "Regime-matched probe",
+            ("re-runs train.py holding out", "a source or a hospital"),
+            fill=ACCENT_FILL,
+            stroke=ACCENT,
+        ),
+        box(
+            746,
+            150,
+            242,
+            70,
+            "AI auditors",
+            ("report, then code and log, then", "a checklist or our evidence"),
+        ),
+        box(
+            12,
+            262,
+            230,
+            62,
+            "Sealed regimes",
+            ("fixed before any agent ran;", "no agent or auditor sees them"),
+            fill="#ffffff",
+            dashed=True,
+        ),
+        box(
+            270,
+            262,
+            718,
+            62,
+            "Labels per claim",
+            (
+                "warrant: does the evidence support the claim (blind to sealed results)",
+                "optimism: the delivered network on the sealed regime",
+            ),
+            fill="#ffffff",
+            dashed=True,
+        ),
+    ]
+    arrows = [
+        "M162 67 H187",
+        "M350 67 H375",
+        "M548 67 H573",
+        "M420 104 V147",
+        "M520 104 V147",
+        "M640 104 V147",
+        "M760 104 V147",
+        "M470 185 H495",
+        "M718 185 H743",
+    ]
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 340" width="1000" height="340" role="img" aria-labelledby="title desc" font-family="{FONT}">
+  <title id="title">Auditing the claims of an agent-built classifier</title>
+  <desc id="desc">An LLM agent gets the development data, writes a training program and tries it on a small copy. The official run delivers a network, a report and a record of the rows each trained network used. For each use the report gives an estimate with a 95% interval, or says the use is not estimable. A deterministic check of the partition record and the code, and a probe that re-runs the program holding out a source or hospital, produce evidence that AI auditors may be given along with the report, code and log. Regimes sealed before any agent ran label every claim: its warrant, judged without the sealed results, and its optimism, the delivered network's measured performance on the sealed regime.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="{LINE}"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="340" rx="10" fill="#ffffff"/>
+  {chr(10).join("  " + p for p in parts).strip()}
+  <g fill="none" stroke="{LINE}" stroke-width="1.5" marker-end="url(#arrow)">
+    {chr(10).join(f'    <path d="{d}"/>' for d in arrows).strip()}
+  </g>
+  <path d="M242 293 H267" fill="none" stroke="{LINE}" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+</svg>
+"""
+
+
 ROWS = (
     ("metric_gate", "Metric gate"),
     ("stage_one_gate", "Stage-one gate"),
@@ -167,6 +255,7 @@ if __name__ == "__main__":
     scores = json.loads(Path("artifacts/candidates/test/scores.json").read_text(encoding="utf-8"))[
         "verifiers"
     ]
+    Path("docs/claim_audit.svg").write_text(claim_audit(), encoding="utf-8", newline="\n")
     Path("docs/overview.svg").write_text(overview(), encoding="utf-8", newline="\n")
     Path("docs/results.svg").write_text(results(scores), encoding="utf-8", newline="\n")
     print("ok")

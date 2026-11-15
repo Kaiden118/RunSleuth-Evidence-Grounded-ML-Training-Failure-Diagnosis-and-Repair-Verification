@@ -121,5 +121,13 @@
     "stop": "If fewer than 3 of the 16 submissions have a contradicted estimate or a code-level violation (the first four code labels), the natural-error premise is weak: the study stops for a new assessment, and prompts are not changed to produce errors.",
     "changes": "After the freeze a fix is allowed only as a recorded deviation; a change to a statement, a prompt, the data or these rules makes the earlier submissions development data."
   },
-  "deviations": []
+  "deviations": [],
+  "plan_deviations": [
+    {
+      "recorded_at": "2026-11-15",
+      "deviation": "Only the 8 Flash-Lite episodes were run; the 8 gpt-6.1-sol episodes were not run.",
+      "reason": "After the 8 Flash-Lite episodes the direction was being re-scoped (external validity of free-form claims as the main condition); Sol was held until the design is settled, as proposed to and accepted by the user.",
+      "effect": "The stop rule '<3 of 16' cannot be applied as written; the 8 programs are reported as a pilot of the explicit-scope condition, and the read of the stop rule is stated with this denominator."
+    }
+  ]
 }

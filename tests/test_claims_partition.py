@@ -7,7 +7,7 @@ from pathlib import Path
 
 from runsleuth import claims_partition, claims_task
 
-HAM = claims_task.SPECS["ham10000"]
+HAM = claims_task.spec("ham10000-vienna_dias")
 USES = [claim.name for claim in HAM.claims]
 
 # Twelve rows: lesions a to f, two images each; a to d from vidir_modern and rosendahl,

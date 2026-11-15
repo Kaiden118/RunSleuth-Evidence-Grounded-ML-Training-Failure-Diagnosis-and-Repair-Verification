@@ -21,7 +21,7 @@ from test_standalone_agent import FakeClient, call, finish
 
 from runsleuth import claims_agent, claims_task
 
-HAM, CAMELYON = claims_task.SPECS["ham10000"], claims_task.SPECS["camelyon"]
+HAM, CAMELYON = claims_task.spec("ham10000-vienna_dias"), claims_task.spec("camelyon-1")
 
 
 def export(root, rows, chosen):
@@ -65,17 +65,43 @@ class SmallCopyTests(unittest.TestCase):
             sorted(p.name for p in (self.root / "small").iterdir()), ["images.npy", "metadata.csv"]
         )
 
-    def test_a_small_camelyon_copy_takes_a_few_patches_of_every_slide(self):
+    def test_a_small_copy_holds_every_source_and_label(self):
+        given = export(self.root / "ham", ham_rows(), HAM)
+        record = claims_agent.small_copy(given, self.root / "small", HAM, rows=60, seed=1)
+        full, small = table(given), table(self.root / "small")
+        cells = {(line["source"], line["label"]) for line in full}
+        self.assertEqual({(line["source"], line["label"]) for line in small}, cells)
+        self.assertEqual(len(cells), 6)
+        # Taken in turn, no source and label has far more lesions than another.
+        lesions = {}
+        for line in small:
+            lesions.setdefault((line["source"], line["label"]), set()).add(line["lesion_id"])
+        sizes = sorted(len(found) for found in lesions.values())
+        self.assertLessEqual(sizes[-1] - sizes[0], 2)
+        self.assertEqual(
+            record["by_site_and_label"],
+            {
+                source: {
+                    label: sum((line["source"], line["label"]) == (source, label) for line in small)
+                    for label in ("0", "1")
+                }
+                for source in sorted({line["source"] for line in small})
+            },
+        )
+        again = claims_agent.small_copy(given, self.root / "again", HAM, rows=60, seed=1)
+        self.assertEqual(again["sha256"], record["sha256"])
+
+    def test_a_small_camelyon_copy_takes_a_few_patches_of_every_patient(self):
         given = export(self.root / "camelyon", camelyon_rows(), CAMELYON)
-        claims_agent.small_copy(given, self.root / "small", CAMELYON, rows=512, per_group=10)
+        claims_agent.small_copy(given, self.root / "small", CAMELYON, rows=512, per_group=9)
         small = table(self.root / "small")
-        slides = {line["slide"] for line in table(given)}
-        self.assertEqual({line["slide"] for line in small}, slides)
+        patients = {line["patient"] for line in table(given)}
+        self.assertEqual({line["patient"] for line in small}, patients)
         per = {}
         for line in small:
-            key = (line["slide"], line["label"])
+            key = (line["patient"], line["label"])
             per[key] = per.get(key, 0) + 1
-        self.assertEqual(max(per.values()), 10)
+        self.assertEqual(max(per.values()), 9)
 
 
 class PromptTests(unittest.TestCase):
@@ -139,6 +165,22 @@ class EpisodeTests(unittest.TestCase):
         results = [step["tool_calls"][0]["result"] for step in record["steps"]]
         self.assertEqual(results[1]["images.npy"]["shape"][0], len(table(self.given)))
         self.assertEqual(len(results[1]["metadata.csv"]["first_lines"]), 21)
+        shown = results[1]["metadata.csv"]
+        full = table(self.given)
+        self.assertEqual(
+            shown["samples_by_label"],
+            {label: sum(line["label"] == label for line in full) for label in ("0", "1")},
+        )
+        self.assertEqual(
+            shown["columns"]["lesion_id"],
+            {"distinct_values": len({line["lesion_id"] for line in full})},
+        )
+        by_source = shown["columns"]["source"]["samples_by_label"]
+        self.assertEqual(sorted(by_source), ["rosendahl", "vidir_modern", "vidir_molemax"])
+        self.assertEqual(
+            by_source["rosendahl"]["1"],
+            sum((line["source"], line["label"]) == ("rosendahl", "1") for line in full),
+        )
         self.assertIn("has been used", results[3]["error"])
         system = client.requests[0]["messages"][0]["content"]
         self.assertIn(f"40 of the {len(table(self.given))} samples", system)
@@ -200,7 +242,7 @@ class RunnerTests(unittest.TestCase):
     def test_attempts_are_kept_with_their_program_and_made_once(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            export(root / "data" / "ham10000", ham_rows(), HAM)
+            export(root / "data" / HAM.name, ham_rows(), HAM)
             replies = [
                 [call("write_file", 1, content="pass\n")],
                 finish(2, meets=False, reason="x"),
@@ -208,7 +250,7 @@ class RunnerTests(unittest.TestCase):
             lines = []
             (record,) = claims_agent.write_attempts(
                 root / "programs",
-                "ham10000",
+                HAM.name,
                 "pressure",
                 "fake",
                 FakeClient(replies),
@@ -221,7 +263,8 @@ class RunnerTests(unittest.TestCase):
                 progress=lines.append,
                 sleep=lambda seconds: None,
             )
-            directory = root / "programs" / "fake" / "ham10000" / "pressure" / "attempt-1"
+            directory = root / "programs" / "fake" / HAM.name / "pressure" / "attempt-1"
+            self.assertEqual((record["world"], record["dataset"]), (HAM.name, "ham10000"))
             self.assertEqual((directory / claims_task.PROGRAM).read_text(), "pass\n")
             self.assertEqual(
                 (record["status"], record["claim"], record["condition"]),
@@ -231,11 +274,11 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(record["statement_sha256"], claims_agent._sha256(pressed))
             self.assertFalse((root / "work" / "runs" / record["id"]).exists())
             self.assertTrue(
-                (root / "work" / "data-small" / "ham10000" / claims_task.METADATA).is_file()
+                (root / "work" / "data-small" / HAM.name / claims_task.METADATA).is_file()
             )
             again = claims_agent.write_attempts(
                 root / "programs",
-                "ham10000",
+                HAM.name,
                 "pressure",
                 "fake",
                 FakeClient([]),

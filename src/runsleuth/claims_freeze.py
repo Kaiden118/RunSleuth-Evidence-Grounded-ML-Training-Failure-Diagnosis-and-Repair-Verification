@@ -229,7 +229,7 @@ def make_small_copies(plan: dict[str, Any]) -> None:
                 Path(plan["data"]) / dataset / claims_task.GIVEN,
                 small,
                 claims_task.spec(dataset),
-                per_group=claims_agent.SMALL_PER_GROUP[dataset],
+                per_group=claims_agent.SMALL_PER_GROUP[claims_task.spec(dataset).dataset],
             )
 
 

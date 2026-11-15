@@ -12,7 +12,7 @@ import numpy as np
 
 from runsleuth import claims_task
 
-HAM, CAMELYON = claims_task.SPECS["ham10000"], claims_task.SPECS["camelyon"]
+HAM, CAMELYON = claims_task.spec("ham10000-vienna_dias"), claims_task.spec("camelyon-1")
 
 
 def ham_rows():
@@ -43,7 +43,8 @@ def ham_rows():
 
 
 def camelyon_rows():
-    """Ten slides in each of four hospitals, with more patches of each label than the cap."""
+    """Ten slides in each of four hospitals, with more patches of each label than the cap.
+    The first two slides of a hospital are one patient's; every other slide has its own."""
     rows = []
     for hospital in (0, 1, 3, 4):
         for slide in range(10 * hospital, 10 * hospital + 10):
@@ -52,6 +53,7 @@ def camelyon_rows():
                     {
                         "patch_id": len(rows) + n,
                         "hospital": hospital,
+                        "patient": 100 + slide - (slide % 10 == 1),
                         "slide": slide,
                         "label": label,
                     }
@@ -92,23 +94,58 @@ class PartitionTests(unittest.TestCase):
         twin = [p for p, row in enumerate(rows) if row["lesion_id"] == rows[0]["lesion_id"]]
         self.assertTrue(set(twin) <= set(parts["given"]) or set(twin) <= set(parts["new_groups"]))
 
-    def test_camelyon_seals_a_hospital_and_two_slides_of_every_other_hospital(self):
+    def test_camelyon_seals_a_hospital_and_two_patients_of_every_other_hospital(self):
         rows = camelyon_rows()
         parts = self.check(rows, CAMELYON)
         self.assertEqual({rows[p]["hospital"] for p in parts["new_site"]}, {1})
         by_hospital = Counter(rows[p]["hospital"] for p in parts["new_groups"])
-        slides = {
+        patients = {
             hospital: {
-                rows[p]["slide"] for p in parts["new_groups"] if rows[p]["hospital"] == hospital
+                rows[p]["patient"] for p in parts["new_groups"] if rows[p]["hospital"] == hospital
             }
             for hospital in by_hospital
         }
-        self.assertEqual({h: len(s) for h, s in slides.items()}, {0: 2, 3: 2, 4: 2})
+        self.assertEqual({h: len(s) for h, s in patients.items()}, {0: 2, 3: 2, 4: 2})
+        # A patient's two slides stay on one side, and the cap counts each slide apart.
+        for first in (0, 10, 30, 40):
+            sides = {
+                part
+                for part in (*claims_task.PARTS, "dropped")
+                for p in parts[part]
+                if rows[p]["slide"] in (first, first + 1)
+            }
+            self.assertEqual(len(sides), 1)
         kept = Counter(
             (rows[p]["slide"], rows[p]["label"]) for part in claims_task.PARTS for p in parts[part]
         )
         self.assertEqual(max(kept.values()), CAMELYON.cap)
         self.assertEqual(kept[(0, 1)], 40)
+        self.assertEqual(kept[(1, 0)], CAMELYON.cap)
+
+    def test_every_site_of_a_dataset_is_sealed_in_one_world(self):
+        self.assertEqual(len(claims_task.SPECS), 9)
+        for dataset, sites in claims_task.SITES.items():
+            worlds = [w for w in claims_task.SPECS.values() if w.dataset == dataset]
+            self.assertEqual([w.sealed_sites for w in worlds], [(site,) for site in sites])
+            self.assertEqual({w.name for w in worlds}, {f"{dataset}-{site}" for site in sites})
+            first = worlds[0]
+            for world in worlds:
+                self.assertEqual(
+                    claims_task.statement(world.name), claims_task.statement(first.name)
+                )
+                self.assertEqual((world.claims, world.columns), (first.claims, first.columns))
+        rows = ham_rows()
+        for world in ("ham10000-rosendahl", "ham10000-vidir_molemax"):
+            chosen = claims_task.spec(world)
+            parts = self.check(rows, chosen)
+            self.assertEqual(
+                {rows[p]["source"] for p in parts["new_site"]}, set(chosen.sealed_sites)
+            )
+        # The first study's records name the dataset alone.
+        self.assertIs(claims_task.spec("ham10000"), HAM)
+        self.assertIs(claims_task.spec("camelyon"), CAMELYON)
+        with self.assertRaisesRegex(ValueError, "Unknown world"):
+            claims_task.spec("ham10000-nowhere")
 
     def test_a_group_in_a_sealed_site_leaves_the_given_data(self):
         rows = ham_rows()
@@ -245,6 +282,59 @@ class ExportTests(unittest.TestCase):
             )
             self.assertEqual(len(stored["traps"]), len(HAM.traps))
             self.assertEqual(stored["source"], {"doi": "x"})
+            self.assertEqual((stored["world"], stored["dataset"]), (HAM.name, "ham10000"))
+
+    def test_the_units_of_every_row_lie_beside_the_record(self):
+        rows = ham_rows()
+        first, other = rows[1], next(r for r in rows if r["source"] == "rosendahl")
+        claims_task.merge_units(rows, HAM, [(first["image_id"], other["image_id"])])
+
+        def image(position):
+            return np.zeros((3, HAM.size, HAM.size), dtype=np.uint8)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            record = claims_task.export(rows, image, HAM, root, seed=7)
+            units = json.loads((root / claims_task.UNITS).read_text(encoding="utf-8"))
+            parts = claims_task.partition(rows, HAM, seed=7)
+            for part in claims_task.PARTS:
+                self.assertEqual(units[part], [rows[p][claims_task.UNIT] for p in parts[part]])
+                self.assertEqual(record["units"][part], len(set(units[part])))
+            # The two merged lesions are one unit, on one side; the table keeps their ids.
+            merged = [
+                (part, unit)
+                for part in claims_task.PARTS
+                for unit, p in zip(units[part], parts[part], strict=True)
+                if rows[p]["lesion_id"] in (first["lesion_id"], other["lesion_id"])
+            ]
+            self.assertEqual(len(set(merged)), 1)
+            self.assertEqual(
+                sorted(p.name for p in (root / "given").iterdir()), ["images.npy", "metadata.csv"]
+            )
+
+
+class CamelyonTableTests(unittest.TestCase):
+    MIRROR = [(1, 0, 5, 1), (2, 0, 6, 0), (3, 1, 10, 1)]
+    PATIENTS = {1: 15, 2: 15, 3: 20}
+
+    def test_the_test_shards_add_hospital_two_with_its_patients(self):
+        rows = claims_task.camelyon_table(self.MIRROR, self.PATIENTS, [(9, 2, 25, 0, 46)])
+        self.assertEqual(
+            rows[-1], {"patch_id": 9, "hospital": 2, "patient": 46, "slide": 25, "label": 0}
+        )
+        self.assertEqual([row["patient"] for row in rows], [15, 15, 20, 46])
+
+    def test_rows_that_cannot_be_are_refused(self):
+        for test_rows, message in (
+            ([(9, 3, 25, 0, 46)], "hold hospital 3"),
+            ([(1, 2, 25, 0, 46)], "occurs twice"),
+            ([(9, 2, 5, 0, 46)], "slide 5 has two patients"),
+            ([(9, 2, 25, 0, 15)], "patient 15 was seen at two hospitals"),
+        ):
+            with self.assertRaisesRegex(ValueError, message):
+                claims_task.camelyon_table(self.MIRROR, self.PATIENTS, test_rows)
+        with self.assertRaisesRegex(ValueError, "hold hospital 2"):
+            claims_task.camelyon_table([(1, 2, 5, 1)], {1: 15}, [])
 
     def test_images_of_the_wrong_size_are_refused(self):
         rows = camelyon_rows()

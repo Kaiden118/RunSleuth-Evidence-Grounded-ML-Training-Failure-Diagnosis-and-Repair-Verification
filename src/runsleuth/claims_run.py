@@ -385,7 +385,7 @@ def run_submission(
     train_timeout: float = TRAIN_TIMEOUT,
     predict_timeout: float = PREDICT_TIMEOUT,
 ) -> dict[str, Any]:
-    """The official run of a program on a dataset's export at data, kept under work."""
+    """The official run of a program on a world's export at data, kept under work."""
     work = Path(work)
     if work.exists():
         raise FileExistsError(f"{work} exists; remove it to run the program again")
@@ -490,7 +490,7 @@ def run_attempts(
 ) -> list[dict[str, Any]]:
     """The official run of every attempt with a program that has none yet, one at a time.
 
-    data holds a dataset's export per directory, as claims_task writes it. In the study's
+    data holds a world's export per directory, as claims_task writes it. In the study's
     output the freeze must hold and every program must carry both readers' labels.
     """
     claims_freeze.guard(output)
@@ -510,7 +510,7 @@ def run_attempts(
         program = directory / claims_task.PROGRAM
         if (directory / RESULT_FILE).is_file() or not program.is_file():
             continue
-        chosen = claims_task.spec(attempt["dataset"])
+        chosen = claims_task.spec(attempt.get("world", attempt["dataset"]))
         export = Path(data) / chosen.name
         record = json.loads((export / claims_task.RECORD).read_text(encoding="utf-8"))
         started = datetime.now(UTC).isoformat(timespec="seconds")
@@ -522,7 +522,8 @@ def run_attempts(
             "task": "claims_submission",
             "statement_version": claims_task.STATEMENT_VERSION,
             "id": attempt["id"],
-            "dataset": chosen.name,
+            "world": chosen.name,
+            "dataset": chosen.dataset,
             "condition": attempt["condition"],
             "program_sha256": attempt["program_sha256"],
             "data_sha256": {part: found["sha256"] for part, found in record["parts"].items()},
@@ -540,7 +541,8 @@ def run_attempts(
 def result_line(attempt: dict[str, Any], result: dict[str, Any]) -> str:
     """One official run: its category, and each claim's estimate against the measure."""
     head = (
-        f"{attempt['model_name']} {attempt['dataset']} {attempt['condition']} "
+        f"{attempt['model_name']} {attempt.get('world', attempt['dataset'])} "
+        f"{attempt['condition']} "
         f"attempt {attempt['attempt']}: {result['category']}"
     )
     if result["category"] != "decided":
@@ -565,7 +567,8 @@ def list_text(output: Path) -> str:
             lines.append(result_line(attempt, json.loads(path.read_text(encoding="utf-8"))))
         else:
             lines.append(
-                f"{attempt['model_name']} {attempt['dataset']} {attempt['condition']} "
+                f"{attempt['model_name']} {attempt.get('world', attempt['dataset'])} "
+                f"{attempt['condition']} "
                 f"attempt {attempt['attempt']}: {attempt['status']}, not run"
             )
     return "\n".join(lines) or "no attempts"
@@ -576,7 +579,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="Run every attempt that has not been run.")
     run.add_argument("--out", type=Path, required=True, help="The attempts' directory.")
-    run.add_argument("--data", type=Path, required=True, help="The exports, one per dataset.")
+    run.add_argument("--data", type=Path, required=True, help="The exports, one per world.")
     run.add_argument("--work", type=Path, required=True, help="Where the runs keep their files.")
     run.add_argument("--device", default="cuda")
     listed = commands.add_parser("list", help="List the attempts and their official runs.")

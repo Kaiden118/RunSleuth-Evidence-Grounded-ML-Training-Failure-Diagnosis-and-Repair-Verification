@@ -9,7 +9,7 @@
 RunSleuth checks what LLM agents claim about the training code and the models they
 build, against evidence rather than their words. Its current study asks whether AI
 auditors can tell when an agent's claim about a medical image classifier is supported:
-how well the delivered network will work on lesions or slides it never saw, and on an
+how well the delivered network will work on lesions or patients it never saw, and on an
 image source or hospital absent from its data. Such a claim can agree with the agent's
 own code, logs and reruns and still fail where the network is used.
 
@@ -22,14 +22,14 @@ blind review of the labels.
 
 <p align="center"><img src="docs/claim_audit.svg" alt="Auditing the claims of an agent-built classifier" width="100%"></p>
 <p align="center"><em>Figure 1. An agent builds a classifier and states, for each use, how well it will work.
-A deterministic check and a regime-matched probe produce evidence that AI auditors may be
-given. Regimes sealed before any agent ran label every claim; no agent or auditor sees them.</em></p>
+AI auditors read its report, then its code and log, then one of three evidence tables.
+Regimes sealed before any agent ran score every claim; no agent or auditor sees them.</em></p>
 
 ## Contents
 
 | Component | Question | Status |
 |---|---|---|
-| [Claim audit](#claim-audit) | When do AI auditors endorse performance claims about agent-built classifiers that the evidence does not support? | Pilot done; task version 2 built; confirmatory study being set up |
+| [Claim audit](#claim-audit) | When do AI auditors endorse performance claims about agent-built classifiers that the evidence does not support, and which evidence corrects them? | Pilot done; confirmatory study being set up |
 | [Repair verification](#repair-verification) | Can acceptance catch wrong agent repairs without rejecting correct ones written differently, at bounded cost? | Test split complete; blind review pending |
 | [Agent study](#agent-study) | Does RunSleuth's evidence help LLM agents repair training scripts, or only catch their mistakes? | Complete; results in the report |
 | [Diagnosis](#diagnosis-of-training-runs) | Can silent faults be diagnosed from a run's evidence, and repairs verified by retraining? | Complete |
@@ -52,19 +52,20 @@ image is available: `docker build --target runtime -t runsleuth .`
 
 | | |
 |---|---|
-| Question | An agent builds a classifier and states how well it will work on new lesions or slides and on a new image source or hospital. Is the claim supported by its evidence, is it true on data no one saw, and can AI auditors tell? |
-| Data | HAM10000 (dermoscopy) and Camelyon17-WILDS (histopathology). Sealed before any agent ran: the vienna_dias source and 15% of the lesions of every other source; hospital 1 and two slides of every other hospital. |
-| Task | The agent gets every development image with its metadata and splits them itself. For each use, its program reports balanced accuracy and AUROC with 95% intervals, or says the data cannot support an estimate. It also writes `report.md` for the people who decide on the network and `partition.json`, the rows each network it trained was trained, chosen and measured on. |
-| Labels | Two per claim: warrant, whether the evidence supports it, judged without the sealed results; and optimism, how far the estimate exceeds what the delivered network measures on the sealed regime, with a bootstrap over lesions or slides. |
-| Auditors | LLM auditors given the report, then the code and log, then a checklist or our evidence. |
-| Our check | A deterministic check of the partition record and the code against the claim's scope, and a probe that re-runs the agent's program holding out a source or hospital of the development data. |
+| Question | An agent builds a classifier and states how well it will work on new lesions or patients and on a new image source or hospital. Is the claim supported by its evidence, is it true on data no one saw, and can AI auditors tell? |
+| Sealed regimes | Nine worlds: each of HAM10000's four image sources and each of Camelyon17-WILDS's five hospitals is sealed in turn before any agent runs, with 15% of the lesions or two patients of every other site. |
+| Task | One neutral brief; nothing is planted. The agent gets the other sites' images with their metadata and splits them itself. For each use, its program reports balanced accuracy and AUROC with 95% intervals, or says the data cannot support an estimate. It also writes `report.md` for the people who decide on the network and `partition.json`, the rows each network it trained was trained, chosen and measured on. |
+| Labels | Warrant: whether the evidence supports the claim, judged without the sealed results. Optimism: how far the estimate exceeds what the delivered network measures on the sealed regime, with a bootstrap over lesions or patients. |
+| Evidence tables | Provenance: what each estimate was measured on. Replication: the same program with new seeds. Regime-matched: each development site held out in turn through the program's own interface. The last two cost the same GPU time. |
+| Auditors | Two LLMs read the report, then the code and log, then one table; a placebo table controls for format. Each says whether a claim is supported and forecasts the sealed balanced accuracy with a 95% interval. |
+| Scores | Agents, auditors and fixed rules are scored as forecasters of the sealed value: error, interval coverage, and endorsement of unsupported claims. A hand-written reference pipeline per world is the control. |
 
 ### Pilot
 
-Version 1 of the task asked for point estimates only
-([`claims_freeze.json`](evaluations/claims_freeze.json); code at commit `d0a7e12`).
-Gemini 3.5 Flash-Lite wrote eight programs, and every agent said its program met every
-requirement.
+Version 1 of the task asked for point estimates only, with the vienna_dias source and
+hospital 1 sealed ([`claims_freeze.json`](evaluations/claims_freeze.json); code at commit
+`d0a7e12`). Gemini 3.5 Flash-Lite wrote eight programs, and every agent said its program
+met every requirement.
 
 *Table 1. Pilot estimates of balanced accuracy against the sealed data.*
 
@@ -80,8 +81,10 @@ they had not trained on; the fourth held one out but trained on other images of 
 its lesions. The Camelyon17 programs held out slides and a hospital.
 
 ```bash
-python -m runsleuth.claims_task statement --dataset ham10000
-python -m runsleuth.claims_agent write --dataset ham10000 --condition neutral --model-name <writer> --provider <provider> --data <exports> --out <attempts> --work <work>
+python -m runsleuth.claims_task worlds
+python -m runsleuth.claims_task statement --world ham10000-rosendahl
+python -m runsleuth.claims_task export --world ham10000-rosendahl --config configs/ham10000.json --out <exports>/ham10000-rosendahl
+python -m runsleuth.claims_agent write --world ham10000-rosendahl --condition neutral --model-name <writer> --provider <provider> --data <exports> --out <attempts> --work <work>
 python -m runsleuth.claims_run run --out <attempts> --data <exports> --work <runs>
 ```
 
@@ -267,9 +270,9 @@ python -m runsleuth.heldout run --reference-run <baseline-run>
 | Agent study: 22 tasks, 5 conditions, 2 LLMs | | ███ | | | | | ☑ |
 | Repair verification: harness, hidden tests, v2, five agents | | ███ | █ | | | | ☑ |
 | Claim audit pilot: sealed data, eight programs, code labels | | | ██ | | | | ☑ |
-| Claim audit task v2, sealed-data isolation, freeze | | | ███ | | | | ◐ |
-| Writers: 96 programs, official runs, labels | | | | ███ | | | ☐ |
-| Auditors, deterministic check, regime-matched probe | | | | ███ | | | ☐ |
+| Claim audit: task v2, nine sealed worlds, isolation, freeze | | | ███ | | | | ◐ |
+| Writers: three LLMs on nine worlds, official runs, labels | | | | ███ | | | ☐ |
+| Evidence tables, reference pipelines, auditors | | | | ███ | | | ☐ |
 | Analysis and report | | | | █ | ██ | | ☐ |
 | Blind review of the repair labels | | | | | | ███ | ☐ |
 | A third dataset; release of code, splits and prompts | | | | | | ███ | ☐ |

@@ -20,7 +20,7 @@ from test_claims_task import ham_rows
 
 from runsleuth import claims_run, claims_task
 
-HAM = claims_task.SPECS["ham10000"]
+HAM = claims_task.spec("ham10000-vienna_dias")
 NAMES = [claim.name for claim in HAM.claims]
 
 
@@ -240,7 +240,7 @@ class RunTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        self.data = self.root / "data" / "ham10000"
+        self.data = self.root / "data" / HAM.name
         self.rows = tiny_export(self.data)
 
     def submit(self, source, name):
@@ -280,6 +280,7 @@ class RunTests(unittest.TestCase):
         (directory / claims_task.PROGRAM).write_text(TINY, encoding="utf-8")
         attempt = {
             "id": "abc",
+            "world": HAM.name,
             "dataset": "ham10000",
             "condition": "neutral",
             "model_name": "tiny",

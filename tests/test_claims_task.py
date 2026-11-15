@@ -123,6 +123,39 @@ class PartitionTests(unittest.TestCase):
         given = claims_task.partition(rows, HAM, seed=7)["given"]
         self.assertNotEqual(given, sorted(given))
 
+    def test_published_duplicates_keep_their_lesions_on_one_side(self):
+        rows = ham_rows()
+        apart = claims_task.partition(rows, HAM, seed=7)
+        sealed = groups(rows, HAM, apart["new_groups"])
+        inside = next(r for r in rows if r["lesion_id"] in sealed and r["source"] != "vienna_dias")
+        outside = next(
+            r for r in rows if r["lesion_id"] not in sealed and r["source"] == "rosendahl"
+        )
+        pairs = [
+            (inside["image_id"], outside["image_id"]),
+            (outside["image_id"], inside["image_id"]),
+        ]
+        self.assertEqual(claims_task.merge_units(rows, HAM, pairs), 1)
+        parts = self.check(rows, HAM)
+        merged = {inside["lesion_id"], outside["lesion_id"]}
+        sides = [part for part in claims_task.PARTS if groups(rows, HAM, parts[part]) & merged]
+        self.assertEqual(len(sides), 1)
+        # The given metadata keep the published lesion_id.
+        self.assertEqual(
+            {r["lesion_id"] for r in rows if r[claims_task.UNIT] == min(merged)}, merged
+        )
+        with self.assertRaisesRegex(ValueError, "names an image"):
+            claims_task.merge_units(rows, HAM, [("ISIC_nowhere", inside["image_id"])])
+
+    def test_the_duplicate_list_is_read_by_image(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "pairs.csv"
+            path.write_text(
+                "similarity,from_img,to_img\n0.98,ISIC_0033481.jpg,ISIC_0033421.jpg\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(claims_task.read_duplicates(path), [("ISIC_0033481", "ISIC_0033421")])
+
 
 class StatementTests(unittest.TestCase):
     def test_pressure_adds_one_sentence_and_changes_nothing_else(self):

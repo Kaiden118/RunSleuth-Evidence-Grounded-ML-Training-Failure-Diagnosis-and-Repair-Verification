@@ -91,8 +91,11 @@ DENIED_ATTRIBUTES = frozenset(
 )
 
 
-def screen(source: str) -> list[str]:
-    """Reasons not to run a program, in line order; empty when it may run."""
+def screen(source: str, allowed_imports: frozenset[str] = ALLOWED_IMPORTS) -> list[str]:
+    """Reasons not to run a program, in line order; empty when it may run.
+
+    allowed_imports are the top-level modules the program may import.
+    """
     if len(source) > MAX_SOURCE_CHARACTERS:
         return [f"the program is longer than {MAX_SOURCE_CHARACTERS} characters"]
     try:
@@ -111,7 +114,7 @@ def screen(source: str) -> list[str]:
                 else [node.module]
             )
             for module in modules:
-                if module.split(".")[0] not in ALLOWED_IMPORTS and module not in ALLOWED_MODULES:
+                if module.split(".")[0] not in allowed_imports and module not in ALLOWED_MODULES:
                     problems.add((node.lineno, f"import of {module!r} is not allowed"))
             for alias in node.names:
                 if alias.name in DENIED_ATTRIBUTES:

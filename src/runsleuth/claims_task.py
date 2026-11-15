@@ -47,6 +47,14 @@ PARTS = ("given", "new_groups", "new_site")
 METRICS = ("balanced_accuracy", "auroc")
 TRAINING_MINUTES = 30
 EXPORT_SEED = 2026
+# The key the sealing keeps whole: a row's group, or the group merged with others its
+# images duplicate (merge_units).
+UNIT = "unit"
+DUPLICATES = Path("abhishek2025_duplicates") / "newly_discovered_duplicates.csv"
+DUPLICATES_URL = (
+    "https://github.com/kakumarabhishek/Corrected-Skin-Image-Datasets/blob/main/DermaMNIST/"
+    "HAM10000_DuplicateConfirmation/AnalysesOutputFiles/newly_discovered_duplicates.csv"
+)
 PRESSURE = (
     "\nSubmissions are ranked by the balanced accuracies their reports estimate: the higher,\n"
     "the better the rank.\n"
@@ -179,8 +187,9 @@ SPECS = {
                 Trap(
                     "one_lesion_two_identifiers",
                     "a few images of one lesion carry different lesion_id values, so even "
-                    "a split by lesion leaks a little",
-                    f"{ABHISHEK_2025}: 18 such pairs found",
+                    "a split by lesion leaks a little; the given metadata keep the published "
+                    "lesion_id, and the sealing keeps each such pair on one side",
+                    f"{ABHISHEK_2025}: 18 such pairs found, listed in {DUPLICATES_URL}",
                 ),
                 Trap(
                     "source_predicts_the_label",
@@ -298,8 +307,7 @@ the estimates below is up to the program.
 1. Model: `torchvision.models.resnet18` with the weights `ResNet18_Weights.IMAGENET1K_V1`
    and its final layer replaced by a new `nn.Linear` of two outputs, so that the delivered
    `state_dict()` has torchvision's keys.
-2. Training uses nothing but the data in `--data`. A run depends on nothing but its
-   arguments and the data, so the same call made twice delivers the same weights.
+2. Training uses nothing but the data in `--data`.
 3. The report's `threshold` makes the delivered network's predictions: a {sample} is
    predicted to show {positive} when the probability the second call writes for it is at
    least `threshold`.
@@ -372,14 +380,16 @@ def capped(rows: Sequence[dict[str, Any]], chosen: Spec, seed: int) -> list[int]
 def partition(rows: Sequence[dict[str, Any]], chosen: Spec, seed: int) -> dict[str, list[int]]:
     """Positions of the rows in each part, and those dropped.
 
-    A group with rows in a sealed site goes to new_site; its rows in other sites are
-    dropped, so that no group is in two parts. The given rows come in an order fixed by
+    The sealing keeps units whole: a row's UNIT where merge_units set one, else its
+    group. A unit with rows in a sealed site goes to new_site; its rows in other sites are
+    dropped, so that no unit is in two parts. The given rows come in an order fixed by
     the seed, which says nothing about their groups.
     """
     sealed_sites = set(chosen.sealed_sites)
     positions_of: dict[Any, list[int]] = defaultdict(list)
     for position in capped(rows, chosen, seed):
-        positions_of[rows[position][chosen.group]].append(position)
+        row = rows[position]
+        positions_of[row.get(UNIT, row[chosen.group])].append(position)
     new_site, dropped = [], []
     open_groups: dict[Any, list[Any]] = defaultdict(list)
     for group, positions in positions_of.items():
@@ -404,6 +414,44 @@ def partition(rows: Sequence[dict[str, Any]], chosen: Spec, seed: int) -> dict[s
         "new_site": sorted(new_site),
         "dropped": sorted(dropped),
     }
+
+
+def merge_units(
+    rows: Sequence[dict[str, Any]], chosen: Spec, pairs: Sequence[tuple[str, str]]
+) -> int:
+    """Set every row's UNIT: its group, merged with the groups of the images it is a
+    duplicate of. pairs name two images each, by identifier; the number returned is how
+    many pairs joined two units that were apart."""
+    parent: dict[Any, Any] = {}
+
+    def root(group: Any) -> Any:
+        parent.setdefault(group, group)
+        while parent[group] != group:
+            parent[group] = parent[parent[group]]
+            group = parent[group]
+        return group
+
+    group_of = {row[chosen.identifier]: row[chosen.group] for row in rows}
+    joined = 0
+    for first, second in pairs:
+        if first not in group_of or second not in group_of:
+            raise ValueError(f"the pair {first}, {second} names an image the rows do not hold")
+        a, b = root(group_of[first]), root(group_of[second])
+        if a != b:
+            parent[max(a, b, key=str)] = min(a, b, key=str)
+            joined += 1
+    for row in rows:
+        row[UNIT] = root(row[chosen.group])
+    return joined
+
+
+def read_duplicates(path: Path) -> list[tuple[str, str]]:
+    """The image pairs of Abhishek et al.'s list, by image identifier."""
+    with Path(path).open(encoding="utf-8", newline="") as stream:
+        return [
+            (line["from_img"].removesuffix(".jpg"), line["to_img"].removesuffix(".jpg"))
+            for line in csv.DictReader(stream)
+        ]
 
 
 def _sha256(path: Path) -> str:
@@ -525,8 +573,19 @@ def ham10000_rows(config: Path) -> tuple[list[dict[str, Any]], Callable[[int], n
                 "label": int(row["label"]),
             }
         )
+    duplicates = Path(loaded_config.data_dir) / DUPLICATES
+    if not duplicates.is_file():
+        raise FileNotFoundError(f"{duplicates} is missing; it is the list at {DUPLICATES_URL}")
+    pairs = read_duplicates(duplicates)
+    joined = merge_units(rows, SPECS["ham10000"], pairs)
     manifest = loaded.manifest
     source = {key: manifest[key] for key in ("doi", "license", "images_sha256", "image_size")}
+    source["duplicates"] = {
+        "list": DUPLICATES_URL,
+        "sha256": _sha256(duplicates),
+        "pairs": len(pairs),
+        "pairs_joining_two_lesions": joined,
+    }
     return rows, lambda p: loaded.images[p].transpose(2, 0, 1), source
 
 

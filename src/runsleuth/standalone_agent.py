@@ -295,6 +295,46 @@ def run_agent(
         "run_program": run,
         "finish": finish,
     }
+    return converse(
+        client,
+        model,
+        messages,
+        tools,
+        handlers,
+        record,
+        finished=lambda name: name == "finish" and record["agent_claim"] is not None,
+        max_tool_calls=max_tool_calls,
+        pause=pause,
+        error_wait=error_wait,
+        max_api_errors=max_api_errors,
+        echo_reasoning=echo_reasoning,
+        sleep=sleep,
+    )
+
+
+def converse(
+    client: Any,
+    model: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
+    record: dict[str, Any],
+    *,
+    finished: Callable[[str], bool],
+    max_tool_calls: int,
+    pause: float = 0.0,
+    error_wait: float = 30.0,
+    max_api_errors: int = 3,
+    echo_reasoning: bool = False,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
+    """Talk with the model until it finishes or a limit stops it, and keep the record.
+
+    messages starts with the system prompt and the statement. handlers answer the tool
+    calls by name; finished(name) says whether the call just answered ended the episode.
+    record holds the counters run_agent starts with; its episode_status is running until
+    the episode ends as finished, tool_call_limit, no_tool_call or api_error.
+    """
     text_replies = 0
     while record["episode_status"] == "running":
         sleep(pause)
@@ -396,7 +436,7 @@ def run_agent(
                     result = {"error": f"unknown tool {name}"}
                 else:
                     result = handlers[name](arguments)
-                if name == "finish" and record["agent_claim"] is not None:
+                if finished(name):
                     record["episode_status"] = "finished"
                 elif record["tool_calls"] >= max_tool_calls:
                     record["episode_status"] = "tool_call_limit"

@@ -373,8 +373,33 @@ def run_pass(
     limit: int | None = None,
     progress: Callable[[str], None] = print,
 ) -> list[dict[str, Any]]:
-    """Ask what a pass asks and output does not hold yet, at most limit calls; an API
-    error is asked again on the next run, and three in a row stop this one."""
+    """Ask what a pass asks and output does not hold yet (run_asks)."""
+    return run_asks(
+        items,
+        asked(items, pass_),
+        output,
+        client,
+        model,
+        provider=provider,
+        limit=limit,
+        progress=progress,
+    )
+
+
+def run_asks(
+    items: dict[str, dict[str, Any]],
+    asks: list[tuple[str, str, int]],
+    output: Path,
+    client: Any,
+    model: str,
+    *,
+    provider: str,
+    limit: int | None = None,
+    progress: Callable[[str], None] = print,
+) -> list[dict[str, Any]]:
+    """Ask the (item, input, repetition) given that output does not hold yet, at most
+    limit calls; an API error is asked again on the next run, and three in a row stop
+    this one."""
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     done = {
@@ -383,7 +408,7 @@ def run_pass(
         if record["status"] != "api_error"
     }
     written, errors = [], 0
-    for name, which, repetition in asked(items, pass_):
+    for name, which, repetition in asks:
         if (name, which, repetition) in done:
             continue
         if limit is not None and len(written) >= limit:

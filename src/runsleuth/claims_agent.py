@@ -373,8 +373,10 @@ def run_agent(
             return {"error": f"{claims_task.PROGRAM} has not been written yet"}
         if len(record["runs"]) >= max_runs:
             return {"error": "no runs are left"}
-        used.add(name)
         shown = run_program(program, {"run": name, "seed": seed})
+        if shown["status"] != "refused":
+            # A refused program made no directory, so its name is still free.
+            used.add(name)
         prediction = shown.get("prediction") or {}
         record["runs"].append(
             {

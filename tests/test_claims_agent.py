@@ -150,6 +150,20 @@ class EpisodeTests(unittest.TestCase):
         self.assertEqual(len(record["runs"]), 2)
         self.assertIn("no runs are left", record["steps"][3]["tool_calls"][0]["result"]["error"])
 
+    def test_a_refused_run_leaves_its_name_free(self):
+        statuses = iter(["refused", "completed"])
+
+        def shown(program, arguments):
+            self.asked.append(arguments)
+            return {"status": next(statuses), "problems": [], "files": []}
+
+        self.shown = shown
+        replies = [[call("write_file", 0, content="import pandas\n")]]
+        replies += [[call("run_program", n, run="same", seed=n)] for n in (1, 2)]
+        _, record = self.run_agent(replies + [finish(9)])
+        self.assertEqual([run["status"] for run in record["runs"]], ["refused", "completed"])
+        self.assertEqual([arguments["run"] for arguments in self.asked], ["same", "same"])
+
 
 @unittest.skipIf(torch is None, "Install torch and torchvision for the agent's runs")
 class RunnerTests(unittest.TestCase):

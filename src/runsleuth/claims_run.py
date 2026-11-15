@@ -5,12 +5,20 @@ whole given data with a fixed seed. Its delivered network then predicts the seal
 each called with a copy of the images alone, so that no label lies beside them. The
 estimates of its report are set against what the network measures there: the balanced
 accuracy at the report's threshold and the area under the ROC curve, each with a
-bootstrap interval that resamples whole lesions or slides. An estimate above its interval
-is contradicted, one below it is understated.
+bootstrap interval that resamples whole lesions or slides. An estimate above that
+interval is contradicted, one below it is understated; the estimate's own 95% interval is
+judged the same way, contradicted when it lies wholly above. A use the report calls not
+estimable is measured all the same and kept as abstained.
+
+What the statement asks beyond the measured interface is kept apart, as reporting gaps: a
+missing interval or explanation, a report.md without its sections, a partition record
+that is missing or malformed. A well-formed partition record gives the code labels it
+alone decides (claims_partition).
 
 What the run keeps for an auditor lies in the work directory: the delivered weights, the
-report, the training output and the predictions. The program's sealed scores are kept in
-submission.json beside the program; nothing an auditor is given contains them.
+reports, the partition record, the training output and the predictions. The program's
+sealed scores are kept in submission.json beside the program; nothing an auditor is given
+contains them.
 
     python -m runsleuth.claims_run run --out artifacts/claims/programs \\
         --data C:/Users/ADMIN/rs-data/claims --work C:/Users/ADMIN/rs-data/claims-runs
@@ -34,7 +42,7 @@ from typing import Any
 
 import numpy as np
 
-from runsleuth import claims_freeze, claims_task, standalone_check
+from runsleuth import claims_freeze, claims_partition, claims_task, standalone_check
 from runsleuth.agent_workspace import clean_environment
 
 SEED = 1
@@ -130,11 +138,18 @@ def _number(value: Any) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def read_report(path: Path, chosen: claims_task.Spec) -> tuple[dict[str, Any] | None, list[str]]:
-    """The report as the statement asks for it, and what is wrong with it.
+def abstains(estimate: dict[str, Any]) -> bool:
+    """Whether an estimate of a report calls its use not estimable."""
+    return claims_task.NOT_ESTIMABLE in estimate
 
-    A missing or unreadable report, a threshold or an estimate that is not a number from
-    0 to 1, or a missing claim is a problem; missing explanations are not.
+
+def read_report(path: Path, chosen: claims_task.Spec) -> tuple[dict[str, Any] | None, list[str]]:
+    """The report as the statement asks for it, and what is wrong with what is measured.
+
+    A missing or unreadable report, a threshold that is not a number from 0 to 1, a
+    missing use, or an estimate that neither gives both metrics as numbers from 0 to 1 nor
+    says why the use is not estimable is a problem. Intervals and explanations are not;
+    report_gaps lists what is missing of them.
     """
     if not Path(path).is_file():
         return None, [f"no {claims_task.REPORT}"]
@@ -156,11 +171,63 @@ def read_report(path: Path, chosen: claims_task.Spec) -> tuple[dict[str, Any] | 
         if not isinstance(found, dict):
             problems.append(f"no estimate {claim.name}")
             continue
+        if abstains(found):
+            why = found[claims_task.NOT_ESTIMABLE]
+            if not isinstance(why, str) or not why.strip():
+                problems.append(f"{claim.name}.{claims_task.NOT_ESTIMABLE} gives no reason")
+            if any(metric in found for metric in claims_task.METRICS):
+                problems.append(f"{claim.name} is both estimated and not estimable")
+            continue
         for metric in claims_task.METRICS:
             value = found.get(metric)
             if not _number(value) or not 0 <= value <= 1:
                 problems.append(f"{claim.name}.{metric} is not a number from 0 to 1")
     return report, problems
+
+
+def interval_of(estimate: dict[str, Any], metric: str) -> list[float] | None:
+    """An estimate's 95% interval of a metric, when it is two numbers from 0 to 1 in order."""
+    found = estimate.get(metric + claims_task.INTERVAL)
+    if not isinstance(found, list) or len(found) != 2 or not all(map(_number, found)):
+        return None
+    low, high = found
+    return [float(low), float(high)] if 0 <= low <= high <= 1 else None
+
+
+def report_gaps(report: dict[str, Any], chosen: claims_task.Spec) -> list[str]:
+    """What a measurable report leaves out of what the statement asks: intervals, which
+    must hold their estimate, and explanations."""
+    gaps = []
+    validation = report.get("validation")
+    if not isinstance(validation, str) or not validation.strip():
+        gaps.append("no validation")
+    for claim in chosen.claims:
+        found = report["estimates"][claim.name]
+        if abstains(found):
+            continue
+        how = found.get("how")
+        if not isinstance(how, str) or not how.strip():
+            gaps.append(f"{claim.name} has no how")
+        for metric in claims_task.METRICS:
+            interval = interval_of(found, metric)
+            if interval is None:
+                gaps.append(f"{claim.name}.{metric}{claims_task.INTERVAL} is not an interval")
+            elif not interval[0] <= found[metric] <= interval[1]:
+                gaps.append(f"{claim.name}.{metric} lies outside its interval")
+    return gaps
+
+
+def markdown_gaps(path: Path) -> list[str]:
+    """The statement's sections a report.md lacks, as headings of their own line."""
+    if not Path(path).is_file():
+        return [f"no {claims_task.REPORT_MD}"]
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    headings = {" ".join(line.split()).lower() for line in text.splitlines()}
+    return [
+        f"{claims_task.REPORT_MD} has no section {section}"
+        for section in claims_task.SECTIONS
+        if f"## {section}".lower() not in headings
+    ]
 
 
 def check_weights(path: Path) -> list[str]:
@@ -271,6 +338,37 @@ def verdict(estimate: float, measured: dict[str, float]) -> str:
     return "consistent"
 
 
+def interval_verdict(interval: Sequence[float], measured: dict[str, float]) -> str:
+    """An estimate's interval against the measured one: contradicted when it lies wholly
+    above, understated when wholly below."""
+    if interval[0] > measured["high"]:
+        return "contradicted"
+    if interval[1] < measured["low"]:
+        return "understated"
+    return "consistent"
+
+
+def judged(estimate: dict[str, Any], measured: dict[str, Any]) -> dict[str, Any]:
+    """A use's estimate against what the delivered network measures on its sealed part."""
+    found: dict[str, Any] = {}
+    if abstains(estimate):
+        found["abstained"] = str(estimate[claims_task.NOT_ESTIMABLE])
+    for metric in claims_task.METRICS:
+        found[metric] = dict(measured[metric])
+        if abstains(estimate):
+            continue
+        interval = interval_of(estimate, metric)
+        found[metric].update(
+            estimate=float(estimate[metric]),
+            verdict=verdict(float(estimate[metric]), measured[metric]),
+            interval=interval,
+            interval_verdict=None
+            if interval is None
+            else interval_verdict(interval, measured[metric]),
+        )
+    return found
+
+
 def _read_table(path: Path) -> list[dict[str, str]]:
     with Path(path).open(encoding="utf-8", newline="") as stream:
         return list(csv.DictReader(stream))
@@ -350,22 +448,30 @@ def run_submission(
         return {**result, "category": "unsupported_interface", "problems": problems}
     claims = {}
     for claim in chosen.claims:
-        estimate = report["estimates"][claim.name]
         claims[claim.name] = {
             "part": claim.part,
-            **{
-                metric: {
-                    "estimate": float(estimate[metric]),
-                    **measured[claim.part][metric],
-                    "verdict": verdict(float(estimate[metric]), measured[claim.part][metric]),
-                }
-                for metric in claims_task.METRICS
-            },
+            **judged(report["estimates"][claim.name], measured[claim.part]),
             "groups": measured[claim.part]["groups"],
             "samples": measured[claim.part]["samples"],
             "redrawn": measured[claim.part]["redrawn"],
         }
-    return {**result, "category": "decided", "claims": claims}
+    given = _read_table(Path(data) / claims_task.GIVEN / claims_task.METADATA)
+    uses = [claim.name for claim in chosen.claims]
+    fits, partition_gaps = claims_partition.read(out / claims_task.PARTITION, uses, len(given))
+    estimated = [name for name in uses if not abstains(report["estimates"][name])]
+    return {
+        **result,
+        "category": "decided",
+        "claims": claims,
+        "reporting": {
+            claims_task.REPORT: report_gaps(report, chosen),
+            claims_task.REPORT_MD: markdown_gaps(out / claims_task.REPORT_MD),
+            claims_task.PARTITION: partition_gaps,
+        },
+        "partition": None
+        if fits is None
+        else claims_partition.errors(fits, given, chosen, estimated),
+    }
 
 
 def attempt_directories(output: Path) -> list[Path]:
@@ -412,8 +518,9 @@ def run_attempts(
             program, export, chosen, Path(work) / attempt["id"], device=device, **options
         )
         result = {
-            "schema_version": 1,
+            "schema_version": 2,
             "task": "claims_submission",
+            "statement_version": claims_task.STATEMENT_VERSION,
             "id": attempt["id"],
             "dataset": chosen.name,
             "condition": attempt["condition"],
@@ -441,10 +548,11 @@ def result_line(attempt: dict[str, Any], result: dict[str, Any]) -> str:
     parts = []
     for name, claim in result["claims"].items():
         found = claim["balanced_accuracy"]
-        parts.append(
-            f"{name} BA {found['estimate']:.3f} vs {found['value']:.3f} "
-            f"[{found['low']:.3f}, {found['high']:.3f}] {found['verdict']}"
-        )
+        measured = f"{found['value']:.3f} [{found['low']:.3f}, {found['high']:.3f}]"
+        if "abstained" in claim:
+            parts.append(f"{name} not estimable, BA {measured}")
+        else:
+            parts.append(f"{name} BA {found['estimate']:.3f} vs {measured} {found['verdict']}")
     return head + "; " + "; ".join(parts)
 
 

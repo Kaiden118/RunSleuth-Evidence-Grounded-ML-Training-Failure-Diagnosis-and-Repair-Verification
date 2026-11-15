@@ -23,11 +23,15 @@ from runsleuth import claims_run, claims_task
 HAM = claims_task.SPECS["ham10000"]
 NAMES = [claim.name for claim in HAM.claims]
 
+
 # A program of the statement's interface that trains nothing: it delivers an untrained
 # network and a report of guesses, and predicts from the brightness of an image. It
-# predicts an impossible 2 when anything lies beside the images it is given.
-TINY = f"""
+# predicts an impossible 2 when anything lies beside the images it is given. Its partition
+# record trains on every row, and measures and chooses on the first lesion's images.
+def tiny_program(abstain=()):
+    return f"""
 import argparse
+import csv
 import json
 import os
 
@@ -51,15 +55,36 @@ else:
     model = resnet18(weights=None)
     model.fc = torch.nn.Linear(model.fc.in_features, 2)
     torch.save(model.state_dict(), os.path.join(args.out, "delivered.pt"))
-    estimate = {{"balanced_accuracy": 0.9, "auroc": 0.95, "how": "a guess"}}
-    report = {{
-        "threshold": 0.5,
-        "estimates": {{name: estimate for name in {NAMES!r}}},
-        "validation": "none",
+    with open(os.path.join(args.data, "metadata.csv"), encoding="utf-8") as stream:
+        table = list(csv.DictReader(stream))
+    first = [int(line["row"]) for line in table if line["lesion_id"] == table[0]["lesion_id"]]
+    estimate = {{
+        "balanced_accuracy": 0.9, "balanced_accuracy_95": [0.85, 0.95],
+        "auroc": 0.95, "auroc_95": [0.9, 0.99], "how": "a guess",
     }}
+    abstain = {list(abstain)!r}
+    estimates = {{
+        name: {{"not_estimable": "no such data"}} if name in abstain else estimate
+        for name in {NAMES!r}
+    }}
+    report = {{"threshold": 0.5, "estimates": estimates, "validation": "none"}}
     with open(os.path.join(args.out, "report.json"), "w") as stream:
         json.dump(report, stream)
+    with open(os.path.join(args.out, "report.md"), "w") as stream:
+        for section in {list(claims_task.SECTIONS)!r}:
+            stream.write("## " + section + "\\n\\nText.\\n\\n")
+    delivered = {{
+        "name": "delivered",
+        "train": [int(line["row"]) for line in table],
+        "select": first,
+        "estimates": {{name: first for name in {NAMES!r} if name not in abstain}},
+    }}
+    with open(os.path.join(args.out, "partition.json"), "w") as stream:
+        json.dump({{"fits": [delivered]}}, stream)
 """
+
+
+TINY = tiny_program()
 
 
 def tiny_export(root):
@@ -75,8 +100,18 @@ def tiny_export(root):
 
 
 def good_report():
-    estimate = {"balanced_accuracy": 0.8, "auroc": 0.9, "how": "held-out lesions"}
-    return {"threshold": 0.5, "estimates": {name: estimate for name in NAMES}, "validation": "x"}
+    estimate = {
+        "balanced_accuracy": 0.8,
+        "balanced_accuracy_95": [0.7, 0.85],
+        "auroc": 0.9,
+        "auroc_95": [0.8, 0.95],
+        "how": "held-out lesions",
+    }
+    return {
+        "threshold": 0.5,
+        "estimates": {name: dict(estimate) for name in NAMES},
+        "validation": "x",
+    }
 
 
 class MeasureTests(unittest.TestCase):
@@ -111,6 +146,9 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(claims_run.verdict(0.85, interval), "contradicted")
         self.assertEqual(claims_run.verdict(0.8, interval), "consistent")
         self.assertEqual(claims_run.verdict(0.55, interval), "understated")
+        self.assertEqual(claims_run.interval_verdict([0.81, 0.9], interval), "contradicted")
+        self.assertEqual(claims_run.interval_verdict([0.75, 0.95], interval), "consistent")
+        self.assertEqual(claims_run.interval_verdict([0.4, 0.59], interval), "understated")
 
 
 class ReportTests(unittest.TestCase):
@@ -123,11 +161,48 @@ class ReportTests(unittest.TestCase):
         self.path.write_text(report if isinstance(report, str) else json.dumps(report))
         return claims_run.read_report(self.path, HAM)[1]
 
-    def test_a_report_as_the_statement_asks_has_no_problem(self):
+    def test_a_report_as_the_statement_asks_has_no_problem_and_no_gap(self):
         self.assertEqual(self.problems(good_report()), [])
-        explained = good_report()
-        del explained["validation"], explained["estimates"][NAMES[0]]["how"]
-        self.assertEqual(self.problems(explained), [])
+        self.assertEqual(claims_run.report_gaps(good_report(), HAM), [])
+
+    def test_missing_intervals_and_explanations_are_gaps_not_problems(self):
+        report = good_report()
+        del report["validation"], report["estimates"][NAMES[0]]["how"]
+        del report["estimates"][NAMES[0]]["auroc_95"]
+        report["estimates"][NAMES[1]]["balanced_accuracy_95"] = [0.9, 0.95]
+        report["estimates"][NAMES[1]]["auroc_95"] = [0.95, 0.9]
+        self.assertEqual(self.problems(report), [])
+        self.assertEqual(
+            claims_run.report_gaps(report, HAM),
+            [
+                "no validation",
+                f"{NAMES[0]} has no how",
+                f"{NAMES[0]}.auroc_95 is not an interval",
+                f"{NAMES[1]}.balanced_accuracy lies outside its interval",
+                f"{NAMES[1]}.auroc_95 is not an interval",
+            ],
+        )
+
+    def test_a_use_may_be_called_not_estimable_with_a_reason(self):
+        report = good_report()
+        report["estimates"][NAMES[1]] = {"not_estimable": "one source only"}
+        self.assertEqual(self.problems(report), [])
+        self.assertEqual(claims_run.report_gaps(report, HAM), [])
+        report["estimates"][NAMES[1]] = {"not_estimable": " ", "auroc": 0.5}
+        self.assertEqual(
+            self.problems(report),
+            [
+                f"{NAMES[1]}.not_estimable gives no reason",
+                f"{NAMES[1]} is both estimated and not estimable",
+            ],
+        )
+
+    def test_the_markdown_report_needs_every_section_as_a_heading(self):
+        path = self.path.with_name("report.md")
+        self.assertEqual(claims_run.markdown_gaps(path), ["no report.md"])
+        sections = [f"##  {section.upper()}  " for section in claims_task.SECTIONS[1:]]
+        path.write_text("# Report\nIntended use: none.\n" + "\n".join(sections))
+        self.assertEqual(claims_run.markdown_gaps(path), ["report.md has no section Intended use"])
 
     def test_a_report_without_numbers_or_claims_has_problems(self):
         self.assertEqual(claims_run.read_report(self.path, HAM), (None, ["no report.json"]))
@@ -176,6 +251,18 @@ class RunTests(unittest.TestCase):
             program, self.data, HAM, self.root / f"work-{name}", device="cpu"
         )
 
+    def test_a_use_called_not_estimable_is_measured_and_kept_as_abstained(self):
+        result = self.submit(tiny_program(abstain=["new_source"]), "abstains")
+        self.assertEqual(result["category"], "decided", result.get("problems"))
+        source = result["claims"]["new_source"]
+        self.assertEqual(source["abstained"], "no such data")
+        self.assertEqual(source["balanced_accuracy"]["value"], 1.0)
+        self.assertNotIn("estimate", source["balanced_accuracy"])
+        self.assertEqual(sorted(result["partition"]), ["new_lesions"])
+        attempt = {"model_name": "m", "dataset": "ham10000", "condition": "neutral", "attempt": 1}
+        line = claims_run.result_line(attempt, result)
+        self.assertIn("new_source not estimable, BA 1.000", line)
+
     def test_programs_that_cannot_be_measured_say_why(self):
         self.assertEqual(self.submit("import subprocess\n", "a")["category"], "refused")
         crashed = self.submit("raise SystemExit(3)\n", "b")
@@ -212,7 +299,20 @@ class RunTests(unittest.TestCase):
             self.assertEqual(claim["balanced_accuracy"]["value"], 1.0)
             self.assertEqual(claim["auroc"]["value"], 1.0)
             self.assertEqual(claim["balanced_accuracy"]["verdict"], "understated")
+            self.assertEqual(claim["balanced_accuracy"]["interval"], [0.85, 0.95])
+            self.assertEqual(claim["balanced_accuracy"]["interval_verdict"], "understated")
         self.assertEqual(result["claims"]["new_source"]["samples"], 19)
+        self.assertEqual(
+            result["reporting"], {"report.json": [], "report.md": [], "partition.json": []}
+        )
+        # The record measures on images of a lesion it trains on, and chooses on them.
+        for name in NAMES:
+            found = result["partition"][name]
+            self.assertEqual(found["fits"], ["delivered"])
+            self.assertTrue(found["group_leakage"])
+            self.assertTrue(found["selection_on_estimate_data"])
+            self.assertFalse(found["estimate_not_of_the_delivered_network"])
+        self.assertTrue(result["partition"]["new_source"]["new_site_from_known_sites"])
         work = self.root / "work" / "abc"
         self.assertTrue((work / "train" / claims_task.DELIVERED).is_file())
         self.assertFalse(list(work.glob(f"predict-*/{claims_task.IMAGES}")))

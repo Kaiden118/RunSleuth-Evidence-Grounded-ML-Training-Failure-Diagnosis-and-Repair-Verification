@@ -179,7 +179,10 @@ class RunnerTests(unittest.TestCase):
             run = claims_agent.program_runner(root / "small", root / "runs", device="cpu")
             shown = run(program, {"run": "one", "seed": 3})
             self.assertEqual(shown["status"], "completed", shown["output"])
-            self.assertEqual(json.loads(shown["report"])["threshold"], 0.5)
+            reports = shown["reports"]
+            self.assertEqual(json.loads(reports["report.json"])["threshold"], 0.5)
+            self.assertIn("## Limitations", reports["report.md"])
+            self.assertIn('"delivered"', reports["partition.json"])
             self.assertIn(
                 ["delivered.pt", (root / "runs/one/delivered.pt").stat().st_size], shown["files"]
             )

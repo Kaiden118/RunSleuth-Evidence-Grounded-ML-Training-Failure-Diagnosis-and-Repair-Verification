@@ -174,8 +174,21 @@ class StatementTests(unittest.TestCase):
                 self.assertIn(claim.population, text)
             for column, _ in chosen.columns:
                 self.assertIn(f"`{column}`", text)
-            for word in ("--predict", claims_task.DELIVERED, claims_task.REPORT, "threshold"):
+            for word in (
+                "--predict",
+                claims_task.DELIVERED,
+                claims_task.REPORT,
+                claims_task.REPORT_MD,
+                claims_task.PARTITION,
+                f'"{claims_task.NOT_ESTIMABLE}"',
+                f'"balanced_accuracy{claims_task.INTERVAL}"',
+                f'"auroc{claims_task.INTERVAL}"',
+                "`delivered`",
+                "threshold",
+            ):
                 self.assertIn(word, text)
+            for section in claims_task.SECTIONS:
+                self.assertIn(f"`## {section}`", text)
             self.assertNotRegex(text, r"\{[a-z_]+\}")
 
     def test_the_statement_gives_no_hint_of_the_traps(self):

@@ -85,10 +85,15 @@ python -m runsleuth.claims_task worlds
 python -m runsleuth.claims_task statement --world ham10000-rosendahl
 python -m runsleuth.claims_task export --world ham10000-rosendahl --config configs/ham10000.json --out <exports>/ham10000-rosendahl
 python -m runsleuth.claims_agent write --world ham10000-rosendahl --condition neutral --model-name <writer> --provider <provider> --data <exports> --out <attempts> --work <work>
+python -m runsleuth.claims_reference write --world ham10000-rosendahl --out <attempts>
 python -m runsleuth.claims_run run --out <attempts> --data <exports> --work <runs>
+python -m runsleuth.claims_probe run --out <attempts> --data <exports> --folds <folds> --work <probes>
+python -m runsleuth.claims_audit run --out <attempts> --runs <runs> --probes <probes> --audits <audits> --auditor-name <auditor> --provider <provider>
+python -m runsleuth.claims_analysis --out <attempts> --audits <audits> --report <file>
 ```
 
-Programs run in a subprocess under a Python-level guard, not in a container.
+Programs run in a subprocess under a Python-level guard that limits what they may read,
+write and start; it is not a container.
 
 ## Repair Verification
 
@@ -272,7 +277,7 @@ python -m runsleuth.heldout run --reference-run <baseline-run>
 | Claim audit pilot: sealed data, eight programs, code labels | | | ██ | | | | ☑ |
 | Claim audit: task v2, nine sealed worlds, isolation, freeze | | | ███ | | | | ◐ |
 | Writers: three LLMs on nine worlds, official runs, labels | | | | ███ | | | ☐ |
-| Evidence tables, reference pipelines, auditors | | | | ███ | | | ☐ |
+| Evidence tables, reference pipelines, auditors | | | █ | ███ | | | ◐ |
 | Analysis and report | | | | █ | ██ | | ☐ |
 | Blind review of the repair labels | | | | | | ███ | ☐ |
 | A third dataset; release of code, splits and prompts | | | | | | ███ | ☐ |

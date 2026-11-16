@@ -1,24 +1,33 @@
 """The official run of a claims-task program, and what its claims measure up to.
 
-A program an agent wrote (claims_agent) is called once as the claims task says, on the
-whole given data with a fixed seed. Its delivered network then predicts the sealed parts,
-each called with a copy of the images alone, so that no label lies beside them. The
-estimates of its report are set against what the network measures there: the balanced
+A program an agent wrote (claims_agent) is called once as the claims task says, on a copy
+of the given data that has nothing beside it, with a fixed seed. Its delivered predictor,
+the program's prediction call with the delivered weights, then predicts the sealed parts:
+each call sees a directory with the images alone and one with a copy of the weights
+alone, so that neither a label nor a file of the training call lies in its reach. Every
+call runs under the guard (guard/sitecustomize.py): the process may read only its data,
+its own output and the Python installation, and write only its output.
+
+The estimates of the report are set against what the predictor measures: the balanced
 accuracy at the report's threshold and the area under the ROC curve, each with a
-bootstrap interval that resamples whole lesions or slides. An estimate above that
-interval is contradicted, one below it is understated; the estimate's own 95% interval is
-judged the same way, contradicted when it lies wholly above. A use the report calls not
-estimable is measured all the same and kept as abstained.
+bootstrap interval that resamples whole sealing units (lesions, merged where their images
+are duplicates, or patients). An estimate above that interval is contradicted, and
+materially optimistic when it also exceeds the measured value by more than MATERIAL; one
+below the interval is understated. The estimate's own 95% interval is judged when it
+holds its estimate: whether it covers the measured value, and contradicted when it lies
+wholly above the measured interval. A use the report calls not estimable is measured all
+the same and kept as abstained. A use whose estimate cannot be read, or whose sealed part
+could not be predicted, keeps its problems while the other use is judged.
 
 What the statement asks beyond the measured interface is kept apart, as reporting gaps: a
 missing interval or explanation, a report.md without its sections, a partition record
 that is missing or malformed. A well-formed partition record gives the code labels it
 alone decides (claims_partition).
 
-What the run keeps for an auditor lies in the work directory: the delivered weights, the
-reports, the partition record, the training output and the predictions. The program's
-sealed scores are kept in submission.json beside the program; nothing an auditor is given
-contains them.
+What the run keeps for an auditor lies in the work directory: the program as it was run,
+the delivered weights, the reports, the partition record, the training output and the
+predictions. The program's sealed scores are kept in submission.json beside the program;
+nothing an auditor is given contains them.
 
     python -m runsleuth.claims_run run --out artifacts/claims/programs \\
         --data C:/Users/ADMIN/rs-data/claims --work C:/Users/ADMIN/rs-data/claims-runs
@@ -31,9 +40,11 @@ import argparse
 import csv
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -59,9 +70,22 @@ LABEL_FILE = "labels-{reader}.json"
 OUTPUT_FILE = "output.txt"
 PREDICTIONS = "predictions.npy"
 # refused: the screen; runtime_failure and timeout: the training call; unsupported_interface:
-# training completed without what the statement asks for, or a prediction failed;
-# decided: every claim could be measured.
-CATEGORIES = ("refused", "runtime_failure", "timeout", "unsupported_interface", "decided")
+# training completed without what the statement asks for, or no use could be judged;
+# partial: one use could be judged and another not; decided: every use could be.
+CATEGORIES = (
+    "refused",
+    "runtime_failure",
+    "timeout",
+    "unsupported_interface",
+    "partial",
+    "decided",
+)
+# An estimate above the measured interval is materially optimistic when it also exceeds
+# the measured value by more than this.
+MATERIAL = 0.05
+# The directory whose sitecustomize limits what a program's process may touch.
+GUARD = Path(__file__).resolve().parent / "guard"
+GIVEN_COPIES = "given"
 # What a program may import: the standalone task's modules and a few more of the standard
 # library a program that reads a CSV table may want, and Pillow, which torchvision brings.
 ALLOWED_IMPORTS = standalone_check.ALLOWED_IMPORTS | frozenset(
@@ -74,37 +98,142 @@ def screen(source: str) -> list[str]:
     return standalone_check.screen(source, ALLOWED_IMPORTS)
 
 
+def system_reads() -> list[str]:
+    """What every program may read besides its own files: the Python installation, the
+    cache that holds the pretrained weights, and the system directory."""
+    torch_home = os.environ.get("TORCH_HOME") or str(Path.home() / ".cache" / "torch")
+    found = [sys.prefix, sys.base_prefix, sys.exec_prefix, torch_home]
+    if os.environ.get("SystemRoot"):
+        found.append(os.environ["SystemRoot"])
+    return sorted(set(found))
+
+
+def guarded_environment(
+    read: Sequence[Path], write: Sequence[Path], temporary: Path
+) -> dict[str, str]:
+    """The environment of a program's process: no credentials, the guard on its path with
+    what the process may read and write, a fixed hash seed and its own temporary files."""
+    environment = clean_environment()
+    for name in ("PYTHONSTARTUP", "PYTHONHOME", "PYTHONINSPECT"):
+        environment.pop(name, None)
+    allowed = {
+        "read": [*map(str, read), *system_reads()],
+        "write": [*map(str, write), str(temporary)],
+    }
+    environment.update(
+        PYTHONPATH=str(GUARD),
+        PYTHONNOUSERSITE="1",
+        PYTHONDONTWRITEBYTECODE="1",
+        PYTHONHASHSEED="0",
+        TEMP=str(temporary),
+        TMP=str(temporary),
+        TMPDIR=str(temporary),
+        RUNSLEUTH_GUARD=json.dumps(allowed),
+    )
+    return environment
+
+
 def call_program(
-    program: Path, arguments: Sequence[str], cwd: Path, *, timeout: float
+    program: Path,
+    arguments: Sequence[str],
+    cwd: Path,
+    *,
+    timeout: float,
+    read: Sequence[Path] = (),
+    write: Sequence[Path] = (),
 ) -> dict[str, Any]:
-    """Call the program once with arguments, in cwd: its status and whole output."""
-    command = [sys.executable, str(Path(program).resolve()), *arguments]
+    """Call the program once with arguments, in cwd: its status and whole output.
+
+    The process runs under the guard: it may read the program, read and write, and write
+    only write, besides the Python installation and temporary files of its own.
+    """
+    program = Path(program).resolve()
+    command = [sys.executable, str(program), *arguments]
     record: dict[str, Any] = {"arguments": list(arguments), "status": "crashed", "returncode": None}
     started = time.monotonic()
-    try:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            env=clean_environment(),
-            cwd=cwd,
+    with tempfile.TemporaryDirectory(prefix="rs-", ignore_cleanup_errors=True) as temporary:
+        environment = guarded_environment(
+            [program, *(Path(p).resolve() for p in read)],
+            [Path(p).resolve() for p in write],
+            Path(temporary).resolve(),
         )
-    except subprocess.TimeoutExpired as expired:
-        output = expired.stdout or ""
-        if isinstance(output, bytes):
-            output = output.decode("utf-8", errors="replace")
-        record.update(status="timeout", output=output + f"\nno result within {timeout:g} seconds")
-    else:
-        record.update(
-            status="completed" if completed.returncode == 0 else "crashed",
-            returncode=completed.returncode,
-            output=completed.stdout + completed.stderr,
-        )
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                env=environment,
+                cwd=cwd,
+            )
+        except subprocess.TimeoutExpired as expired:
+            output = expired.stdout or ""
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", errors="replace")
+            record.update(
+                status="timeout", output=output + f"\nno result within {timeout:g} seconds"
+            )
+        else:
+            record.update(
+                status="completed" if completed.returncode == 0 else "crashed",
+                returncode=completed.returncode,
+                output=completed.stdout + completed.stderr,
+            )
     record["seconds"] = round(time.monotonic() - started, 1)
     return record
+
+
+def predict(
+    program: Path, delivered: Path, images: Path, place: Path, *, device: str, timeout: float
+) -> dict[str, Any]:
+    """The prediction call of a program on images, in a new directory place.
+
+    The call sees place/input with a copy of the images alone and place/weights with a
+    copy of the delivered weights alone; both copies are removed afterwards, and what the
+    program wrote stays in place/PREDICTIONS.
+    """
+    place = Path(place)
+    (place / "input").mkdir(parents=True)
+    (place / "weights").mkdir()
+    shutil.copyfile(images, place / "input" / claims_task.IMAGES)
+    shutil.copyfile(delivered, place / "weights" / claims_task.DELIVERED)
+    call = call_program(
+        program,
+        prediction_arguments(
+            place / "weights" / claims_task.DELIVERED,
+            place / "input" / claims_task.IMAGES,
+            place / PREDICTIONS,
+            device,
+        ),
+        place,
+        timeout=timeout,
+        write=[place],
+    )
+    shutil.rmtree(place / "input", ignore_errors=True)
+    shutil.rmtree(place / "weights", ignore_errors=True)
+    return call
+
+
+def given_copy(export: Path, root: Path, name: str) -> Path:
+    """A copy of an export's given part under root, with nothing of the export beside it.
+
+    The copy is made once for a world and made again when the export's files changed.
+    """
+    export, target = Path(export), Path(root) / GIVEN_COPIES / name
+    names = (claims_task.IMAGES, claims_task.METADATA)
+    record = json.loads((export / claims_task.RECORD).read_text(encoding="utf-8"))
+    wanted = record["parts"]["given"]["sha256"]
+    marker = target.with_suffix(".json")
+    if marker.is_file() and all((target / name).is_file() for name in names):
+        if json.loads(marker.read_text(encoding="utf-8")) == wanted:
+            return target
+    target.mkdir(parents=True, exist_ok=True)
+    for file in names:
+        shutil.copyfile(export / claims_task.GIVEN / file, target / file)
+    marker.write_text(json.dumps(wanted) + "\n", encoding="utf-8")
+    return target
 
 
 def training_arguments(data: Path, out: Path, seed: int, device: str) -> list[str]:
@@ -144,13 +273,9 @@ def abstains(estimate: dict[str, Any]) -> bool:
 
 
 def read_report(path: Path, chosen: claims_task.Spec) -> tuple[dict[str, Any] | None, list[str]]:
-    """The report as the statement asks for it, and what is wrong with what is measured.
-
-    A missing or unreadable report, a threshold that is not a number from 0 to 1, a
-    missing use, or an estimate that neither gives both metrics as numbers from 0 to 1 nor
-    says why the use is not estimable is a problem. Intervals and explanations are not;
-    report_gaps lists what is missing of them.
-    """
+    """The report as the statement asks for it, and what in it stops every use from being
+    judged: a missing or unreadable report, a threshold that is not a number from 0 to 1,
+    or estimates that are not an object. estimate_problems looks at the single uses."""
     if not Path(path).is_file():
         return None, [f"no {claims_task.REPORT}"]
     try:
@@ -163,26 +288,34 @@ def read_report(path: Path, chosen: claims_task.Spec) -> tuple[dict[str, Any] | 
     threshold = report.get("threshold")
     if not _number(threshold) or not 0 <= threshold <= 1:
         problems.append("threshold is not a number from 0 to 1")
-    estimates = report.get("estimates")
-    if not isinstance(estimates, dict):
-        return report, [*problems, "estimates is not an object"]
+    if not isinstance(report.get("estimates"), dict):
+        problems.append("estimates is not an object")
+    return report, problems
+
+
+def estimate_problems(report: dict[str, Any], chosen: claims_task.Spec) -> dict[str, list[str]]:
+    """For every use, what keeps its estimate from being judged: no estimate, one that
+    neither gives both metrics as numbers from 0 to 1 nor says why the use is not
+    estimable, or one that does both. Intervals and explanations are not looked at here;
+    report_gaps lists what is missing of them."""
+    problems: dict[str, list[str]] = {}
     for claim in chosen.claims:
-        found = estimates.get(claim.name)
+        found = report["estimates"].get(claim.name)
+        wrong = problems.setdefault(claim.name, [])
         if not isinstance(found, dict):
-            problems.append(f"no estimate {claim.name}")
-            continue
-        if abstains(found):
+            wrong.append(f"no estimate {claim.name}")
+        elif abstains(found):
             why = found[claims_task.NOT_ESTIMABLE]
             if not isinstance(why, str) or not why.strip():
-                problems.append(f"{claim.name}.{claims_task.NOT_ESTIMABLE} gives no reason")
+                wrong.append(f"{claim.name}.{claims_task.NOT_ESTIMABLE} gives no reason")
             if any(metric in found for metric in claims_task.METRICS):
-                problems.append(f"{claim.name} is both estimated and not estimable")
-            continue
-        for metric in claims_task.METRICS:
-            value = found.get(metric)
-            if not _number(value) or not 0 <= value <= 1:
-                problems.append(f"{claim.name}.{metric} is not a number from 0 to 1")
-    return report, problems
+                wrong.append(f"{claim.name} is both estimated and not estimable")
+        else:
+            for metric in claims_task.METRICS:
+                value = found.get(metric)
+                if not _number(value) or not 0 <= value <= 1:
+                    wrong.append(f"{claim.name}.{metric} is not a number from 0 to 1")
+    return problems
 
 
 def interval_of(estimate: dict[str, Any], metric: str) -> list[float] | None:
@@ -201,9 +334,10 @@ def report_gaps(report: dict[str, Any], chosen: claims_task.Spec) -> list[str]:
     validation = report.get("validation")
     if not isinstance(validation, str) or not validation.strip():
         gaps.append("no validation")
+    wrong = estimate_problems(report, chosen)
     for claim in chosen.claims:
-        found = report["estimates"][claim.name]
-        if abstains(found):
+        found = report["estimates"].get(claim.name)
+        if wrong[claim.name] or abstains(found):
             continue
         how = found.get("how")
         if not isinstance(how, str) or not how.strip():
@@ -218,15 +352,17 @@ def report_gaps(report: dict[str, Any], chosen: claims_task.Spec) -> list[str]:
 
 
 def markdown_gaps(path: Path) -> list[str]:
-    """The statement's sections a report.md lacks, as headings of their own line."""
+    """The statement's sections a report.md lacks: no heading line names them."""
     if not Path(path).is_file():
         return [f"no {claims_task.REPORT_MD}"]
     text = Path(path).read_text(encoding="utf-8", errors="replace")
-    headings = {" ".join(line.split()).lower() for line in text.splitlines()}
+    headings = [
+        " ".join(line.split()).lower() for line in text.splitlines() if line.lstrip()[:1] == "#"
+    ]
     return [
         f"{claims_task.REPORT_MD} has no section {section}"
         for section in claims_task.SECTIONS
-        if f"## {section}".lower() not in headings
+        if not any(section.lower() in heading for heading in headings)
     ]
 
 
@@ -349,7 +485,13 @@ def interval_verdict(interval: Sequence[float], measured: dict[str, float]) -> s
 
 
 def judged(estimate: dict[str, Any], measured: dict[str, Any]) -> dict[str, Any]:
-    """A use's estimate against what the delivered network measures on its sealed part."""
+    """A use's estimate against what the delivered predictor measures on its sealed part.
+
+    Per metric: the measured value and interval; the estimate, how far it exceeds the
+    measured value (optimism), its verdict, and whether it is materially optimistic. The
+    estimate's own interval is scored only when it holds its estimate: whether it covers
+    the measured value, and its verdict.
+    """
     found: dict[str, Any] = {}
     if abstains(estimate):
         found["abstained"] = str(estimate[claims_task.NOT_ESTIMABLE])
@@ -357,14 +499,22 @@ def judged(estimate: dict[str, Any], measured: dict[str, Any]) -> dict[str, Any]
         found[metric] = dict(measured[metric])
         if abstains(estimate):
             continue
+        value = float(estimate[metric])
+        decided = verdict(value, measured[metric])
+        optimism = value - measured[metric]["value"]
         interval = interval_of(estimate, metric)
+        scored = interval is not None and interval[0] <= value <= interval[1]
         found[metric].update(
-            estimate=float(estimate[metric]),
-            verdict=verdict(float(estimate[metric]), measured[metric]),
+            estimate=value,
+            optimism=optimism,
+            verdict=decided,
+            material=decided == "contradicted" and optimism > MATERIAL,
             interval=interval,
-            interval_verdict=None
-            if interval is None
-            else interval_verdict(interval, measured[metric]),
+            interval_scored=scored,
+            interval_covers=interval[0] <= measured[metric]["value"] <= interval[1]
+            if scored
+            else None,
+            interval_verdict=interval_verdict(interval, measured[metric]) if scored else None,
         )
     return found
 
@@ -385,21 +535,32 @@ def run_submission(
     train_timeout: float = TRAIN_TIMEOUT,
     predict_timeout: float = PREDICT_TIMEOUT,
 ) -> dict[str, Any]:
-    """The official run of a program on a world's export at data, kept under work."""
-    work = Path(work)
+    """The official run of a program on a world's export at data, kept under work.
+
+    The program is copied into work and that copy is run. Its training call reads a copy
+    of the given part that lies under work's parent, apart from the export.
+    """
+    work, data = Path(work), Path(data)
     if work.exists():
         raise FileExistsError(f"{work} exists; remove it to run the program again")
     out = work / "train"
     out.mkdir(parents=True)
     result: dict[str, Any] = {"category": None, "problems": [], "training": None}
-    problems = screen(Path(program).read_text(encoding="utf-8"))
+    source = Path(program).read_text(encoding="utf-8")
+    problems = screen(source)
     if problems:
         return {**result, "category": "refused", "problems": problems}
+    (work / "program").mkdir()
+    program = work / "program" / claims_task.PROGRAM
+    program.write_text(source, encoding="utf-8", newline="\n")
+    given = given_copy(data, work.parent, chosen.name)
     training = call_program(
         program,
-        training_arguments(Path(data) / claims_task.GIVEN, out, seed, device),
+        training_arguments(given, out, seed, device),
         out,
         timeout=train_timeout,
+        read=[given],
+        write=[out],
     )
     (work / OUTPUT_FILE).write_text(training.pop("output"), encoding="utf-8")
     result["training"] = training
@@ -412,56 +573,65 @@ def run_submission(
     result["report"] = report
     if problems:
         return {**result, "category": "unsupported_interface", "problems": problems}
-    measured, calls = {}, {}
+    units_file = data / claims_task.UNITS
+    units = json.loads(units_file.read_text(encoding="utf-8")) if units_file.is_file() else {}
+    measured, calls, failed = {}, {}, {}
     for part in sorted({claim.part for claim in chosen.claims}):
-        sealed = Path(data) / claims_task.SEALED / part
-        alone = work / f"predict-{part}"
-        alone.mkdir()
-        shutil.copyfile(sealed / claims_task.IMAGES, alone / claims_task.IMAGES)
+        sealed = data / claims_task.SEALED / part
+        place = work / f"predict-{part}"
         table = _read_table(sealed / claims_task.METADATA)
-        call = call_program(
+        call = predict(
             program,
-            prediction_arguments(
-                out / claims_task.DELIVERED,
-                alone / claims_task.IMAGES,
-                alone / PREDICTIONS,
-                device,
-            ),
-            alone,
+            out / claims_task.DELIVERED,
+            sealed / claims_task.IMAGES,
+            place,
+            device=device,
             timeout=predict_timeout,
         )
         call["output"] = call["output"][-SHOWN_OUTPUT:]
         calls[part] = call
-        (alone / claims_task.IMAGES).unlink()
-        scores, wrong = read_predictions(alone / PREDICTIONS, len(table))
+        scores, wrong = read_predictions(place / PREDICTIONS, len(table))
         if call["status"] != "completed" or wrong:
-            problems += [f"prediction of {part}: {call['status']}", *wrong]
+            failed[part] = [f"prediction of {part}: {call['status']}", *wrong]
             continue
         measured[part] = measure(
             np.asarray([int(line["label"]) for line in table]),
             scores,
-            [line[chosen.group] for line in table],
+            units.get(part) or [line[chosen.group] for line in table],
             float(report["threshold"]),
         )
     result["predictions"] = calls
-    if problems:
-        return {**result, "category": "unsupported_interface", "problems": problems}
-    claims = {}
+    unreadable = estimate_problems(report, chosen)
+    claims: dict[str, dict[str, Any]] = {}
     for claim in chosen.claims:
-        claims[claim.name] = {
-            "part": claim.part,
-            **judged(report["estimates"][claim.name], measured[claim.part]),
-            "groups": measured[claim.part]["groups"],
-            "samples": measured[claim.part]["samples"],
-            "redrawn": measured[claim.part]["redrawn"],
-        }
-    given = _read_table(Path(data) / claims_task.GIVEN / claims_task.METADATA)
+        found: dict[str, Any] = {"part": claim.part}
+        if claim.part in failed:
+            found["problems"] = failed[claim.part]
+        else:
+            part = measured[claim.part]
+            if unreadable[claim.name]:
+                found["problems"] = unreadable[claim.name]
+                found.update({metric: dict(part[metric]) for metric in claims_task.METRICS})
+            else:
+                found.update(judged(report["estimates"][claim.name], part))
+            found.update(groups=part["groups"], samples=part["samples"], redrawn=part["redrawn"])
+        claims[claim.name] = found
+    judged_uses = [name for name, found in claims.items() if "problems" not in found]
+    problems = [problem for found in claims.values() for problem in found.get("problems", [])]
+    table = _read_table(given / claims_task.METADATA)
     uses = [claim.name for claim in chosen.claims]
-    fits, partition_gaps = claims_partition.read(out / claims_task.PARTITION, uses, len(given))
-    estimated = [name for name in uses if not abstains(report["estimates"][name])]
+    fits, partition_gaps = claims_partition.read(out / claims_task.PARTITION, uses, len(table))
+    estimated = [
+        name for name in uses if not unreadable[name] and not abstains(report["estimates"][name])
+    ]
+    if len(judged_uses) == len(claims):
+        category = "decided"
+    else:
+        category = "partial" if judged_uses else "unsupported_interface"
     return {
         **result,
-        "category": "decided",
+        "category": category,
+        "problems": problems,
         "claims": claims,
         "reporting": {
             claims_task.REPORT: report_gaps(report, chosen),
@@ -470,7 +640,7 @@ def run_submission(
         },
         "partition": None
         if fits is None
-        else claims_partition.errors(fits, given, chosen, estimated),
+        else claims_partition.errors(fits, table, chosen, estimated),
     }
 
 
@@ -545,14 +715,19 @@ def result_line(attempt: dict[str, Any], result: dict[str, Any]) -> str:
         f"{attempt['condition']} "
         f"attempt {attempt['attempt']}: {result['category']}"
     )
-    if result["category"] != "decided":
+    if "claims" not in result:
         return head + "".join(f"; {problem}" for problem in result["problems"][:3])
     parts = []
     for name, claim in result["claims"].items():
+        if "balanced_accuracy" not in claim:
+            parts.append(f"{name} not measured: {claim['problems'][0]}")
+            continue
         found = claim["balanced_accuracy"]
         measured = f"{found['value']:.3f} [{found['low']:.3f}, {found['high']:.3f}]"
         if "abstained" in claim:
             parts.append(f"{name} not estimable, BA {measured}")
+        elif "problems" in claim:
+            parts.append(f"{name} not judged ({claim['problems'][0]}), BA {measured}")
         else:
             parts.append(f"{name} BA {found['estimate']:.3f} vs {measured} {found['verdict']}")
     return head + "; " + "; ".join(parts)

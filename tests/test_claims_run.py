@@ -189,12 +189,16 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(self.problems(report), [])
         self.assertEqual(claims_run.report_gaps(report, HAM), [])
         report["estimates"][NAMES[1]] = {"not_estimable": " ", "auroc": 0.5}
+        self.assertEqual(self.problems(report), [])
         self.assertEqual(
-            self.problems(report),
-            [
-                f"{NAMES[1]}.not_estimable gives no reason",
-                f"{NAMES[1]} is both estimated and not estimable",
-            ],
+            claims_run.estimate_problems(report, HAM),
+            {
+                NAMES[0]: [],
+                NAMES[1]: [
+                    f"{NAMES[1]}.not_estimable gives no reason",
+                    f"{NAMES[1]} is both estimated and not estimable",
+                ],
+            },
         )
 
     def test_the_markdown_report_needs_every_section_as_a_heading(self):
@@ -203,6 +207,8 @@ class ReportTests(unittest.TestCase):
         sections = [f"##  {section.upper()}  " for section in claims_task.SECTIONS[1:]]
         path.write_text("# Report\nIntended use: none.\n" + "\n".join(sections))
         self.assertEqual(claims_run.markdown_gaps(path), ["report.md has no section Intended use"])
+        path.write_text("### 1. Intended use of the network\n" + "\n".join(sections))
+        self.assertEqual(claims_run.markdown_gaps(path), [])
 
     def test_a_report_without_numbers_or_claims_has_problems(self):
         self.assertEqual(claims_run.read_report(self.path, HAM), (None, ["no report.json"]))
@@ -211,14 +217,65 @@ class ReportTests(unittest.TestCase):
         wrong["threshold"] = 1.5
         wrong["estimates"][NAMES[0]]["auroc"] = "high"
         del wrong["estimates"][NAMES[1]]
+        self.assertEqual(self.problems(wrong), ["threshold is not a number from 0 to 1"])
+        self.assertEqual(
+            claims_run.estimate_problems(wrong, HAM),
+            {
+                NAMES[0]: [f"{NAMES[0]}.auroc is not a number from 0 to 1"],
+                NAMES[1]: [f"no estimate {NAMES[1]}"],
+            },
+        )
+        # A use that cannot be read has no reporting gap of its own.
+        self.assertEqual(claims_run.report_gaps(wrong, HAM), [])
+        wrong["estimates"] = []
         self.assertEqual(
             self.problems(wrong),
-            [
-                "threshold is not a number from 0 to 1",
-                f"{NAMES[0]}.auroc is not a number from 0 to 1",
-                f"no estimate {NAMES[1]}",
-            ],
+            ["threshold is not a number from 0 to 1", "estimates is not an object"],
         )
+
+    def test_an_estimate_is_judged_with_its_optimism_and_its_own_interval(self):
+        measured = {
+            "balanced_accuracy": {"value": 0.70, "low": 0.62, "high": 0.76},
+            "auroc": {"value": 0.80, "low": 0.75, "high": 0.85},
+        }
+        estimate = {
+            "balanced_accuracy": 0.80,
+            "balanced_accuracy_95": [0.74, 0.86],
+            "auroc": 0.86,
+            "auroc_95": [0.90, 0.95],
+        }
+        found = claims_run.judged(estimate, measured)
+        accuracy, area = found["balanced_accuracy"], found["auroc"]
+        self.assertEqual((accuracy["verdict"], accuracy["material"]), ("contradicted", True))
+        self.assertAlmostEqual(accuracy["optimism"], 0.10)
+        # Its interval holds the estimate, misses the measured value and reaches the
+        # measured interval.
+        self.assertEqual(
+            (
+                accuracy["interval_scored"],
+                accuracy["interval_covers"],
+                accuracy["interval_verdict"],
+            ),
+            (True, False, "consistent"),
+        )
+        # An interval that does not hold its own estimate is not scored.
+        self.assertEqual((area["verdict"], area["material"]), ("contradicted", True))
+        self.assertEqual(
+            (area["interval_scored"], area["interval_covers"], area["interval_verdict"]),
+            (False, None, None),
+        )
+        # Above the interval by less than MATERIAL: contradicted, not materially optimistic.
+        near = {
+            "balanced_accuracy": {"value": 0.75, "low": 0.70, "high": 0.78},
+            "auroc": measured["auroc"],
+        }
+        slight = claims_run.judged({"balanced_accuracy": 0.79, "auroc": 0.8}, near)
+        self.assertEqual(
+            (slight["balanced_accuracy"]["verdict"], slight["balanced_accuracy"]["material"]),
+            ("contradicted", False),
+        )
+        self.assertEqual(slight["auroc"]["verdict"], "consistent")
+        self.assertIsNone(slight["auroc"]["interval"])
 
     def test_predictions_are_one_probability_per_sample(self):
         path = self.path.with_name("p.npy")
@@ -262,6 +319,113 @@ class RunTests(unittest.TestCase):
         attempt = {"model_name": "m", "dataset": "ham10000", "condition": "neutral", "attempt": 1}
         line = claims_run.result_line(attempt, result)
         self.assertIn("new_source not estimable, BA 1.000", line)
+
+    def test_the_program_reads_its_copy_of_the_given_data_and_nothing_of_the_export(self):
+        result = self.submit(TINY, "clean")
+        self.assertEqual(result["category"], "decided", result.get("problems"))
+        work = self.root / "work-clean"
+        given = self.root / claims_run.GIVEN_COPIES / HAM.name
+        self.assertEqual(result["training"]["arguments"][1], str(given.resolve()))
+        self.assertEqual(sorted(p.name for p in given.iterdir()), ["images.npy", "metadata.csv"])
+        self.assertEqual(
+            sorted(p.name for p in given.parent.iterdir()), [HAM.name, f"{HAM.name}.json"]
+        )
+        self.assertEqual((work / "program" / claims_task.PROGRAM).read_text(encoding="utf-8"), TINY)
+        # The copy is made once.
+        made = (given / claims_task.IMAGES).stat().st_mtime_ns
+        self.submit(TINY, "again")
+        self.assertEqual((given / claims_task.IMAGES).stat().st_mtime_ns, made)
+        sealed = self.data / claims_task.SEALED / "new_site" / claims_task.METADATA
+        for name, lines in (
+            ("labels", f"open({str(sealed)!r}, encoding='utf-8').read()\n"),
+            ("record", f"open({str(self.data / claims_task.RECORD)!r}, encoding='utf-8').read()\n"),
+            (
+                "beside",
+                "import os, sys\n"
+                "if '--data' in sys.argv:\n"
+                "    os.listdir(os.path.dirname(sys.argv[sys.argv.index('--data') + 1]))\n",
+            ),
+        ):
+            refused = self.submit(lines + TINY, name)
+            self.assertEqual(refused["category"], "runtime_failure", name)
+            output = (self.root / f"work-{name}" / claims_run.OUTPUT_FILE).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("outside what this program may read", output)
+
+    def test_a_prediction_sees_the_images_and_the_weights_alone(self):
+        looks = TINY.replace(
+            "    images = np.load(args.images)\n",
+            "    images = np.load(args.images)\n"
+            "    where = os.path.dirname(os.path.dirname(os.path.dirname(args.weights)))\n"
+            "    open(os.path.join(where, 'train', 'report.json')).read()\n",
+        )
+        self.assertNotEqual(looks, TINY)
+        result = self.submit(looks, "looks")
+        self.assertEqual(result["category"], "unsupported_interface")
+        self.assertIn("prediction of new_groups: crashed", result["problems"])
+        self.assertIn(
+            "outside what this program may read", result["predictions"]["new_groups"]["output"]
+        )
+        self.assertEqual(
+            result["claims"]["new_lesions"]["problems"][0], "prediction of new_groups: crashed"
+        )
+        for part in ("new_groups", "new_site"):
+            place = self.root / "work-looks" / f"predict-{part}"
+            self.assertEqual([p.name for p in place.iterdir()], [])
+
+    def test_a_use_that_cannot_be_judged_leaves_the_other_judged(self):
+        fails = TINY.replace(
+            "    images = np.load(args.images)\n",
+            "    images = np.load(args.images)\n    if len(images) == 19:\n        raise SystemExit(5)\n",
+        )
+        result = self.submit(fails, "fails")
+        self.assertEqual(result["category"], "partial")
+        self.assertEqual(
+            result["problems"], ["prediction of new_site: crashed", "no predictions written"]
+        )
+        self.assertEqual(
+            result["claims"]["new_lesions"]["balanced_accuracy"]["verdict"], "understated"
+        )
+        self.assertNotIn("balanced_accuracy", result["claims"]["new_source"])
+        attempt = {
+            "model_name": "m",
+            "world": HAM.name,
+            "dataset": "ham10000",
+            "condition": "neutral",
+            "attempt": 1,
+        }
+        self.assertIn("new_source not measured", claims_run.result_line(attempt, result))
+        unreadable = TINY.replace(
+            '    report = {"threshold": 0.5,',
+            '    estimates["new_source"] = {"auroc": "high"}\n    report = {"threshold": 0.5,',
+        )
+        self.assertNotEqual(unreadable, TINY)
+        result = self.submit(unreadable, "unreadable")
+        self.assertEqual(result["category"], "partial")
+        source = result["claims"]["new_source"]
+        self.assertEqual(
+            source["problems"],
+            [
+                "new_source.balanced_accuracy is not a number from 0 to 1",
+                "new_source.auroc is not a number from 0 to 1",
+            ],
+        )
+        # The use is measured all the same, without a verdict.
+        self.assertEqual(source["balanced_accuracy"]["value"], 1.0)
+        self.assertNotIn("verdict", source["balanced_accuracy"])
+        self.assertEqual(sorted(result["partition"]), ["new_lesions"])
+        self.assertIn("new_source not judged", claims_run.result_line(attempt, result))
+
+    def test_the_interval_resamples_the_sealing_units_of_the_export(self):
+        units = json.loads((self.data / claims_task.UNITS).read_text(encoding="utf-8"))
+        self.assertEqual(
+            self.submit(TINY, "lesions")["claims"]["new_source"]["groups"],
+            len(set(units["new_site"])),
+        )
+        units["new_site"] = [f"unit-{n % 2}" for n in range(len(units["new_site"]))]
+        (self.data / claims_task.UNITS).write_text(json.dumps(units), encoding="utf-8")
+        self.assertEqual(self.submit(TINY, "merged")["claims"]["new_source"]["groups"], 2)
 
     def test_programs_that_cannot_be_measured_say_why(self):
         self.assertEqual(self.submit("import subprocess\n", "a")["category"], "refused")
@@ -316,7 +480,10 @@ class RunTests(unittest.TestCase):
         self.assertTrue(result["partition"]["new_source"]["new_site_from_known_sites"])
         work = self.root / "work" / "abc"
         self.assertTrue((work / "train" / claims_task.DELIVERED).is_file())
-        self.assertFalse(list(work.glob(f"predict-*/{claims_task.IMAGES}")))
+        for part in ("new_groups", "new_site"):
+            self.assertEqual(
+                [p.name for p in (work / f"predict-{part}").iterdir()], [claims_run.PREDICTIONS]
+            )
         self.assertIn("decided", lines[0])
         self.assertEqual(
             claims_run.run_attempts(output, self.root / "data", self.root / "work"), []

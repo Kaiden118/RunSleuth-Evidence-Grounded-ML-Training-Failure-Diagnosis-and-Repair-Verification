@@ -262,6 +262,8 @@ def program_runner(
             claims_run.training_arguments(small, out, arguments["seed"], device),
             out,
             timeout=timeout,
+            read=[small],
+            write=[out],
         )
         shown: dict[str, Any] = {
             "status": training["status"],
@@ -279,28 +281,20 @@ def program_runner(
         }
         delivered = out / claims_task.DELIVERED
         if training["status"] == "completed" and delivered.is_file():
-            # As in the official run, the images to predict lie alone in a directory.
-            predicted = Path(runs) / f"{arguments['run']}-prediction"
-            predicted.mkdir()
-            images = predicted / claims_task.IMAGES
-            shutil.copyfile(small / claims_task.IMAGES, images)
-            call = claims_run.call_program(
-                program,
-                claims_run.prediction_arguments(
-                    delivered, images, predicted / "probabilities.npy", device
-                ),
-                predicted,
-                timeout=timeout,
+            # As in the official run, the call sees the images alone and the weights alone.
+            place = Path(runs) / f"{arguments['run']}-prediction"
+            images = small / claims_task.IMAGES
+            call = claims_run.predict(
+                program, delivered, images, place, device=device, timeout=timeout
             )
-            count = len(np.load(images, mmap_mode="r"))
-            images.unlink()
-            written = predicted / "probabilities.npy"
             shown["prediction"] = {
                 "status": call["status"],
                 "returncode": call["returncode"],
                 "seconds": call["seconds"],
                 "output": call["output"][-SHOWN_OUTPUT:],
-                "written": _describe(written, count),
+                "written": _describe(
+                    place / claims_run.PREDICTIONS, len(np.load(images, mmap_mode="r"))
+                ),
             }
         return shown
 

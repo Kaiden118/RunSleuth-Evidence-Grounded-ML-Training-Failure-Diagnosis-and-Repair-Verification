@@ -37,10 +37,14 @@ class ReferenceTests(unittest.TestCase):
     @unittest.skipIf(torch is None, "Install torch and torchvision for the reference run")
     def test_the_reference_estimates_every_use_with_support_on_its_record(self):
         source = claims_reference.REFERENCE.read_text(encoding="utf-8")
-        quick = source.replace("EPOCHS = 6\n", "EPOCHS = 1\n").replace(
-            "BOOTSTRAP = 1000\n", "BOOTSTRAP = 50\n"
+        # One epoch, a short bootstrap, and no ImageNet weights, which a test host may lack
+        # and the guard does not let a program fetch.
+        quick = (
+            source.replace("EPOCHS = 6\n", "EPOCHS = 1\n")
+            .replace("BOOTSTRAP = 1000\n", "BOOTSTRAP = 50\n")
+            .replace("resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)", "resnet18(weights=None)")
         )
-        self.assertNotEqual(quick, source)
+        self.assertEqual(quick.count("weights=None"), 1)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             data = root / "data" / HAM.name

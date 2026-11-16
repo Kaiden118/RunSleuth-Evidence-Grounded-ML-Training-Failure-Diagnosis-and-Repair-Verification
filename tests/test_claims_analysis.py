@@ -180,6 +180,19 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(found["primary_fresh_worlds"]["P1_materially_optimistic"]["claims"], 8)
         self.assertIn("P3_error_replication_minus_regime: 0.130", claims_analysis.summary(found))
 
+    def test_settled_labels_replace_the_records_warrant(self):
+        bad = next(r for r in self.rows if r["material"] and r["part"] == "new_site")
+        directory = next(
+            path.parent
+            for path in self.study.output.rglob("attempt.json")
+            if json.loads(path.read_text())["id"] == bad["program"]
+        )
+        settled = {"warrant": {bad["use"]: "supported"}}
+        (directory / claims_run.SETTLED_LABELS).write_text(json.dumps(settled), encoding="utf-8")
+        rows = claims_analysis.claim_rows(self.study.output, self.study.audits)
+        found = next(r for r in rows if r["program"] == bad["program"] and r["use"] == bad["use"])
+        self.assertEqual(found["warrant"], "supported")
+
     def test_an_empty_endpoint_has_no_value(self):
         self.assertEqual(
             claims_analysis.bootstrap([], lambda rows: None),

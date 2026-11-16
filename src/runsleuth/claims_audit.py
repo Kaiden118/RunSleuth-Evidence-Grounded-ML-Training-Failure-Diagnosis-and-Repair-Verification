@@ -517,6 +517,7 @@ def audit_attempts(
     probes: Path | None = None,
     response_format: str = "json_schema",
     limit: int | None = None,
+    auditor: dict[str, str] | None = None,
     progress: Callable[[str], None] = print,
 ) -> list[dict[str, Any]]:
     """Audit every attempt whose official run wrote a report, at every level, once.
@@ -525,7 +526,7 @@ def audit_attempts(
     failed is no audit and is asked again when the command is run again. limit stops
     after that many new audits.
     """
-    claims_freeze.guard(output)
+    claims_freeze.guard(output, auditor=auditor)
     done: list[dict[str, Any]] = []
     for directory in claims_run.attempt_directories(output):
         attempt = json.loads((directory / "attempt.json").read_text(encoding="utf-8"))
@@ -614,6 +615,7 @@ def main(argv: list[str] | None = None) -> int:
         probes=args.probes,
         response_format=args.response_format,
         limit=args.limit,
+        auditor={"auditor_name": args.auditor_name, "provider": args.provider, "model": model},
     )
     return 0
 

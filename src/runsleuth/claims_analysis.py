@@ -93,6 +93,10 @@ def claim_rows(output: Path, audits: Path | None = None) -> list[dict[str, Any]]
         submission = json.loads(path.read_text(encoding="utf-8"))
         if "claims" not in submission:
             continue
+        settled_path = directory / claims_run.SETTLED_LABELS
+        settled = (
+            json.loads(settled_path.read_text(encoding="utf-8")) if settled_path.is_file() else {}
+        )
         probe_path = directory / claims_probe.PROBE_FILE
         probe = json.loads(probe_path.read_text(encoding="utf-8")) if probe_path.is_file() else {}
         chosen = claims_task.spec(attempt.get("world", attempt["dataset"]))
@@ -108,7 +112,9 @@ def claim_rows(output: Path, audits: Path | None = None) -> list[dict[str, Any]]
                 if "abstained" in found
                 else "estimated"
             )
-            warrant = (submission.get("partition") or {}).get(claim.name, {}).get("warrant")
+            warrant = settled.get("warrant", {}).get(claim.name) or (
+                (submission.get("partition") or {}).get(claim.name, {}).get("warrant")
+            )
             forecast = (probe.get("forecast") or {}).get(claim.name, {}).get("balanced_accuracy")
             replicated = [
                 run["estimates"][claim.name]["balanced_accuracy"]["estimate"]

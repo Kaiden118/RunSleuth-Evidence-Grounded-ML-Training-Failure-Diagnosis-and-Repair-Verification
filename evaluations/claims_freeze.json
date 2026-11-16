@@ -129,5 +129,9 @@
       "reason": "After the 8 Flash-Lite episodes the direction was being re-scoped (external validity of free-form claims as the main condition); Sol was held until the design is settled, as proposed to and accepted by the user.",
       "effect": "The stop rule '<3 of 16' cannot be applied as written; the 8 programs are reported as a pilot of the explicit-scope condition, and the read of the stop rule is stated with this denominator."
     }
-  ]
+  ],
+  "closed": {
+    "at": "2026-11-16",
+    "reason": "Closed after the 8 Flash-Lite programs: the confirmatory study runs task version 2 on nine worlds under its own freeze (evaluations/claims_freeze_v2.json). The pilot's code stays at commit d0a7e12; claims_freeze.guard refuses any further write into artifacts/claims/study."
+  }
 }

@@ -86,6 +86,9 @@ MATERIAL = 0.05
 # The directory whose sitecustomize limits what a program's process may touch.
 GUARD = Path(__file__).resolve().parent / "guard"
 GIVEN_COPIES = "given"
+# The facts of the partition record, without sealed results, kept beside the run for
+# auditors.
+PROVENANCE_FILE = "provenance.json"
 # What a program may import: the standalone task's modules and a few more of the standard
 # library a program that reads a CSV table may want, and Pillow, which torchvision brings.
 ALLOWED_IMPORTS = standalone_check.ALLOWED_IMPORTS | frozenset(
@@ -98,14 +101,29 @@ def screen(source: str) -> list[str]:
     return standalone_check.screen(source, ALLOWED_IMPORTS)
 
 
+# System directories a program's libraries read on POSIX systems; none holds study data.
+POSIX_READS = ("/dev", "/proc", "/sys", "/etc", "/usr", "/lib", "/lib64", "/opt", "/run")
+# What they write there: the null device and shared memory for workers.
+POSIX_WRITES = ("/dev/null", "/dev/shm")
+
+
 def system_reads() -> list[str]:
     """What every program may read besides its own files: the Python installation, the
-    cache that holds the pretrained weights, and the system directory."""
+    cache that holds the pretrained weights, and the system's own directories."""
     torch_home = os.environ.get("TORCH_HOME") or str(Path.home() / ".cache" / "torch")
     found = [sys.prefix, sys.base_prefix, sys.exec_prefix, torch_home]
     if os.environ.get("SystemRoot"):
         found.append(os.environ["SystemRoot"])
+    if os.name == "posix":
+        found += [path for path in POSIX_READS if Path(path).exists()]
     return sorted(set(found))
+
+
+def system_writes() -> list[str]:
+    """What every program may write besides its own output and temporary files."""
+    if os.name != "posix":
+        return []
+    return [path for path in POSIX_WRITES if Path(path).exists()]
 
 
 def guarded_environment(
@@ -118,7 +136,7 @@ def guarded_environment(
         environment.pop(name, None)
     allowed = {
         "read": [*map(str, read), *system_reads()],
-        "write": [*map(str, write), str(temporary)],
+        "write": [*map(str, write), str(temporary), *system_writes()],
     }
     environment.update(
         PYTHONPATH=str(GUARD),
@@ -624,6 +642,14 @@ def run_submission(
     estimated = [
         name for name in uses if not unreadable[name] and not abstains(report["estimates"][name])
     ]
+    given_units = units.get("given")
+    if fits is None:
+        found_errors = {name: {"recorded": False, "warrant": "unknown"} for name in estimated}
+        facts: dict[str, Any] = {"record": partition_gaps}
+    else:
+        found_errors = claims_partition.errors(fits, table, chosen, estimated, given_units)
+        facts = claims_partition.provenance(fits, table, chosen, estimated, given_units)
+    (work / PROVENANCE_FILE).write_text(json.dumps(facts, indent=2) + "\n", encoding="utf-8")
     if len(judged_uses) == len(claims):
         category = "decided"
     else:
@@ -638,9 +664,7 @@ def run_submission(
             claims_task.REPORT_MD: markdown_gaps(out / claims_task.REPORT_MD),
             claims_task.PARTITION: partition_gaps,
         },
-        "partition": None
-        if fits is None
-        else claims_partition.errors(fits, table, chosen, estimated),
+        "partition": found_errors,
     }
 
 

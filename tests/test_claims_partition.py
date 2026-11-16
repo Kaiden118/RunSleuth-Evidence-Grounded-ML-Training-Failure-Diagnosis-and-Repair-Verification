@@ -13,7 +13,7 @@ USES = [claim.name for claim in HAM.claims]
 # Twelve rows: lesions a to f, two images each; a to d from vidir_modern and rosendahl,
 # e and f from vidir_molemax.
 TABLE = [
-    {"row": str(row), "lesion_id": lesion, "source": source}
+    {"row": str(row), "lesion_id": lesion, "source": source, "label": "0"}
     for row, (lesion, source) in enumerate(
         (lesion, source)
         for lesion, source in (
@@ -85,8 +85,8 @@ class ReadTests(unittest.TestCase):
 
 
 class ErrorTests(unittest.TestCase):
-    def errors(self, *fits, estimated=tuple(USES)):
-        found = [
+    def fits(self, *fits):
+        return [
             claims_partition.Fit(
                 item["name"],
                 frozenset(item["train"]),
@@ -95,7 +95,9 @@ class ErrorTests(unittest.TestCase):
             )
             for item in fits
         ]
-        return claims_partition.errors(found, TABLE, HAM, list(estimated))
+
+    def errors(self, *fits, estimated=tuple(USES), units=None):
+        return claims_partition.errors(self.fits(*fits), TABLE, HAM, list(estimated), units)
 
     def test_held_out_lesions_and_a_held_out_source_show_no_error(self):
         found = self.errors(
@@ -110,6 +112,7 @@ class ErrorTests(unittest.TestCase):
             self.assertTrue(found[use]["estimate_not_of_the_delivered_network"])
         self.assertEqual(found["new_source"]["new_site_from_known_sites"], [])
         self.assertIsNone(found["new_lesions"]["new_site_from_known_sites"])
+        self.assertEqual({found[use]["warrant"] for use in USES}, {"supported"})
 
     def test_the_record_shows_leakage_known_sites_and_choices_on_estimate_rows(self):
         # Trained on one image of lesion e; measured on both images of e and f, and chosen
@@ -119,19 +122,82 @@ class ErrorTests(unittest.TestCase):
         )
         lesions, source = found["new_lesions"], found["new_source"]
         self.assertEqual(
-            lesions["group_leakage"], [{"fit": "delivered", "groups": 1, "rows": 1, "of": 3}]
+            lesions["group_leakage"], [{"fit": "delivered", "units": 1, "rows": 1, "of": 3}]
         )
         self.assertEqual(
-            lesions["selection_on_estimate_data"], [{"fit": "delivered", "rows": 2, "of": 3}]
+            lesions["selection_on_estimate_data"],
+            [{"fit": "delivered", "rows": 2, "of": 3, "sites": []}],
         )
         self.assertFalse(lesions["estimate_not_of_the_delivered_network"])
         self.assertEqual(
             source["new_site_from_known_sites"], [{"fit": "delivered", "sites": ["vidir_molemax"]}]
         )
+        self.assertEqual(source["warrant"], "not_supported")
 
-    def test_an_estimate_the_record_does_not_measure_is_not_recorded(self):
+    def test_choices_count_by_unit_and_a_new_site_by_its_site(self):
+        # Chosen on the other image of a measured lesion: selection though no row is shared.
+        found = self.errors(fit("lesions", range(8), [9], new_lesions=[8, 10, 11]))
+        self.assertEqual(
+            found["new_lesions"]["selection_on_estimate_data"],
+            [{"fit": "lesions", "rows": 1, "of": 3, "sites": []}],
+        )
+        # A new source held out, but its threshold chosen on that source's other lesion.
+        found = self.errors(fit("source", range(8), [10, 11], new_source=[8, 9]))
+        self.assertEqual(found["new_source"]["new_site_from_known_sites"], [])
+        self.assertEqual(
+            found["new_source"]["selection_on_estimate_data"],
+            [{"fit": "source", "rows": 0, "of": 2, "sites": ["vidir_molemax"]}],
+        )
+        self.assertEqual(found["new_source"]["warrant"], "not_supported")
+
+    def test_merged_units_reveal_leakage_the_lesion_ids_hide(self):
+        units = [line["lesion_id"] for line in TABLE]
+        units[8] = units[9] = "a"  # lesion e duplicates lesion a's images
+        clean = fit("lesions", range(8), [], new_lesions=[8, 9])
+        self.assertEqual(self.errors(clean)["new_lesions"]["warrant"], "supported")
+        leaked = self.errors(clean, units=units)["new_lesions"]
+        self.assertEqual(
+            leaked["group_leakage"], [{"fit": "lesions", "units": 1, "rows": 2, "of": 2}]
+        )
+        self.assertEqual(leaked["warrant"], "not_supported")
+        with self.assertRaisesRegex(ValueError, "units for"):
+            self.errors(clean, units=units[:3])
+
+    def test_an_estimate_the_record_does_not_measure_is_unknown(self):
         found = self.errors(fit("delivered", range(8), new_lesions=[8]), estimated=["new_source"])
-        self.assertEqual(found, {"new_source": {"recorded": False}})
+        self.assertEqual(found, {"new_source": {"recorded": False, "warrant": "unknown"}})
+
+    def test_the_provenance_gives_the_facts_without_a_verdict(self):
+        fits = self.fits(
+            fit("delivered", [0, 1, 2, 3, 8], [10, 11], new_lesions=[9, 10, 11]),
+            fit("source", range(8), [], new_source=[8, 9, 10, 11]),
+        )
+        facts = claims_partition.provenance(fits, TABLE, HAM, USES)
+        self.assertEqual(facts["site_column"], "source")
+        self.assertEqual(
+            facts["given"]["vidir_molemax"], {"0": 4, "1": 0}
+        )  # lesions e and f are benign in TABLE
+        delivered = facts["fits"][0]
+        self.assertTrue(delivered["delivered"])
+        self.assertEqual(
+            delivered["train"],
+            {"vidir_modern": {"0": 4, "1": 0}, "vidir_molemax": {"0": 1, "1": 0}},
+        )
+        lesions = facts["uses"]["new_lesions"]["measured_by"][0]
+        self.assertEqual(
+            {
+                key: lesions[key]
+                for key in ("rows", "units", "units_also_trained_on", "units_also_chosen_on")
+            },
+            {"rows": 3, "units": 2, "units_also_trained_on": 1, "units_also_chosen_on": 1},
+        )
+        source = facts["uses"]["new_source"]["measured_by"][0]
+        self.assertEqual(
+            (source["sites"], source["sites_also_trained_on"]), (["vidir_molemax"], [])
+        )
+        text = json.dumps(facts)
+        for word in ("warrant", "supported", "leak", "error"):
+            self.assertNotIn(word, text)
 
 
 if __name__ == "__main__":

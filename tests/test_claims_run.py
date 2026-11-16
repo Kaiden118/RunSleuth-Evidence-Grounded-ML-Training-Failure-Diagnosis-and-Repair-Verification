@@ -316,6 +316,9 @@ class RunTests(unittest.TestCase):
         self.assertEqual(source["balanced_accuracy"]["value"], 1.0)
         self.assertNotIn("estimate", source["balanced_accuracy"])
         self.assertEqual(sorted(result["partition"]), ["new_lesions"])
+        silent = self.submit(TINY.replace('"partition.json"', '"other.json"'), "silent")
+        self.assertEqual(silent["reporting"]["partition.json"], ["no partition.json"])
+        self.assertEqual({found["warrant"] for found in silent["partition"].values()}, {"unknown"})
         attempt = {"model_name": "m", "dataset": "ham10000", "condition": "neutral", "attempt": 1}
         line = claims_run.result_line(attempt, result)
         self.assertIn("new_source not estimable, BA 1.000", line)
@@ -478,6 +481,14 @@ class RunTests(unittest.TestCase):
             self.assertTrue(found["selection_on_estimate_data"])
             self.assertFalse(found["estimate_not_of_the_delivered_network"])
         self.assertTrue(result["partition"]["new_source"]["new_site_from_known_sites"])
+        self.assertEqual(
+            {found["warrant"] for found in result["partition"].values()}, {"not_supported"}
+        )
+        facts = json.loads(
+            (self.root / "work" / "abc" / claims_run.PROVENANCE_FILE).read_text(encoding="utf-8")
+        )
+        self.assertEqual(sorted(facts["uses"]), NAMES)
+        self.assertNotIn("value", json.dumps(facts))
         work = self.root / "work" / "abc"
         self.assertTrue((work / "train" / claims_task.DELIVERED).is_file())
         for part in ("new_groups", "new_site"):

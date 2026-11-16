@@ -44,7 +44,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-runsleuth = ["*.json", "pipeline_templates/*/*.py"]
+runsleuth = ["*.json", "pipeline_templates/*/*.py", "reference/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

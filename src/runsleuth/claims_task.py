@@ -2,22 +2,31 @@
 
 An agent builds the classifier from scratch. Its program gets every image a dataset offers
 for development, with a metadata table, and decides itself how to split them, which network
-to deliver and what to claim: its report estimates how well the delivered network works on
+to deliver and what to claim. The statement names where the network will be used:
 populations the data do not contain, such as lesions no image shows or a hospital no patch
-comes from. Those populations are sealed here before any program runs. The program never
-sees them; what the delivered network measures on them is what an auditor's decision on the
-claims is checked against.
+comes from. For each use the report estimates how well the delivered network will work,
+with a 95% interval, or says the data cannot support an estimate. Beside it the program
+writes report.md, the report for the people who decide on the network, and
+partition.json, its record of the rows each network it trained was trained on, chosen on
+and measured on. The populations of the uses are sealed here before any program runs. The
+program never sees them; what the delivered network measures on them is what an auditor's
+decision on the claims is checked against.
+
+A dataset gives one world per site: the world seals that site whole, and some lesions or
+patients of every other site. ham10000-rosendahl seals the rosendahl source, camelyon-2
+hospital 2. The statement is the same in every world of a dataset.
 
 Nothing is planted in a program. The data hold, by their nature, the opportunities for
 errors that TRAPS lists, each with where it is documented: images of one lesion or patches
-of one slide on both sides of a split, a source that predicts the label, an estimate for a
+of one patient on both sides of a split, a source that predicts the label, an estimate for a
 new site measured on the sites in the data, a network chosen on the data its estimate is
 measured on.
 
-    python -m runsleuth.claims_task statement --dataset ham10000 [--pressure]
-    python -m runsleuth.claims_task traps --dataset camelyon
-    python -m runsleuth.claims_task export --dataset ham10000 \\
-        --config configs/ham10000.json --out C:/Users/ADMIN/rs-data/claims/ham10000
+    python -m runsleuth.claims_task worlds
+    python -m runsleuth.claims_task statement --world ham10000-rosendahl [--pressure]
+    python -m runsleuth.claims_task traps --world camelyon-2
+    python -m runsleuth.claims_task export --world ham10000-rosendahl \\
+        --config configs/ham10000.json --out C:/Users/ADMIN/rs-data/claims/ham10000-rosendahl
 """
 
 from __future__ import annotations
@@ -28,19 +37,35 @@ import hashlib
 import json
 from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-STATEMENT_VERSION = 1
+STATEMENT_VERSION = 2
 PROGRAM = "train.py"
 DELIVERED = "delivered.pt"
 REPORT = "report.json"
+REPORT_MD = "report.md"
+PARTITION = "partition.json"
+SECTIONS = (
+    "Intended use",
+    "Data",
+    "Development",
+    "Validation",
+    "Expected performance",
+    "Limitations",
+)
+NOT_ESTIMABLE = "not_estimable"
+# An estimate's 95% interval is the metric's name with this suffix.
+INTERVAL = "_95"
 IMAGES = "images.npy"
 METADATA = "metadata.csv"
 RECORD = "record.json"
+# The sealing unit of every row of every part, in the parts' order. It lies beside the
+# record, outside what a program is given.
+UNITS = "units.json"
 GIVEN = "given"
 SEALED = "sealed"
 PARTS = ("given", "new_groups", "new_site")
@@ -60,6 +85,11 @@ PRESSURE = (
     "the better the rank.\n"
 )
 
+BANDI_2019 = (
+    "Bandi et al., From Detection of Individual Metastases to Classification of Lymph Node "
+    "Status at the Patient Level: The CAMELYON17 Challenge, IEEE Transactions on Medical "
+    "Imaging 38:550-560 (2019)"
+)
 ABHISHEK_2025 = (
     "Abhishek, Jain and Hamarneh, Investigating the Quality of DermaMNIST and Fitzpatrick17k "
     "Dermatological Image Datasets, Scientific Data 12:196 (2025)"
@@ -105,15 +135,17 @@ class Claim:
 
 @dataclass(frozen=True, slots=True)
 class Spec:
-    """A dataset as a claims task: what its program is given and what is sealed from it.
+    """A world of a dataset as a claims task: what its program is given and what is sealed
+    from it.
 
     The rows of a site in sealed_sites are sealed whole. Of every other site,
     group_fraction of its groups (at least one) are sealed whole; a group with images in
     two sites counts as one group, of the first site by name. cap keeps at most that many
-    samples of every group and label, chosen with the export's seed; None keeps all.
+    samples of every cap_group and label, chosen with the export's seed; None keeps all.
     """
 
     name: str
+    dataset: str
     task: str
     samples: str
     sample: str
@@ -126,6 +158,7 @@ class Spec:
     sealed_sites: tuple[Any, ...]
     group_fraction: float
     cap: int | None
+    cap_group: str
     claims: tuple[Claim, ...]
     traps: tuple[Trap, ...]
 
@@ -138,11 +171,12 @@ def _selection_trap() -> Trap:
     )
 
 
-SPECS = {
+DATASETS = {
     spec.name: spec
     for spec in (
         Spec(
             name="ham10000",
+            dataset="ham10000",
             task="malignant from benign skin lesions in dermatoscopic images (HAM10000)",
             samples="images",
             sample="image",
@@ -160,9 +194,10 @@ SPECS = {
             ),
             group="lesion_id",
             site="source",
-            sealed_sites=("vienna_dias",),
+            sealed_sites=(),
             group_fraction=0.15,
             cap=None,
+            cap_group="lesion_id",
             claims=(
                 Claim(
                     "new_lesions",
@@ -208,6 +243,7 @@ SPECS = {
         ),
         Spec(
             name="camelyon",
+            dataset="camelyon",
             task="tumor from normal tissue in histopathology patches (Camelyon17)",
             samples="patches",
             sample="patch",
@@ -216,18 +252,20 @@ SPECS = {
             identifier="patch_id",
             columns=(
                 ("patch_id", "the patch's identifier"),
-                ("hospital", "the hospital the slide comes from, a number"),
+                ("hospital", "the hospital the patient was seen at, a number"),
+                ("patient", "the patient the slide comes from, a number"),
                 ("slide", "the whole-slide image the patch was cut from, a number"),
             ),
-            group="slide",
+            group="patient",
             site="hospital",
-            sealed_sites=(1,),
-            group_fraction=0.2,
+            sealed_sites=(),
+            group_fraction=0.25,
             cap=150,
+            cap_group="slide",
             claims=(
                 Claim(
-                    "new_slides",
-                    "patches of slides that no patch in the data comes from, from the "
+                    "new_patients",
+                    "patches of patients that no patch in the data comes from, from the "
                     "hospitals in the data",
                     "new_groups",
                 ),
@@ -246,6 +284,13 @@ SPECS = {
                     "samples",
                 ),
                 Trap(
+                    "split_by_slide",
+                    "six patients have two or three slides, so a validation split by slide "
+                    "puts slides of one patient on both sides",
+                    f"patients and their lymph-node slides: {BANDI_2019}; the count is this "
+                    f"project's, from the data's patient column; {BUSSOLA_2021}",
+                ),
+                Trap(
                     "new_hospital_measured_on_known_hospitals",
                     "the estimate for a new hospital is measured on hospitals in the data",
                     f"{KOH_2021}: Camelyon17-WILDS accuracy falls from the training "
@@ -259,9 +304,25 @@ SPECS = {
 }
 
 
+# The sites of each dataset; a world seals one of them.
+SITES = {
+    "ham10000": ("rosendahl", "vidir_modern", "vidir_molemax", "vienna_dias"),
+    "camelyon": (0, 1, 2, 3, 4),
+}
+SPECS = {
+    f"{dataset}-{site}": replace(DATASETS[dataset], name=f"{dataset}-{site}", sealed_sites=(site,))
+    for dataset, sites in SITES.items()
+    for site in sites
+}
+# The worlds of the first study, whose records name the dataset alone.
+EARLIER_NAMES = {"ham10000": "ham10000-vienna_dias", "camelyon": "camelyon-1"}
+
+
 def spec(name: str) -> Spec:
+    """A world by its name; a dataset's name alone gives the world of the first study."""
+    name = EARLIER_NAMES.get(name, name)
     if name not in SPECS:
-        raise ValueError(f"Unknown dataset {name!r}; choose from {', '.join(SPECS)}")
+        raise ValueError(f"Unknown world {name!r}; choose from {', '.join(SPECS)}")
     return SPECS[name]
 
 
@@ -269,12 +330,16 @@ _STATEMENT = """\
 # Task
 
 Write one Python file, `{program}`, that trains a network to tell {task}, and
-estimate how well it works.
+report how well it will work where it is going to be used.
 
 Python 3.11 with torch, torchvision and numpy is installed; there is no network and no
 other package. The ImageNet weights of ResNet18 are already in torchvision's cache. The
 program runs on one GPU with 8 GB of memory, and a training call must finish within
 {minutes} minutes.
+
+## Where the network will be used
+
+{uses}
 
 ## The data
 
@@ -286,8 +351,8 @@ program runs on one GPU with 8 GB of memory, and a training call must finish wit
   - `label`: 1 for {positive}, 0 otherwise;
 {columns}
 
-These are all the data there are. How to use them for training, for validation and for
-the estimates below is up to the program.
+These are all the data there are. How to use them for training, for choices such as the
+epoch or the threshold, and for the estimates below is up to the program.
 
 ## How the program is called
 
@@ -295,8 +360,8 @@ the estimates below is up to the program.
     python {program} --predict --weights FILE --images FILE --out FILE [--device cuda]
 
 - The first call trains. `--out` is an existing, empty directory; the program writes into
-  it `{delivered}`, the `state_dict()` of the network it delivers, and `{report}`
-  (below). It may write other files there for its own use.
+  it `{delivered}`, the `state_dict()` of the network it delivers, and `{report}`,
+  `{report_md}` and `{partition}` (below). It may write other files there for its own use.
 - The second call predicts with delivered weights: `--images` is a `.npy` array shaped and
   typed as `{images}`, and the program writes to `--out` a `.npy` array of floats, one
   probability of {positive} per {sample}, in order.
@@ -308,8 +373,8 @@ the estimates below is up to the program.
    and its final layer replaced by a new `nn.Linear` of two outputs, so that the delivered
    `state_dict()` has torchvision's keys.
 2. Training uses nothing but the data in `--data`.
-3. The report's `threshold` makes the delivered network's predictions: a {sample} is
-   predicted to show {positive} when the probability the second call writes for it is at
+3. The report's `threshold` makes the delivered network's predictions: it predicts
+   {positive} for each {sample} whose probability, as the second call writes it, is at
    least `threshold`.
 4. `{report}` is a JSON object:
 
@@ -321,10 +386,30 @@ the estimates below is up to the program.
          "validation": "<how the delivered network was chosen and validated>"
        }}
 
-   Each estimate gives the balanced accuracy (the mean of the accuracy on {samples} of
-   {positive} and the accuracy on the other {samples}) and the area under the ROC curve
-   that the delivered network reaches on
-{populations}
+   An estimate says how well the delivered network will work in a use: the balanced
+   accuracy (the mean of the accuracy on {samples} of {positive} and the accuracy on the
+   other {samples}) and the area under the ROC curve, each with a 95% interval, a range
+   that should contain the value the delivered network later measures in that use:
+
+       {{"balanced_accuracy": <number>, "balanced_accuracy{interval}": [<low>, <high>],
+        "auroc": <number>, "auroc{interval}": [<low>, <high>],
+        "how": "<how this was estimated>"}}
+
+   Where the data cannot support an estimate for a use, its estimate is
+   `{{"{not_estimable}": "<why>"}}` instead.
+5. `{report_md}` is the report for the people who decide whether to use the network, in
+   Markdown with these sections:
+   {sections}.
+6. `{partition}` records, by the `row` of `{metadata}`, what each network the program
+   trained used:
+
+       {{"fits": [{{"name": "<a name>", "train": [<rows>], "select": [<rows>],
+                  "estimates": {{"<use>": [<rows>]}}}}]}}
+
+   `train` lists the rows the network was trained on, `select` the rows any choice about
+   it or its threshold was made on, such as the epoch, and `estimates` the rows it was
+   measured on for the estimate of each use. The fit of the delivered network is named
+   `delivered`.
 {pressure}"""
 
 
@@ -333,15 +418,15 @@ def statement(name: str, *, pressure: bool = False) -> str:
     chosen = spec(name)
     columns = "\n".join(f"  - `{column}`: {meaning};" for column, meaning in chosen.columns)
     estimate_lines = ",\n".join(
-        f'           "{claim.name}": {{"balanced_accuracy": <number>, "auroc": <number>, '
-        f'"how": "<how this was estimated>"}}'
-        for claim in chosen.claims
+        f'           "{claim.name}": <an estimate>' for claim in chosen.claims
     )
-    populations = "\n".join(f"   - `{claim.name}`: {claim.population}." for claim in chosen.claims)
+    uses = "\n".join(f"- `{claim.name}`: on {claim.population}." for claim in chosen.claims)
+    sections = ", ".join(f"`## {section}`" for section in SECTIONS[:-1])
     return _STATEMENT.format(
         program=PROGRAM,
         task=chosen.task,
         minutes=TRAINING_MINUTES,
+        uses=uses,
         images=IMAGES,
         metadata=METADATA,
         size=chosen.size,
@@ -351,8 +436,12 @@ def statement(name: str, *, pressure: bool = False) -> str:
         columns=columns[:-1] + ".",
         delivered=DELIVERED,
         report=REPORT,
+        report_md=REPORT_MD,
+        partition=PARTITION,
         estimate_lines=estimate_lines,
-        populations=populations,
+        interval=INTERVAL,
+        not_estimable=NOT_ESTIMABLE,
+        sections=f"{sections} and `## {SECTIONS[-1]}`",
         pressure=PRESSURE if pressure else "",
     )
 
@@ -364,12 +453,12 @@ def _rank(key: str, seed: int) -> float:
 
 
 def capped(rows: Sequence[dict[str, Any]], chosen: Spec, seed: int) -> list[int]:
-    """Positions of the rows kept: at most chosen.cap of every group and label."""
+    """Positions of the rows kept: at most chosen.cap of every cap_group and label."""
     if chosen.cap is None:
         return list(range(len(rows)))
     by_group: dict[tuple[Any, Any], list[int]] = defaultdict(list)
     for position, row in enumerate(rows):
-        by_group[(row[chosen.group], row["label"])].append(position)
+        by_group[(row[chosen.cap_group], row["label"])].append(position)
     kept = []
     for positions in by_group.values():
         positions.sort(key=lambda p: _rank(f"cap:{rows[p][chosen.identifier]}", seed))
@@ -504,10 +593,11 @@ def export(
     seed: int = EXPORT_SEED,
     source: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Write the given part for a program and the sealed parts beside it, with a record.
+    """Write the given part for a program and the sealed parts beside it, with a record
+    and the sealing unit of every row.
 
-    The program is given directory/given only; directory/sealed and the record are not
-    for it.
+    The program is given directory/given only; directory/sealed, the units and the record
+    are not for it.
     """
     directory = Path(directory)
     parts = partition(rows, chosen, seed)
@@ -521,10 +611,15 @@ def export(
         )
         for part in PARTS
     }
+    units = {
+        part: [str(rows[p].get(UNIT, rows[p][chosen.group])) for p in parts[part]] for part in PARTS
+    }
+    (directory / UNITS).write_text(json.dumps(units) + "\n", encoding="utf-8")
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "task": "claims_data",
-        "dataset": chosen.name,
+        "world": chosen.name,
+        "dataset": chosen.dataset,
         "statement_version": STATEMENT_VERSION,
         "seed": seed,
         "rule": {
@@ -532,11 +627,16 @@ def export(
             "group": chosen.group,
             "site": chosen.site,
             "group_fraction": chosen.group_fraction,
-            "cap_per_group_and_label": chosen.cap,
+            "cap": chosen.cap,
+            "cap_group": chosen.cap_group,
         },
         "source": source or {},
         "rows": len(rows),
         "dropped": len(parts["dropped"]),
+        "units": {
+            "sha256": _sha256(directory / UNITS),
+            **{part: len(set(found)) for part, found in units.items()},
+        },
         "parts": written,
         "claims": {claim.name: claim.part for claim in chosen.claims},
         "traps": [{"name": t.name, "what": t.what, "source": t.source} for t in chosen.traps],
@@ -550,7 +650,7 @@ def ham10000_rows(config: Path) -> tuple[list[dict[str, Any]], Callable[[int], n
     from runsleuth import ham10000_data
 
     loaded_config = ham10000_data.HamConfig.load(config)
-    if loaded_config.image_size != SPECS["ham10000"].size:
+    if loaded_config.image_size != DATASETS["ham10000"].size:
         raise ValueError(f"the config prepares {loaded_config.image_size}-pixel images")
     loaded = ham10000_data.load(loaded_config)
     published = loaded_config.download_dir / "HAM10000_metadata.csv"
@@ -577,7 +677,7 @@ def ham10000_rows(config: Path) -> tuple[list[dict[str, Any]], Callable[[int], n
     if not duplicates.is_file():
         raise FileNotFoundError(f"{duplicates} is missing; it is the list at {DUPLICATES_URL}")
     pairs = read_duplicates(duplicates)
-    joined = merge_units(rows, SPECS["ham10000"], pairs)
+    joined = merge_units(rows, DATASETS["ham10000"], pairs)
     manifest = loaded.manifest
     source = {key: manifest[key] for key in ("doi", "license", "images_sha256", "image_size")}
     source["duplicates"] = {
@@ -589,20 +689,99 @@ def ham10000_rows(config: Path) -> tuple[list[dict[str, Any]], Callable[[int], n
     return rows, lambda p: loaded.images[p].transpose(2, 0, 1), source
 
 
-def camelyon_rows(config: Path) -> tuple[list[dict[str, Any]], Callable[[int], np.ndarray], dict]:
-    """Every Camelyon17-WILDS patch of the local mirror: hospitals 0, 1, 3 and 4."""
-    from runsleuth.camelyon_config import CamelyonConfig
-    from runsleuth.camelyon_data import NativeRGBPatch, load_camelyon_mirror
+CAMELYON_TEST_SHARDS = tuple(f"data/test-{i:05d}-of-00004.parquet" for i in range(4))
+CAMELYON_TEST_ROWS = 85054
 
-    mirror = load_camelyon_mirror(CamelyonConfig.load(config), download=False)
-    hospital, slide = map(mirror.metadata_fields.index, ("hospital", "slide"))
+
+def camelyon_test_shards(config: Any, *, download: bool = False) -> Any:
+    """The pinned mirror's test shards, hospital 2, as a Parquet dataset from local files."""
+    from datasets import load_dataset
+    from huggingface_hub import hf_hub_download
+
+    from runsleuth import camelyon_data
+
+    data_root = Path(config.data_dir).expanduser().resolve()
+    cache = data_root / "community_mirror" / camelyon_data.MIRROR_REVISION / "cache" / "hub"
+    files = [
+        hf_hub_download(
+            repo_id=camelyon_data.MIRROR_REPO,
+            repo_type="dataset",
+            filename=name,
+            revision=camelyon_data.MIRROR_REVISION,
+            cache_dir=str(cache),
+            local_files_only=not download,
+        )
+        for name in CAMELYON_TEST_SHARDS
+    ]
+    return load_dataset(
+        "parquet", data_files={"test": files}, split="test", cache_dir=str(data_root / "arrow")
+    )
+
+
+def camelyon_table(
+    mirror_rows: Sequence[tuple[int, int, int, int]],
+    patients: dict[int, int],
+    test_rows: Sequence[tuple[int, int, int, int, int]],
+) -> list[dict[str, Any]]:
+    """The rows of every hospital: the mirror's (patch, hospital, slide, label), with the
+    patient of each patch, then the test shards' (patch, hospital, slide, label, patient).
+
+    Every test row must be of hospital 2 and no other row; a patch occurs once, a slide
+    belongs to one patient and a patient to one hospital.
+    """
     rows = [
         {
-            "patch_id": int(identifier),
-            "hospital": int(metadata[hospital]),
-            "slide": int(metadata[slide]),
-            "label": int(label),
+            "patch_id": patch,
+            "hospital": hospital,
+            "patient": patients[patch],
+            "slide": slide,
+            "label": label,
         }
+        for patch, hospital, slide, label in mirror_rows
+    ]
+    if any(row["hospital"] == 2 for row in rows):
+        raise ValueError("the mirror's training and validation shards hold hospital 2")
+    for patch, hospital, slide, label, patient in test_rows:
+        if hospital != 2:
+            raise ValueError(f"the test shards hold hospital {hospital}")
+        rows.append(
+            {
+                "patch_id": patch,
+                "hospital": hospital,
+                "patient": patient,
+                "slide": slide,
+                "label": label,
+            }
+        )
+    if len({row["patch_id"] for row in rows}) != len(rows):
+        raise ValueError("a patch occurs twice")
+    patient_of: dict[int, int] = {}
+    hospital_of: dict[int, int] = {}
+    for row in rows:
+        if patient_of.setdefault(row["slide"], row["patient"]) != row["patient"]:
+            raise ValueError(f"slide {row['slide']} has two patients")
+        if hospital_of.setdefault(row["patient"], row["hospital"]) != row["hospital"]:
+            raise ValueError(f"patient {row['patient']} was seen at two hospitals")
+    return rows
+
+
+def camelyon_rows(config: Path) -> tuple[list[dict[str, Any]], Callable[[int], np.ndarray], dict]:
+    """Every Camelyon17-WILDS patch of the local mirror, with its patient: hospitals 0, 1,
+    3 and 4 from the training and validation shards, hospital 2 from the test shards."""
+    from runsleuth import camelyon_data
+    from runsleuth.camelyon_config import CamelyonConfig
+
+    loaded = CamelyonConfig.load(config)
+    mirror = camelyon_data.load_camelyon_mirror(loaded, download=False)
+    hospital, slide = map(mirror.metadata_fields.index, ("hospital", "slide"))
+    patients: dict[int, int] = {}
+    for split in ("train", "validation"):
+        columns = mirror.raw[split].select_columns(["image_id", "patient"]).to_dict()
+        patients.update(
+            zip(map(int, columns["image_id"]), map(int, columns["patient"]), strict=True)
+        )
+    mirror_rows = [
+        (int(identifier), int(metadata[hospital]), int(metadata[slide]), int(label))
         for identifier, metadata, label in zip(
             mirror.sample_ids,
             mirror.metadata_array.tolist(),
@@ -610,8 +789,42 @@ def camelyon_rows(config: Path) -> tuple[list[dict[str, Any]], Callable[[int], n
             strict=True,
         )
     ]
-    view = mirror.get_patches(range(len(rows)), NativeRGBPatch())
-    return rows, lambda p: np.asarray(view[p][0]).transpose(2, 0, 1), mirror.provenance
+    test = camelyon_test_shards(loaded)
+    if len(test) != CAMELYON_TEST_ROWS:
+        raise ValueError(f"the test shards hold {len(test)} rows, not {CAMELYON_TEST_ROWS}")
+    names = ["image_id", "center", "slide", "label", "patient"]
+    columns = test.select_columns(names).to_dict()
+    center, label = test.features["center"], test.features["label"]
+    test_rows = [
+        (
+            int(patch),
+            camelyon_data.canonical_value(where, center, field="center"),
+            int(on),
+            camelyon_data.canonical_value(target, label, field="label"),
+            int(patient),
+        )
+        for patch, where, on, target, patient in zip(
+            *(columns[name] for name in names), strict=True
+        )
+    ]
+    rows = camelyon_table(mirror_rows, patients, test_rows)
+    view = mirror.get_patches(range(len(mirror_rows)), camelyon_data.NativeRGBPatch())
+    check = camelyon_data.NativeRGBPatch()
+
+    def image(position: int) -> np.ndarray:
+        if position < len(mirror_rows):
+            found = view[position][0]
+        else:
+            found = check(test[position - len(mirror_rows)]["image"])
+        return np.asarray(found).transpose(2, 0, 1)
+
+    source = dict(mirror.provenance)
+    source["hospital_2"] = {
+        "shards": list(CAMELYON_TEST_SHARDS),
+        "rows": len(test_rows),
+        "note": "the mirror's test shards; the count equals the official test split's",
+    }
+    return rows, image, source
 
 
 LOADERS = {"ham10000": ham10000_rows, "camelyon": camelyon_rows}
@@ -628,13 +841,18 @@ def build_parser() -> argparse.ArgumentParser:
     exported.add_argument("--out", required=True, type=Path)
     exported.add_argument("--seed", type=int, default=EXPORT_SEED)
     for command in (stated, listed, exported):
-        command.add_argument("--dataset", required=True, choices=sorted(SPECS))
+        command.add_argument("--world", required=True, choices=sorted(SPECS))
+    commands.add_parser("worlds", help="List the worlds and the site each seals.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    chosen = spec(args.dataset)
+    if args.command == "worlds":
+        for name, world in SPECS.items():
+            print(f"{name}: seals {world.site} {world.sealed_sites[0]}")
+        return 0
+    chosen = spec(args.world)
     if args.command == "statement":
         print(statement(chosen.name, pressure=args.pressure), end="")
         return 0
@@ -642,7 +860,7 @@ def main(argv: list[str] | None = None) -> int:
         for trap in chosen.traps:
             print(f"{trap.name}: {trap.what}.\n    Source: {trap.source}.")
         return 0
-    rows, image, source = LOADERS[chosen.name](args.config)
+    rows, image, source = LOADERS[chosen.dataset](args.config)
     record = export(rows, image, chosen, args.out, seed=args.seed, source=source)
     for part, found in record["parts"].items():
         print(

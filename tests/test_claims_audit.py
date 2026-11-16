@@ -49,17 +49,17 @@ PROBE = {
 }
 FACTS = {
     "site_column": "source",
-    "unit": "lesion_id, with lesions whose images are duplicates merged",
+    "group_column": "lesion_id",
     "uses": {
         "new_lesions": {
             "measured_by": [
                 {
                     "fit": "delivered",
                     "rows": 900,
-                    "units": 700,
+                    "groups": 700,
                     "sites": ["rosendahl", "vidir_modern"],
-                    "units_also_trained_on": 12,
-                    "units_also_chosen_on": 0,
+                    "groups_also_trained_on": 12,
+                    "groups_also_chosen_on": 0,
                     "sites_also_trained_on": ["rosendahl", "vidir_modern"],
                     "sites_also_chosen_on": [],
                 }

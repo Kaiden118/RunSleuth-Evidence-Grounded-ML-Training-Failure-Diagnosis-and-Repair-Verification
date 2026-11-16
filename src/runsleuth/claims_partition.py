@@ -7,18 +7,21 @@ use; the delivered network's fit is named delivered. read checks the record's fo
 
 errors reads, in a well-formed record, for every estimate a report gives, the code labels
 of the claims study that the record alone decides, and from them the estimate's warrant
-as far as the record shows it. Rows are compared by sealing unit (a lesion, merged with
-the lesions its images duplicate, or a patient) and by site:
+as far as the record shows it. Rows are compared by the group the data name (a lesion or
+a patient) and by site:
 
-- group_leakage: a measuring network trained on a unit the estimate is measured on;
+- group_leakage: a measuring network trained on a group the estimate is measured on;
 - new_site_from_known_sites: a new-site estimate measured on a site the network trained on;
-- selection_on_estimate_data: a choice about the measuring network made on a unit the
+- selection_on_estimate_data: a choice about the measuring network made on a group the
   estimate is measured on, or, for a new-site estimate, on its site;
-- estimate_not_of_the_delivered_network: a note, not an error.
+- estimate_not_of_the_delivered_network: a note, not an error;
+- hidden_duplicates: a note, not an error: rows the estimate shares with training or
+  choices only through lesions whose images are duplicates under other identifiers, which
+  the sealing units know and the given data do not show.
 
 The warrant is supported when no measuring network shows an error, not_supported when one
 does, and unknown when no record measures the estimate. provenance gives the same facts
-without a verdict, as the table an auditor may read.
+without a verdict and without the hidden duplicates, as the table an auditor may read.
 
 The record is the program's own account of itself. Whether the program does what it
 records is for the readers of its source; a record that contradicts the source is itself
@@ -120,18 +123,25 @@ def _keys(
     table: Sequence[Mapping[str, str]],
     chosen: claims_task.Spec,
     units: Sequence[str] | None,
-) -> tuple[dict[int, str], dict[int, str], dict[int, str]]:
-    """The sealing unit, the site and the label of every row of the given table."""
+) -> tuple[dict[int, str], dict[int, str], dict[int, str], dict[int, str]]:
+    """The group, the sealing unit, the site and the label of every row of the given table.
+    Without units a row's unit is its group."""
     rows = [int(line["row"]) for line in table]
     if units is not None and len(units) != len(rows):
         raise ValueError(f"{len(units)} units for {len(rows)} rows")
-    unit = {
-        row: str(units[position]) if units is not None else str(line[chosen.group])
-        for position, (row, line) in enumerate(zip(rows, table, strict=True))
-    }
+    group = {row: str(line[chosen.group]) for row, line in zip(rows, table, strict=True)}
+    unit = (
+        dict(group)
+        if units is None
+        else {row: str(found) for row, found in zip(rows, units, strict=True)}
+    )
     site = {row: str(line[chosen.site]) for row, line in zip(rows, table, strict=True)}
     label = {row: str(line["label"]) for row, line in zip(rows, table, strict=True)}
-    return unit, site, label
+    return group, unit, site, label
+
+
+def _shared(rows: frozenset[int], others: frozenset[int], key: Mapping[int, str]) -> set[str]:
+    return {key[row] for row in rows} & {key[row] for row in others}
 
 
 def errors(
@@ -145,9 +155,9 @@ def errors(
     and its warrant as far as the record shows it.
 
     table is the given metadata, by row; units, when given, is the sealing unit of each of
-    its rows, in order, and replaces the table's group column.
+    its rows, in order, and serves the hidden_duplicates note only.
     """
-    unit, site, _label = _keys(table, chosen, units)
+    group, unit, site, _label = _keys(table, chosen, units)
     parts = {claim.name: claim.part for claim in chosen.claims}
     found: dict[str, dict[str, Any]] = {}
     for use in estimated:
@@ -156,33 +166,48 @@ def errors(
             found[use] = {"recorded": False, "warrant": "unknown"}
             continue
         new_site = parts[use] == "new_site"
-        leaked, known, selected = [], [], []
+        leaked, known, selected, hidden = [], [], [], []
         for fit in measuring:
             rows = fit.estimates[use]
-            measured_units = {unit[row] for row in rows}
-            shared = measured_units & {unit[row] for row in fit.train}
+            shared = _shared(rows, fit.train, group)
             if shared:
                 leaked.append(
                     {
                         "fit": fit.name,
-                        "units": len(shared),
-                        "rows": sum(unit[row] in shared for row in rows),
+                        "groups": len(shared),
+                        "rows": sum(group[row] in shared for row in rows),
                         "of": len(rows),
                     }
                 )
-            sites = {site[row] for row in rows}
-            both = sites & {site[row] for row in fit.train}
+            both = _shared(rows, fit.train, site)
             if new_site and both:
                 known.append({"fit": fit.name, "sites": sorted(both)})
-            chosen_units = measured_units & {unit[row] for row in fit.select}
-            chosen_sites = sites & {site[row] for row in fit.select} if new_site else set()
-            if chosen_units or chosen_sites:
+            chosen_groups = _shared(rows, fit.select, group)
+            chosen_sites = _shared(rows, fit.select, site) if new_site else set()
+            if chosen_groups or chosen_sites:
                 selected.append(
                     {
                         "fit": fit.name,
-                        "rows": sum(unit[row] in chosen_units for row in rows),
+                        "rows": sum(group[row] in chosen_groups for row in rows),
                         "of": len(rows),
                         "sites": sorted(chosen_sites),
+                    }
+                )
+            trained_units = _shared(rows, fit.train, unit)
+            chosen_units = _shared(rows, fit.select, unit)
+            only_trained = sum(
+                unit[row] in trained_units and group[row] not in shared for row in rows
+            )
+            only_chosen = sum(
+                unit[row] in chosen_units and group[row] not in chosen_groups for row in rows
+            )
+            if only_trained or only_chosen:
+                hidden.append(
+                    {
+                        "fit": fit.name,
+                        "rows_trained": only_trained,
+                        "rows_chosen": only_chosen,
+                        "of": len(rows),
                     }
                 )
         found[use] = {
@@ -194,6 +219,7 @@ def errors(
             "estimate_not_of_the_delivered_network": all(
                 fit.name != DELIVERED_FIT for fit in measuring
             ),
+            "hidden_duplicates": hidden,
             "warrant": "not_supported" if leaked or known or selected else "supported",
         }
     return found
@@ -212,20 +238,16 @@ def provenance(
     table: Sequence[Mapping[str, str]],
     chosen: claims_task.Spec,
     estimated: Sequence[str],
-    units: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """What the record says each estimate was measured on, as facts without a verdict:
     the rows of every role of every fit, counted by site and label, and for every use with
-    an estimate the fits that measure it, the sites of its rows, and how many of its units
-    and sites the measuring fits also trained or chose on."""
-    unit, site, label = _keys(table, chosen, units)
-    every = frozenset(unit)
+    an estimate the fits that measure it, the sites of its rows, and how many of its
+    groups and sites the measuring fits also trained or chose on."""
+    group, _unit, site, label = _keys(table, chosen, None)
     facts: dict[str, Any] = {
         "site_column": chosen.site,
-        "unit": f"{chosen.group}, with lesions whose images are duplicates merged"
-        if chosen.dataset == "ham10000"
-        else chosen.group,
-        "given": _count(every, site, label),
+        "group_column": chosen.group,
+        "given": _count(frozenset(group), site, label),
         "fits": [
             {
                 "name": fit.name,
@@ -241,22 +263,21 @@ def provenance(
         "uses": {},
     }
     for use in estimated:
-        measuring = [fit for fit in fits if use in fit.estimates]
         entries = []
-        for fit in measuring:
+        for fit in fits:
+            if use not in fit.estimates:
+                continue
             rows = fit.estimates[use]
-            measured_units = {unit[row] for row in rows}
-            sites = {site[row] for row in rows}
             entries.append(
                 {
                     "fit": fit.name,
                     "rows": len(rows),
-                    "units": len(measured_units),
-                    "sites": sorted(sites),
-                    "units_also_trained_on": len(measured_units & {unit[r] for r in fit.train}),
-                    "units_also_chosen_on": len(measured_units & {unit[r] for r in fit.select}),
-                    "sites_also_trained_on": sorted(sites & {site[r] for r in fit.train}),
-                    "sites_also_chosen_on": sorted(sites & {site[r] for r in fit.select}),
+                    "groups": len({group[row] for row in rows}),
+                    "sites": sorted({site[row] for row in rows}),
+                    "groups_also_trained_on": len(_shared(rows, fit.train, group)),
+                    "groups_also_chosen_on": len(_shared(rows, fit.select, group)),
+                    "sites_also_trained_on": sorted(_shared(rows, fit.train, site)),
+                    "sites_also_chosen_on": sorted(_shared(rows, fit.select, site)),
                 }
             )
         facts["uses"][use] = {"measured_by": entries}

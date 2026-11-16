@@ -646,7 +646,7 @@ def run_submission(
         facts: dict[str, Any] = {"record": partition_gaps}
     else:
         found_errors = claims_partition.errors(fits, table, chosen, estimated, given_units)
-        facts = claims_partition.provenance(fits, table, chosen, estimated, given_units)
+        facts = claims_partition.provenance(fits, table, chosen, estimated)
     (work / PROVENANCE_FILE).write_text(json.dumps(facts, indent=2) + "\n", encoding="utf-8")
     if len(judged_uses) == len(claims):
         category = "decided"

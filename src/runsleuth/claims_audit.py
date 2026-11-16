@@ -155,23 +155,23 @@ def provenance_table(facts: dict[str, Any], chosen: claims_task.Spec) -> str:
                     entry["fit"],
                     str(entry["rows"]),
                     ", ".join(entry["sites"]),
-                    str(entry["units_also_trained_on"]),
-                    str(entry["units_also_chosen_on"]),
+                    str(entry["groups_also_trained_on"]),
+                    str(entry["groups_also_chosen_on"]),
                     ", ".join(entry["sites_also_trained_on"]) or "none",
                     ", ".join(entry["sites_also_chosen_on"]) or "none",
                 ]
             )
         if not found["measured_by"]:
             rows.append([use, "none recorded", "", "", "", "", "", ""])
-    unit = facts.get("unit", chosen.group)
-    return f"From the program's partition record (its own account), units are {unit}.\n\n" + _table(
+    head = "From the program's partition record, which is the program's own account.\n\n"
+    return head + _table(
         [
             "use",
             "network measured",
             "rows measured",
             f"{chosen.site} measured",
-            "units also trained on",
-            "units also chosen on",
+            f"{chosen.group} values also trained on",
+            f"{chosen.group} values also chosen on",
             f"{chosen.site} also trained on",
             f"{chosen.site} also chosen on",
         ],

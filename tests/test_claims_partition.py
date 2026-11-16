@@ -122,8 +122,9 @@ class ErrorTests(unittest.TestCase):
         )
         lesions, source = found["new_lesions"], found["new_source"]
         self.assertEqual(
-            lesions["group_leakage"], [{"fit": "delivered", "units": 1, "rows": 1, "of": 3}]
+            lesions["group_leakage"], [{"fit": "delivered", "groups": 1, "rows": 1, "of": 3}]
         )
+        self.assertEqual(lesions["hidden_duplicates"], [])
         self.assertEqual(
             lesions["selection_on_estimate_data"],
             [{"fit": "delivered", "rows": 2, "of": 3, "sites": []}],
@@ -150,16 +151,22 @@ class ErrorTests(unittest.TestCase):
         )
         self.assertEqual(found["new_source"]["warrant"], "not_supported")
 
-    def test_merged_units_reveal_leakage_the_lesion_ids_hide(self):
+    def test_duplicates_the_lesion_ids_hide_are_a_note_and_leave_the_warrant(self):
         units = [line["lesion_id"] for line in TABLE]
         units[8] = units[9] = "a"  # lesion e duplicates lesion a's images
-        clean = fit("lesions", range(8), [], new_lesions=[8, 9])
-        self.assertEqual(self.errors(clean)["new_lesions"]["warrant"], "supported")
-        leaked = self.errors(clean, units=units)["new_lesions"]
+        units[10] = units[11] = "d"  # lesion f duplicates lesion d's images
+        clean = fit("lesions", range(6), [6, 7], new_lesions=[8, 9, 10, 11])
+        seen = self.errors(clean)["new_lesions"]
+        self.assertEqual((seen["warrant"], seen["hidden_duplicates"]), ("supported", []))
+        # A program that kept every lesion id whole could not know of the duplicates.
+        hidden = self.errors(clean, units=units)["new_lesions"]
+        self.assertEqual(hidden["group_leakage"], [])
+        self.assertEqual(hidden["selection_on_estimate_data"], [])
         self.assertEqual(
-            leaked["group_leakage"], [{"fit": "lesions", "units": 1, "rows": 2, "of": 2}]
+            hidden["hidden_duplicates"],
+            [{"fit": "lesions", "rows_trained": 2, "rows_chosen": 2, "of": 4}],
         )
-        self.assertEqual(leaked["warrant"], "not_supported")
+        self.assertEqual(hidden["warrant"], "supported")
         with self.assertRaisesRegex(ValueError, "units for"):
             self.errors(clean, units=units[:3])
 
@@ -187,16 +194,17 @@ class ErrorTests(unittest.TestCase):
         self.assertEqual(
             {
                 key: lesions[key]
-                for key in ("rows", "units", "units_also_trained_on", "units_also_chosen_on")
+                for key in ("rows", "groups", "groups_also_trained_on", "groups_also_chosen_on")
             },
-            {"rows": 3, "units": 2, "units_also_trained_on": 1, "units_also_chosen_on": 1},
+            {"rows": 3, "groups": 2, "groups_also_trained_on": 1, "groups_also_chosen_on": 1},
         )
+        self.assertEqual(facts["group_column"], "lesion_id")
         source = facts["uses"]["new_source"]["measured_by"][0]
         self.assertEqual(
             (source["sites"], source["sites_also_trained_on"]), (["vidir_molemax"], [])
         )
         text = json.dumps(facts)
-        for word in ("warrant", "supported", "leak", "error"):
+        for word in ("warrant", "supported", "leak", "error", "hidden", "duplicate"):
             self.assertNotIn(word, text)
 
 

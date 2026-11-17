@@ -1,7 +1,9 @@
 """Tests for the claims-task agent with a fake client: the small copy, what the agent is
 told and shown, its limits, and whole episodes that run a tiny program."""
 
+import contextlib
 import csv
+import io
 import json
 import tempfile
 import unittest
@@ -19,7 +21,7 @@ except ModuleNotFoundError as error:
 from test_claims_task import camelyon_rows, ham_rows
 from test_standalone_agent import FakeClient, call, finish
 
-from runsleuth import claims_agent, claims_task
+from runsleuth import claims_agent, claims_reference, claims_task
 
 HAM, CAMELYON = claims_task.spec("ham10000-vienna_dias"), claims_task.spec("camelyon-1")
 
@@ -305,6 +307,28 @@ class RunnerTests(unittest.TestCase):
             )
             self.assertEqual(again, [])
             self.assertEqual(len(claims_agent.read_attempts(root / "programs")), 1)
+            # The reference program, kept beside the episodes, is listed without one.
+            claims_reference.write(root / "programs", HAM.name)
+            shown = io.StringIO()
+            with contextlib.redirect_stdout(shown):
+                claims_agent.main(["list", str(root / "programs")])
+            self.assertIn(
+                "fake ham10000-vienna_dias pressure attempt 1: finished", shown.getvalue()
+            )
+            self.assertIn(
+                "reference ham10000-vienna_dias neutral attempt 1: written", shown.getvalue()
+            )
+
+    def test_an_episode_waits_out_a_providers_passing_overload(self):
+        arguments = claims_agent.build_parser().parse_args(
+            ["write", "--world", HAM.name, "--condition", "neutral", "--model-name", "x"]
+            + ["--provider", "gemini", "--data", "d", "--out", "o", "--work", "w"]
+        )
+        self.assertEqual(
+            (arguments.error_wait, arguments.max_api_errors),
+            (claims_agent.ERROR_WAIT, claims_agent.MAX_API_ERRORS),
+        )
+        self.assertGreater(claims_agent.MAX_API_ERRORS, 3)
 
 
 if __name__ == "__main__":

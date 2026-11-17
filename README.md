@@ -89,6 +89,8 @@ python -m runsleuth.claims_agent write --world ham10000-rosendahl --condition ne
 python -m runsleuth.claims_reference write --world ham10000-rosendahl --out <attempts>
 python -m runsleuth.claims_run run --out <attempts> --data <exports> --work <runs>
 python -m runsleuth.claims_probe run --out <attempts> --data <exports> --folds <folds> --work <probes>
+python -m runsleuth.claims_labels packet --attempt <attempt> --runs <runs> --data <exports>
+python -m runsleuth.claims_labels settle --out <attempts> --runs <runs> --data <exports> --labels <labels>
 python -m runsleuth.claims_audit run --out <attempts> --runs <runs> --probes <probes> --audits <audits> --auditor-name <auditor> --provider <provider>
 python -m runsleuth.claims_analysis --report <file>
 ```

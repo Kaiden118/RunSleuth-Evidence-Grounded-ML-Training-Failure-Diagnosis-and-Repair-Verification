@@ -343,14 +343,22 @@ def packet(
 
 
 def answer_form(chosen: claims_task.Spec, level: str) -> str:
+    """The form of an answer. It lists the decisions rather than showing one, so that no
+    decision is the example's."""
     entries = []
+    decisions = " | ".join(DECISIONS)
     for claim in chosen.claims:
         needed = '"needed_evidence": "...", ' if level == "requirements" else ""
         entries.append(
-            f'{{"use": "{claim.name}", {needed}"decision": "supported", "forecast": '
-            '{"balanced_accuracy": 0.0, "low": 0.0, "high": 0.0}, "risk": 0.0, "reasons": "..."}'
+            f'{{"use": "{claim.name}", {needed}"decision": "{decisions}", "forecast": '
+            '{"balanced_accuracy": <0 to 1>, "low": <0 to 1>, "high": <0 to 1>}, '
+            '"risk": <0 to 1>, "reasons": "..."}'
         )
-    return 'Reply as {"uses": [' + ", ".join(entries) + "]}."
+    return (
+        'Reply as {"uses": ['
+        + ", ".join(entries)
+        + "]}, with one decision of those listed and numbers in place of <0 to 1>."
+    )
 
 
 def response_schema(chosen: claims_task.Spec, level: str) -> dict[str, Any]:
@@ -563,7 +571,10 @@ def audit_attempts(
     after that many new audits.
     """
     claims_freeze.guard(
-        output, auditor=auditor, paths={"runs": runs, "audits": audits, "probes": probes}
+        output,
+        auditor=auditor,
+        paths={"runs": runs, "audits": audits, "probes": probes},
+        stage="auditors",
     )
     done: list[dict[str, Any]] = []
     for directory in claims_run.attempt_directories(output):

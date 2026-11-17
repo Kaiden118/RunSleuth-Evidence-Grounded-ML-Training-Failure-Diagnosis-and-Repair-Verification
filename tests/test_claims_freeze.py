@@ -42,6 +42,7 @@ class CoverageTests(unittest.TestCase):
             "claims_audit",
             "claims_reference",
             "claims_analysis",
+            "claims_labels",
             "claims_partition",
             "standalone_agent",
             "standalone_check",
@@ -56,6 +57,22 @@ class CoverageTests(unittest.TestCase):
         frozen = {path.as_posix() for path in claims_freeze.frozen_files()}
         for name in ("guard/sitecustomize.py", "reference/train.py"):
             self.assertIn(f"src/runsleuth/{name}", frozen)
+
+    def test_the_writers_step_leaves_the_auditors_readers_and_analysis_to_the_second(self):
+        writers = {path.stem for path in claims_freeze.writer_files()}
+        for name in ("claims_agent", "claims_run", "claims_probe", "claims_partition"):
+            self.assertIn(name, writers)
+        for name in claims_freeze.AUDITOR_MODULES:
+            self.assertNotIn(name, writers)
+        self.assertIn("sitecustomize", writers)
+        everything = {path.as_posix() for path in claims_freeze.frozen_files()}
+        self.assertLessEqual({p.as_posix() for p in claims_freeze.writer_files()}, everything)
+        self.assertEqual(
+            set(claims_freeze.RULES),
+            set(claims_freeze.WRITER_RULES) | set(claims_freeze.AUDITOR_RULES),
+        )
+        with self.assertRaisesRegex(ValueError, "Unknown stage"):
+            claims_freeze.record("readers")
 
     def test_imports_are_found_anywhere_in_a_source(self):
         source = (
@@ -126,7 +143,7 @@ class GuardTests(unittest.TestCase):
             dataset="camelyon-2",
             condition="required",
             attempts=2,
-            auditor=plan["auditors"][0],
+            auditor=claims_freeze.AUDITORS[0],
             paths={"data": Path(plan["data"]), "work": plan["work"], "probes": plan["probes"]},
             device="cuda",
         )
@@ -151,13 +168,43 @@ class GuardTests(unittest.TestCase):
         writers = {writer["model_name"] for writer in claims_freeze.PLAN["writers"]}
         self.assertLessEqual(writers, set(claims_analysis.VENDORS))
         self.assertEqual(len(writers), 5)
-        self.assertIn(
-            claims_analysis.PRIMARY_AUDITOR,
-            {auditor["auditor_name"] for auditor in claims_freeze.PLAN["auditors"]},
-        )
+        self.assertEqual(claims_analysis.PRIMARY_AUDITOR, claims_freeze.AUDITORS[0]["auditor_name"])
         # The primary auditor never reads a program of its own vendor.
         primary = claims_analysis.VENDORS[claims_analysis.PRIMARY_AUDITOR]
         self.assertNotIn(primary, {claims_analysis.VENDORS[name] for name in writers})
+
+
+class StepTests(unittest.TestCase):
+    def test_auditors_and_readers_need_the_second_step(self):
+        study = Path(claims_freeze.PLAN["output"])
+        holds = claims_freeze.check
+        claims_freeze.check = lambda freeze_file=None: (
+            [] if freeze_file == claims_freeze.FREEZE_FILE else ["the auditors' step is missing"]
+        )
+        self.addCleanup(setattr, claims_freeze, "check", holds)
+        claims_freeze.guard(study, dataset="camelyon-2")
+        with self.assertRaisesRegex(RuntimeError, "auditors' step is missing"):
+            claims_freeze.guard(study, stage="auditors")
+        with self.assertRaisesRegex(RuntimeError, "auditors' step is missing"):
+            claims_freeze.guard(study, auditor=claims_freeze.AUDITORS[0])
+        with self.assertRaisesRegex(ValueError, "Unknown stage"):
+            claims_freeze.guard(study, stage="readers")
+
+    def test_a_deviation_goes_to_every_step_that_holds_the_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "a.py"
+            source.write_text("x = 1\n")
+            first, second = root / "writers.json", root / "auditors.json"
+            name = source.as_posix()
+            first.write_text(json.dumps({"files": {name: "0"}, "deviations": []}))
+            second.write_text(json.dumps({"files": {"other.py": "0"}, "deviations": []}))
+            found = claims_freeze.deviation(source, "fixed a crash", (first, second))
+            self.assertEqual([entry["freeze"] for entry in found], [first.as_posix()])
+            self.assertEqual(json.loads(second.read_text())["deviations"], [])
+            (root / "b.py").write_text("y = 2\n")
+            with self.assertRaisesRegex(ValueError, "not a frozen file"):
+                claims_freeze.deviation(root / "b.py", "x", (second, root / "none.json"))
 
 
 class ScheduleTests(unittest.TestCase):

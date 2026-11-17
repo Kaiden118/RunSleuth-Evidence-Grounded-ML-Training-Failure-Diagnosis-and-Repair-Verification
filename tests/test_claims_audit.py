@@ -149,6 +149,9 @@ class PacketTests(Fixture):
             self.assertNotIn(SECRET, text)
             self.assertNotIn("writer", text.split("## The task")[0])
             self.assertIn('"use": "new_source"', text)
+            # The form lists the decisions; none is the example's.
+            self.assertIn('"decision": "supported | not_supported | cannot_tell"', text)
+            self.assertNotIn('"decision": "supported",', text)
         self.assertNotIn("print('the program')", shown["report"])
         for level in claims_audit.LEVELS[1:]:
             self.assertIn("print('the program')", shown[level])

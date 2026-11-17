@@ -45,6 +45,10 @@ CONDITIONS = claims_task.CONDITIONS
 MAX_TOOL_CALLS = 30
 MAX_RUNS = 10
 RUN_TIMEOUT = 300.0
+# A provider's passing overload (such as a 503) is waited out: seconds after a failed call
+# before it is sent again, and the failed calls an episode survives.
+ERROR_WAIT = 120.0
+MAX_API_ERRORS = 8
 SHOWN_OUTPUT = 2000
 SHOWN_REPORT = 3000
 # The files of a run whose beginning the agent is shown, as a developer would open them.
@@ -592,7 +596,14 @@ def _predicted(run: dict[str, Any]) -> bool:
 
 
 def episode_line(record: dict[str, Any]) -> str:
-    """One episode: how it ended, what the agent ran and claimed, and what it cost."""
+    """One episode: how it ended, what the agent ran and claimed, and what it cost. The
+    reference program, which no episode wrote, says so."""
+    if "runs" not in record:
+        return (
+            f"{record['model_name']} {record.get('world', record['dataset'])} "
+            f"{record['condition']} attempt {record['attempt']}: {record['status']}, "
+            "written without an episode"
+        )
     runs = record["runs"]
     return (
         f"{record['model_name']} {record.get('world', record['dataset'])} "
@@ -629,6 +640,18 @@ def build_parser() -> argparse.ArgumentParser:
     write.add_argument("--device", default="cuda")
     write.add_argument("--pause", type=float, default=0.0, help="Seconds before every call.")
     write.add_argument("--echo-reasoning", action="store_true", help="As in agent_loop.")
+    write.add_argument(
+        "--error-wait",
+        type=float,
+        default=ERROR_WAIT,
+        help="Seconds after a failed model call before it is sent again.",
+    )
+    write.add_argument(
+        "--max-api-errors",
+        type=int,
+        default=MAX_API_ERRORS,
+        help="Failed model calls an episode survives.",
+    )
     listed = commands.add_parser("list", help="List the attempts in an output directory.")
     listed.add_argument("out", type=Path)
     return parser
@@ -652,8 +675,11 @@ def main(argv: list[str] | None = None) -> int:
             device=args.device,
             pause=args.pause,
             echo_reasoning=args.echo_reasoning,
+            error_wait=args.error_wait,
+            max_api_errors=args.max_api_errors,
         )
-        print()
+        # Every episode printed its line as it ended; list shows the whole output.
+        return 0
     print("\n".join(episode_line(record) for record in read_attempts(args.out)) or "no attempts")
     return 0
 

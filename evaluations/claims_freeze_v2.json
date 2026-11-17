@@ -1786,5 +1786,12 @@
     "stop": "No arm, condition, prompt or world is added to produce more claims of any kind. A writer whose official runs fail on more than half its programs is reported, not replaced. An auditor's reply that cannot be used is asked once more; what remains missing is reported and handled as claims_analysis states.",
     "changes": "After a freeze a fix is allowed only as a recorded deviation; a change to a statement, a prompt, the data, the folds, the analysis or these rules makes the earlier results development data."
   },
-  "deviations": []
+  "deviations": [
+    {
+      "file": "src/runsleuth/claims_agent.py",
+      "sha256": "238ded2f15412173c9ad54c3197a3fca35b44c2e8075735883beea40a6d34e85",
+      "reason": "After the first program, two fixes that change nothing an agent is given (statements, system prompt, tools, limits): write no longer lists the whole output after each command, and the listing shows the reference program, whose record has no episode, instead of crashing (KeyError 'runs'), which had stopped the batch after its attempt was kept; and an episode now waits 120 s between failed model calls and survives 8 of them instead of 30 s and 3, after Gemini returned 503 (high demand) three times in two episodes, which were discarded and are made again as the plan says.",
+      "recorded_at": "2026-11-17T16:54:35+00:00"
+    }
+  ]
 }

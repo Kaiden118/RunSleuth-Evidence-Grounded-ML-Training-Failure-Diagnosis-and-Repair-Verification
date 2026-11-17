@@ -277,7 +277,7 @@ python -m runsleuth.heldout run --reference-run <baseline-run>
 | Repair verification: harness, hidden tests, v2, five agents | | ███ | █ | | | | ☑ |
 | Claim audit pilot: sealed data, eight programs, code labels | | | ██ | | | | ☑ |
 | Claim audit: task v2, nine sealed worlds, isolation, freeze | | | ███ | | | | ◐ |
-| Writers: three LLMs on nine worlds, official runs, labels | | | | ███ | | | ☐ |
+| Writers: five LLMs on nine worlds, official runs, labels | | | | ███ | | | ☐ |
 | Evidence tables, reference pipelines, auditors | | | █ | ███ | | | ◐ |
 | Analysis and report | | | | █ | ██ | | ☐ |
 | Blind review of the repair labels | | | | | | ███ | ☐ |

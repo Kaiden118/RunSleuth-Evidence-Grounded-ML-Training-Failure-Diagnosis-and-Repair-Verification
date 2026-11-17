@@ -148,14 +148,16 @@ class GuardTests(unittest.TestCase):
         claims_freeze.guard(Path(plan["development"]["output"]), dataset="camelyon-1", device="cpu")
         self.assertEqual(set(plan["development"]["worlds"]), {"ham10000-vienna_dias", "camelyon-1"})
         self.assertEqual(sorted(claims_freeze.PLAN["worlds"]), sorted(claims_task.SPECS))
-        self.assertEqual(
-            {writer["model_name"] for writer in claims_freeze.PLAN["writers"]},
-            set(claims_analysis.VENDORS),
-        )
+        writers = {writer["model_name"] for writer in claims_freeze.PLAN["writers"]}
+        self.assertLessEqual(writers, set(claims_analysis.VENDORS))
+        self.assertEqual(len(writers), 5)
         self.assertIn(
             claims_analysis.PRIMARY_AUDITOR,
             {auditor["auditor_name"] for auditor in claims_freeze.PLAN["auditors"]},
         )
+        # The primary auditor never reads a program of its own vendor.
+        primary = claims_analysis.VENDORS[claims_analysis.PRIMARY_AUDITOR]
+        self.assertNotIn(primary, {claims_analysis.VENDORS[name] for name in writers})
 
 
 class ScheduleTests(unittest.TestCase):
@@ -180,11 +182,14 @@ class ScheduleTests(unittest.TestCase):
                 block[0]["output"],
                 plan["development"]["output"] if development else plan["output"],
             )
-        orders = {tuple(i["condition"] for i in found[s : s + 4]) for s in range(0, 108, 4)}
+        orders = {tuple(i["condition"] for i in found[s : s + 4]) for s in range(0, len(found), 4)}
         self.assertGreater(len(orders), 1)
         commands = claims_freeze.schedule_commands("gpt-6.1-sol")
         self.assertEqual(len(commands), 36)
         self.assertTrue(all("--provider compatible --model gpt-6.1-sol" in c for c in commands))
+        self.assertFalse(any("--echo-reasoning" in c for c in commands))
+        deepseek = claims_freeze.schedule_commands("deepseek-v4.1-flash-1017")
+        self.assertTrue(all(c.endswith("--echo-reasoning") for c in deepseek))
 
 
 if __name__ == "__main__":

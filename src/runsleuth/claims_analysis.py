@@ -95,8 +95,12 @@ MEASURED_NUMERIC = ("numeric_material", "numeric_not_material")
 # Which vendor made each model, for same-vendor pairs.
 VENDORS = {
     "gemini-3.5-flash-lite": "google",
-    "claude-sonnet-5.5": "anthropic",
     "gpt-6.1-sol": "openai",
+    "deepseek-v4.1-flash-1017": "deepseek",
+    "muse-spark-1.3": "meta",
+    "qwen3.8-27b": "alibaba",
+    "claude-sonnet-5.5": "anthropic",
+    "claude-opus-5.5": "anthropic",
 }
 
 

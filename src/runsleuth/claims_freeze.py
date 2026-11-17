@@ -69,9 +69,21 @@ PLAN = {
             "provider": "gemini",
             "model": "gemini-3.5-flash-lite",
         },
-        {"model_name": "claude-sonnet-5.5", "provider": "anthropic", "model": "claude-sonnet-5-5"},
         {"model_name": "gpt-6.1-sol", "provider": "compatible", "model": "gpt-6.1-sol"},
+        {
+            "model_name": "deepseek-v4.1-flash-1017",
+            "provider": "compatible",
+            "model": "deepseek-flash-1017",
+        },
+        {
+            "model_name": "muse-spark-1.3",
+            "provider": "compatible",
+            "model": "muse-spark-1.3-contributor",
+        },
+        {"model_name": "qwen3.8-27b", "provider": "compatible", "model": "qwen3.8-27b"},
     ],
+    # Writers whose replies' reasoning goes back to the provider (DeepSeek's thinking mode).
+    "echo_reasoning": ["deepseek-v4.1-flash-1017"],
     "auditors": [
         {
             "auditor_name": "claude-sonnet-5.5",
@@ -124,7 +136,9 @@ RULES = {
     "arms": (
         "Two arms: neutral, where a use the data cannot support may be declared not "
         "estimable, and required, where every use needs an estimate whose interval may be "
-        "wide and whose assumptions are stated. Every writer makes two attempts of every "
+        "wide and whose assumptions are stated. The writers are the five agents of the "
+        "repair study, each of another vendor than the primary auditor. Every writer makes "
+        "two attempts of every "
         "world in each arm. schedule draws the order once from the plan's seed: per writer "
         "the worlds in a random order, and within a world its four attempts in a random "
         "order of arms, so the arms run interleaved. An auditor reads the statement the "
@@ -330,12 +344,13 @@ def schedule_commands(writer: str, plan: dict[str, Any] = PLAN) -> list[str]:
     """The commands that make a writer's attempts in the drawn order; write skips the
     attempts an output already holds."""
     chosen = next(w for w in plan["writers"] if w["model_name"] == writer)
+    echo = " --echo-reasoning" if writer in plan.get("echo_reasoning", []) else ""
     return [
         "python -m runsleuth.claims_agent write "
         f"--world {item['world']} --condition {item['condition']} "
         f"--model-name {chosen['model_name']} --provider {chosen['provider']} "
         f"--model {chosen['model']} --attempts {item['attempt']} --data {plan['data']} "
-        f"--out {item['output']} --work {plan['work']} --device {plan['device']}"
+        f"--out {item['output']} --work {plan['work']} --device {plan['device']}{echo}"
         for item in schedule(plan)
         if item["writer"] == writer
     ]

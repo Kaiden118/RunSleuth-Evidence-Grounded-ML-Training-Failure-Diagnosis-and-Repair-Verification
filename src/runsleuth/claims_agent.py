@@ -429,6 +429,7 @@ def run_agent(
                 "seed": seed,
                 "status": shown["status"],
                 "prediction": prediction.get("status"),
+                "predictions_written": prediction.get("written") is not None,
             }
         )
         return {**shown, "runs_left": max_runs - len(record["runs"])}
@@ -584,6 +585,12 @@ def write_attempts(
     return written
 
 
+def _predicted(run: dict[str, Any]) -> bool:
+    """Whether a run's prediction call completed and wrote a predictions file; records
+    made before predictions_written was kept count a completed call."""
+    return run["prediction"] == "completed" and run.get("predictions_written", True)
+
+
 def episode_line(record: dict[str, Any]) -> str:
     """One episode: how it ended, what the agent ran and claimed, and what it cost."""
     runs = record["runs"]
@@ -593,7 +600,7 @@ def episode_line(record: dict[str, Any]) -> str:
         f"{record['attempt']}: {record['episode_status']}, {record['status']}, claims "
         f"{record['claim']}; {record['model_calls']} model calls, {record['tool_calls']} tool "
         f"calls, {len(runs)} runs ({sum(run['status'] == 'completed' for run in runs)} "
-        f"completed, {sum(run['prediction'] == 'completed' for run in runs)} predicted); "
+        f"completed, {sum(_predicted(run) for run in runs)} predicted); "
         f"{record['input_tokens']} input and {record['output_tokens']} output tokens, "
         f"{record['seconds']:.0f} s"
     )

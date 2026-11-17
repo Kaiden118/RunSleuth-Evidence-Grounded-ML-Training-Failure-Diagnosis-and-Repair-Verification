@@ -159,8 +159,23 @@ class EpisodeTests(unittest.TestCase):
         self.assertEqual(record["agent_claim"], {"meets_every_requirement": True, "reason": "none"})
         self.assertEqual(record["looked_at_data"], 1)
         self.assertEqual(
-            record["runs"], [{"run": "first", "seed": 4, "status": "completed", "prediction": None}]
+            record["runs"],
+            [
+                {
+                    "run": "first",
+                    "seed": 4,
+                    "status": "completed",
+                    "prediction": None,
+                    "predictions_written": False,
+                }
+            ],
         )
+        # A run counts as predicted only when its predictions file was written.
+        self.assertFalse(claims_agent._predicted(record["runs"][0]))
+        self.assertFalse(
+            claims_agent._predicted({"prediction": "completed", "predictions_written": False})
+        )
+        self.assertTrue(claims_agent._predicted({"prediction": "completed"}))
         self.assertEqual(self.asked, [("print('hi')\n", {"run": "first", "seed": 4})])
         results = [step["tool_calls"][0]["result"] for step in record["steps"]]
         self.assertEqual(results[1]["images.npy"]["shape"][0], len(table(self.given)))

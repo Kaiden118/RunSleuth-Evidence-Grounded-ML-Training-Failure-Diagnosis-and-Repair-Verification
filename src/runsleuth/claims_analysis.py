@@ -700,7 +700,7 @@ def analyse(plan: dict[str, Any] | None = None) -> dict[str, Any]:
 
 def _shown(entry: dict[str, Any]) -> str:
     if entry["value"] is None:
-        return "–"
+        return "none"
     if entry["low"] is None:
         return f"{entry['value']:.3f}"
     return f"{entry['value']:.3f} [{entry['low']:.3f}, {entry['high']:.3f}]"
@@ -720,7 +720,7 @@ def summary(found: dict[str, Any]) -> str:
             )
             lines.append(f"  P1 new-site responses, {arm} ({entry['programs']}): {states}")
         p2 = primary_found["P2_endorsed_without_warrant"]
-        bounds = "" if p2["bounds"] is None else " bounds {:.3f}–{:.3f}".format(*p2["bounds"])
+        bounds = "" if p2["bounds"] is None else " bounds {:.3f} to {:.3f}".format(*p2["bounds"])
         lines.append(
             f"  P2_endorsed_without_warrant: {_shown(p2)} over {p2['answered']} answered of "
             f"{p2['claims']} claims;{bounds}"
@@ -729,8 +729,9 @@ def summary(found: dict[str, Any]) -> str:
         test = "" if p3["p"] is None else f", p {p3['p']:.4f}"
         lines.append(
             f"  P3_error_replication_minus_regime: {_shown(p3)} over {p3['claims']} "
-            f"predictors{test}; complete pairs {_shown(p3['complete_pairs'])} over "
-            f"{p3['complete_pairs']['claims']}"
+            f"predictors{test}; forecasts missing: replication {p3['missing']['replication']}, "
+            f"regime {p3['missing']['regime']}; complete pairs "
+            f"{_shown(p3['complete_pairs'])} over {p3['complete_pairs']['claims']}"
         )
     return "\n".join(lines)
 

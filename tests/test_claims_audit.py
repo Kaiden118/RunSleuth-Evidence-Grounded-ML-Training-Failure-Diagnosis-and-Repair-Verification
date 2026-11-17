@@ -149,6 +149,9 @@ class PacketTests(Fixture):
             self.assertNotIn(SECRET, text)
             self.assertNotIn("writer", text.split("## The task")[0])
             self.assertIn('"use": "new_source"', text)
+            # The form lists the decisions; none is the example's.
+            self.assertIn('"decision": "supported | not_supported | cannot_tell"', text)
+            self.assertNotIn('"decision": "supported",', text)
         self.assertNotIn("print('the program')", shown["report"])
         for level in claims_audit.LEVELS[1:]:
             self.assertIn("print('the program')", shown[level])
@@ -185,6 +188,14 @@ class PacketTests(Fixture):
     def test_a_third_of_attempts_get_the_placebo(self):
         drawn = sum(claims_audit.placebo_drawn(f"attempt-{n}") for n in range(3000))
         self.assertTrue(900 < drawn < 1100, drawn)
+
+    def test_the_order_of_the_levels_is_drawn_per_attempt(self):
+        levels = list(claims_audit.EVERY_PROGRAM)
+        orders = [claims_audit.call_order(f"attempt-{n}", levels) for n in range(200)]
+        self.assertTrue(all(sorted(order) == sorted(levels) for order in orders))
+        self.assertEqual(orders[0], claims_audit.call_order("attempt-0", levels))
+        first = [order.index("replication") < order.index("regime") for order in orders]
+        self.assertTrue(60 < sum(first) < 140, sum(first))
 
 
 class AnswerTests(unittest.TestCase):

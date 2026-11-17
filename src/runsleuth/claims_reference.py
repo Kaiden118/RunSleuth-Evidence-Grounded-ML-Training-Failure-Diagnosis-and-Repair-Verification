@@ -16,7 +16,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from runsleuth import claims_agent, claims_task
+from runsleuth import claims_agent, claims_freeze, claims_task
 
 REFERENCE = Path(__file__).resolve().parent / "reference" / claims_task.PROGRAM
 MODEL_NAME = "reference"
@@ -25,6 +25,7 @@ CONDITION = "neutral"
 
 def write(output: Path, world: str) -> Path:
     """The reference attempt of a world under output, written once."""
+    claims_freeze.guard(output, dataset=world)
     chosen = claims_task.spec(world)
     directory = claims_agent.attempt_directory(output, MODEL_NAME, chosen.name, CONDITION, 1)
     path = directory / claims_agent.ATTEMPT_FILE

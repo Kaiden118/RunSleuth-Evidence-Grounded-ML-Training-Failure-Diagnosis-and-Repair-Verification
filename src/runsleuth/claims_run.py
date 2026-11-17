@@ -683,9 +683,9 @@ def run_attempts(
     """The official run of every attempt with a program that has none yet, one at a time.
 
     data holds a world's export per directory, as claims_task writes it. In the study's
-    output the freeze must hold.
+    output the freeze must hold, with the plan's paths and device.
     """
-    claims_freeze.guard(output)
+    claims_freeze.guard(output, paths={"data": data, "runs": work}, device=device)
     done = []
     for directory in attempt_directories(output):
         attempt = json.loads((directory / "attempt.json").read_text(encoding="utf-8"))
@@ -716,12 +716,13 @@ def run_attempts(
         }
         (directory / RESULT_FILE).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
         done.append(result)
-        progress(result_line(attempt, result))
+        progress(result_line(attempt, result, results=False))
     return done
 
 
-def result_line(attempt: dict[str, Any], result: dict[str, Any]) -> str:
-    """One official run: its category, and each claim's estimate against the measure."""
+def result_line(attempt: dict[str, Any], result: dict[str, Any], *, results: bool = True) -> str:
+    """One official run: its category and the state of each use; with results, each
+    estimate against what the sealed data measure."""
     head = (
         f"{attempt['model_name']} {attempt.get('world', attempt['dataset'])} "
         f"{attempt['condition']} "
@@ -734,6 +735,16 @@ def result_line(attempt: dict[str, Any], result: dict[str, Any]) -> str:
         if "balanced_accuracy" not in claim:
             parts.append(f"{name} not measured: {claim['problems'][0]}")
             continue
+        if not results:
+            state = (
+                "not estimable"
+                if "abstained" in claim
+                else "not judged"
+                if "problems" in claim
+                else "estimated"
+            )
+            parts.append(f"{name} {state}, measured")
+            continue
         found = claim["balanced_accuracy"]
         measured = f"{found['value']:.3f} [{found['low']:.3f}, {found['high']:.3f}]"
         if "abstained" in claim:
@@ -745,13 +756,15 @@ def result_line(attempt: dict[str, Any], result: dict[str, Any]) -> str:
     return head + "; " + "; ".join(parts)
 
 
-def list_text(output: Path) -> str:
+def list_text(output: Path, *, results: bool = False) -> str:
+    """Every attempt and the state of its official run; with results, the sealed numbers."""
     lines = []
     for directory in attempt_directories(output):
         attempt = json.loads((directory / "attempt.json").read_text(encoding="utf-8"))
         path = directory / RESULT_FILE
         if path.is_file():
-            lines.append(result_line(attempt, json.loads(path.read_text(encoding="utf-8"))))
+            found = json.loads(path.read_text(encoding="utf-8"))
+            lines.append(result_line(attempt, found, results=results))
         else:
             lines.append(
                 f"{attempt['model_name']} {attempt.get('world', attempt['dataset'])} "
@@ -771,6 +784,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--device", default="cuda")
     listed = commands.add_parser("list", help="List the attempts and their official runs.")
     listed.add_argument("out", type=Path)
+    listed.add_argument(
+        "--results",
+        action="store_true",
+        help="Show the sealed numbers; in the study, only once the analysis may read them.",
+    )
     return parser
 
 
@@ -779,7 +797,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run":
         run_attempts(args.out, args.data, args.work, device=args.device)
         print()
-    print(list_text(args.out))
+    print(list_text(args.out, results=getattr(args, "results", False)))
     return 0
 
 

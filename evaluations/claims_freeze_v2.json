@@ -1,0 +1,1790 @@
+{
+  "frozen_at": "2026-11-17T16:20:02+00:00",
+  "commit": "0c0e39a10df2980fdebe3ee777fafd9700887cfa",
+  "schema_version": 3,
+  "task": "claims_freeze",
+  "stage": "writers",
+  "plan": {
+    "writers": [
+      {
+        "model_name": "gemini-3.5-flash-lite",
+        "provider": "gemini",
+        "model": "gemini-3.5-flash-lite"
+      },
+      {
+        "model_name": "gpt-6.1-sol",
+        "provider": "compatible",
+        "model": "gpt-6.1-sol"
+      },
+      {
+        "model_name": "deepseek-v4.1-flash-1017",
+        "provider": "compatible",
+        "model": "deepseek-flash-1017"
+      },
+      {
+        "model_name": "muse-spark-1.3",
+        "provider": "compatible",
+        "model": "muse-spark-1.3-contributor"
+      },
+      {
+        "model_name": "qwen3.8-27b",
+        "provider": "compatible",
+        "model": "qwen3.8-27b"
+      }
+    ],
+    "echo_reasoning": [
+      "deepseek-v4.1-flash-1017"
+    ],
+    "worlds": [
+      "ham10000-rosendahl",
+      "ham10000-vidir_modern",
+      "ham10000-vidir_molemax",
+      "ham10000-vienna_dias",
+      "camelyon-0",
+      "camelyon-1",
+      "camelyon-2",
+      "camelyon-3",
+      "camelyon-4"
+    ],
+    "conditions": [
+      "neutral",
+      "required"
+    ],
+    "attempts": 2,
+    "schedule_seed": 2027,
+    "official_seed": 1,
+    "replication": "seeds 2 to K + 1 for a world with K development sites",
+    "device": "cuda",
+    "output": "artifacts/claims/v2",
+    "labels": "artifacts/claims/v2-labels",
+    "audits": "artifacts/claims/v2-audits",
+    "data": "C:/Users/ADMIN/rs-data/claims",
+    "folds": "C:/Users/ADMIN/rs-data/claims-folds",
+    "work": "C:/Users/ADMIN/rs-data/claims-v2-work",
+    "runs": "C:/Users/ADMIN/rs-data/claims-v2-runs",
+    "probes": "C:/Users/ADMIN/rs-data/claims-v2-probes",
+    "development": {
+      "worlds": [
+        "ham10000-vienna_dias",
+        "camelyon-1"
+      ],
+      "output": "artifacts/claims/dev-v2",
+      "labels": "artifacts/claims/dev-v2-labels",
+      "audits": "artifacts/claims/dev-v2-audits",
+      "runs": "C:/Users/ADMIN/rs-data/claims-dev-v2-runs/pilot",
+      "probes": "C:/Users/ADMIN/rs-data/claims-dev-v2-runs/pilot-probes"
+    }
+  },
+  "statement_version": 2,
+  "files": {
+    "src/runsleuth/agent_loop.py": "34b5528e60dc74302c84d86c479a76c0ce7a46ef126e0eb8ccd46bfb5dd84872",
+    "src/runsleuth/agent_tasks.py": "9440ea8265664073e8262701e20d1a97bbded1bca0cc0701b9d42696331e9c23",
+    "src/runsleuth/agent_verification.py": "7248d7a9239ec95afffa3c2eaf1d92468535c5abdc4f04b5721ee9b852d419fb",
+    "src/runsleuth/agent_workspace.py": "ca1dff9594734379bffe03a3fdf47dac7f6b40d5f4c66af201060563c90545f7",
+    "src/runsleuth/anthropic_chat.py": "fc4f774bf60424f99e5f7526e4579ed4f791c7f449fe98a5136f8160d84d911c",
+    "src/runsleuth/camelyon.py": "920ef9229da93047f69b21d212df3e1970ec0378fabc424be4f5cf07f07d86d8",
+    "src/runsleuth/camelyon_config.py": "63a0916fdc124e4ef42d2342fc32ed5dedf8ab8200794b6b32ee50c1c515490e",
+    "src/runsleuth/camelyon_data.py": "aded3fb9f129d7a00195effc6c84ea0c4cb5d093adb3f96805aac2ac81f9f7eb",
+    "src/runsleuth/camelyon_optimizer_probe.py": "0cf6902d8f03955ade9a4ff5cbc24dae3e89b903e70014e7199a80a02848108e",
+    "src/runsleuth/camelyon_optimizer_training.py": "3af189eb72d306fac7389dc9cdf926452bf442b9eeb12bcad8d1e8bb107314b7",
+    "src/runsleuth/camelyon_variant_runner.py": "6c3d6e3cf010bfde0b2379ed072ecc2a3e7af41c871ce61762f8ca9361b97b58",
+    "src/runsleuth/claims_agent.py": "e7db67e99308302a29a7581bd208d57a414e2f7ca8df800474511e6208424517",
+    "src/runsleuth/claims_partition.py": "b13387ecdc99924abd6441f4aa5240828ae06f74c21ff87ea6a113dfe1f84e65",
+    "src/runsleuth/claims_probe.py": "4ae1e96be5fb2b1cee079053950cc8c94dae6bb2b5a9f5be54c3ac8cb6faaeca",
+    "src/runsleuth/claims_reference.py": "eade7ff4d1a9db38214b3885a2d98f331a6362cda1d46c4dff5cf00b0d186fc6",
+    "src/runsleuth/claims_run.py": "412f0af77f1d038d518a5ca7b5c353e68c6a3fe385bace46b5ac885aea7c75e7",
+    "src/runsleuth/claims_task.py": "e0338c9465621a7fb6b49bbdc11dcc57d4267a3b25d806d5930b25f535eae974",
+    "src/runsleuth/cli.py": "a0564676a4406951f89b3f36dc78b694cbc2ac8c9e0dc0c7dd8acd1c79024788",
+    "src/runsleuth/demo.py": "086efad0e3d7907e4d6744428692249f374b80e8806d22d372a17a7db2ea7cca",
+    "src/runsleuth/diagnose_run.py": "f658c20fb98f297f04d27549943d7a22fdf80a55dd95e93358503c409bb33426",
+    "src/runsleuth/ham10000_data.py": "01ce9f54aba9041f7f72bf3f6256e86bc81570ce65c1bc70542bc182d3a5b281",
+    "src/runsleuth/llm_client.py": "e1c7ecadcb471af10391dcb56d4a85adfa35178811232aa1b0589c9a8e5a91bb",
+    "src/runsleuth/optimizer_probe.py": "70a99df42fa7c0f3bbcaa71fc99f40d4ad97710dd8b8f2c1a97f60901259c214",
+    "src/runsleuth/parameter_group_monitor.py": "35e28982efb8ea3f7e5a11e2b663b441197e80572f1852c6606df2877df6df9a",
+    "src/runsleuth/pipeline_tasks.py": "00fc6ea9fb2a485f629fb22a66fdb6e83a454a984c8ee3653482dc28c93c480c",
+    "src/runsleuth/pipeline_workspace.py": "40593edb915974bee7952c36fe055d52d0be8df5e74a29893bc5b11c656d5b1b",
+    "src/runsleuth/run_monitor.py": "35a6d1052d29a4edcb08191689e2d60b04159a62d9c2fa0de09bb4a727403f88",
+    "src/runsleuth/signature_matching.py": "641e4027cd30bc13bdc488b41d2d65e4a07b52b07d63a465ce2def3fb2a7f2ab",
+    "src/runsleuth/standalone_agent.py": "bd6abe416f2fcef17a58f6499bdd7f00ea52c3beab51e14ebc3cfc3cce134013",
+    "src/runsleuth/standalone_check.py": "9130cd918e9843d3c7a1f4eab4514538c8de5ed66b22296c158d0fb283c088eb",
+    "src/runsleuth/standalone_programs.py": "e8912ef1b8ae94fec238077a10d3025995ea7dd462971b2cd8afdc43c99aec83",
+    "src/runsleuth/standalone_task.py": "0aa2831fb1215b48e1b86cfa90bce4fc79b44153264cf802ded80502d8f4bacd",
+    "src/runsleuth/train.py": "4c49e003545ee41692b4d45c5cf081d40355b9e3a6c087db70ec729a5799ec7d",
+    "src/runsleuth/__init__.py": "2a6ca2971e96e96edda1ed2d7c84ab84e186de37d56d352e39b51d60edaf9853",
+    "src/runsleuth/guard/__init__.py": "296abe651b77fa659183738373805add5fa82147bca0337f53dd6ca42fa28786",
+    "src/runsleuth/guard/sitecustomize.py": "5b5e071ac2c3e584e1d42180846c22da6a9270d3d4be266bf962bb64554d75bb",
+    "src/runsleuth/reference/train.py": "4e81b17e53eb8374b8a7e0d061c4bc8930e2c11586b12b75a976b9e422ad800f",
+    "configs/ham10000.json": "c362202893d25706c52fed5490916cd2b726cb9036ccce858cd0e3dd90ac6c55",
+    "configs/camelyon17_probe.json": "dd325b2a8a52c66c9cf8250118b65c0e54dac1ebfebe1c9e85ae96c000d17757"
+  },
+  "duplicates": {
+    "data/raw/ham10000/abhishek2025_duplicates/newly_discovered_duplicates.csv": "fafe916c6a97c4d6c6de3c7c93eae1f7eb601680692c25ea82c8ef595fca73c7"
+  },
+  "data": {
+    "C:/Users/ADMIN/rs-data/claims/ham10000-rosendahl/record.json": "4455edb04699c6a268933fcb22b5d0a2290f25977af35858093abdb913b887a8",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-rosendahl/units.json": "4ad102199158b053ea44322acb77721fa393f77100da2f5ca1c723134f39e77c",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-rosendahl/given/images.npy": "063d46475c144333e9e147045a383ae32892e4e38a81a55ee574236847ad080a",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-rosendahl/given/metadata.csv": "bc6b3d316dade5e117d5bf4ebca85dee59413a556aa567a349b345128c08ac6b",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-rosendahl/sealed/new_groups/images.npy": "f03ab87444b85b10b6e0634388551a71ce981d033a1f7d07f5adab7ef2346c85",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-rosendahl/sealed/new_groups/metadata.csv": "e853c005f8a0dd1a797cbd0553bad8084ed46b2735a55c8ed028e9ef129eaa68",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-rosendahl/sealed/new_site/images.npy": "b3167d3ec0ddf28581f78126c939ae35a7daa761f9d7634a27cf8c51ff8e5c29",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-rosendahl/sealed/new_site/metadata.csv": "5c9c9f5826fc5097b78b7f5a65c9563daeb766cbdec33bd51fed54cc753ef4ac",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/ham10000-rosendahl/images.npy": "fd5cc3350c8a29ddb18cf0a58fef19c67354667c2b70838946e0ade0480f2dc1",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/ham10000-rosendahl/metadata.csv": "eae80c294ccb92db563c8b3555621ce2068e72bf05fc7f17fcc36442ce010d50",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_modern/record.json": "9f567bbbe19438e527011408d3b1f45ad4c2834d5f5f5292bea890591c2fc870",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_modern/units.json": "50175200ca2818fec68c4d32be550b77f49d07b01bc523273089c75c19608211",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_modern/given/images.npy": "c34751c64f426988e1a8ae9ba320d0832362a283a93eca5dfdca7abdde8f3728",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_modern/given/metadata.csv": "76aac3b77569828d58da5d2551f498f42ee4f1bc5dd4001caf2fdcb01c973323",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_modern/sealed/new_groups/images.npy": "1c5494401e23bf2219e3cc54672bb23f0466452e44d643ad4b85088b0e9c1523",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_modern/sealed/new_groups/metadata.csv": "e9d28b3e015c6c74acc4652f559b73b9a7951bd070f4ecaefaf9329321ecb5fd",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_modern/sealed/new_site/images.npy": "8722b9668baa0de9a38f69a1e3d2fb0ecfee94c853f2e41d178d9edba5fb07ba",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_modern/sealed/new_site/metadata.csv": "7b47ebe0bb72f13bdfe38d26957035ea5f897b0d0c2a21ff43fccf89f683c262",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_molemax/record.json": "df333d068dd925b20283b0ce114ff273eb7522725277fbf71cde076fb7587145",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_molemax/units.json": "a1a70bcee196282de1a057bd3cd19cfa6b394e6dcb87662b90a28b08506dd833",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_molemax/given/images.npy": "8a3b919cf320c341205de1312fe1d563e186d970471c63478716c6f9824efa85",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_molemax/given/metadata.csv": "12c4ce3b876eb9e007bbf0af66fa27c7f4f8b24982a303fc0ec16e04374a160c",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_molemax/sealed/new_groups/images.npy": "46f3892b1cfbabac0eee82f87eb78a0d08ec2dbaafc11d974478dc6a9db4775b",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_molemax/sealed/new_groups/metadata.csv": "ac2867eaede72b93c827d5404d1b914d24a657537e0209ed5621f8b9f7dabd83",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_molemax/sealed/new_site/images.npy": "d5f04ccf0d2bc740b3424aa91d9b2e3716ae725c123d2acbeefc3bbda14c8133",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vidir_molemax/sealed/new_site/metadata.csv": "15524417d6808dd4040df74eefc325fca8cdd31789b91bb69ebc37d100042a3a",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vienna_dias/record.json": "0cdf35dc3407796d36d7120e648b602f7c4975273c556a2684765047578bd391",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vienna_dias/units.json": "ef49459567f83952141e0b6380b1e219f86674799d8ea63d65a68feb74438a97",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vienna_dias/given/images.npy": "17560eef20c84f526038b2b92641cb1d4dff469ec07da46400d58de42f5702da",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vienna_dias/given/metadata.csv": "d798c4d69633021f94406d27cbbf0f9c2047fcca4774a127c4673bebd5fdc51a",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vienna_dias/sealed/new_groups/images.npy": "783692348460e6184dfa2828dad8d68fa02f0e94fd985a93154b604d85928f02",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vienna_dias/sealed/new_groups/metadata.csv": "fec83d9ce369cc2476bdf5cc7001cd8d144b2b1f70e41f1dce553d9c1b861dd6",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vienna_dias/sealed/new_site/images.npy": "b9b056ab2eeb7c5d1429f4c98a188ce58cf142751b03f635f5069d095a5f084e",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-rosendahl/fold-vienna_dias/sealed/new_site/metadata.csv": "8ea77c7ba1c5a32274a0726f6b3c7734df2514fd428c60d69ba4e3a7aefd32a5",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_modern/record.json": "765f8a23587e7ee553379f0e11d3ea5801d5693c99264d0ec38531b0c7213fa3",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_modern/units.json": "fd07388612bb7d9efc2454e85edfa8ea8f607b78b5649c46bcba72752ab7c86a",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_modern/given/images.npy": "03ec35ba5d51f20f393e632bbd481682d307b7fbc4270f16dc23010538e94780",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_modern/given/metadata.csv": "d5831d65a3c297d38971ddca71a74a03aba494b085f0898333bc81b4fab41f70",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_modern/sealed/new_groups/images.npy": "cc68187f2040330b80fe86f863763c9b1e481e562ca783d69d25b8cdf0542162",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_modern/sealed/new_groups/metadata.csv": "1ce6f2851dc87db9bfb180f41206bfbcbe2503c58fab9032433474f2f59cfbc6",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_modern/sealed/new_site/images.npy": "155fc588f87dcd19f17cb1d5dad39e5e3e8a60964f1730de80a1427033fb01f7",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_modern/sealed/new_site/metadata.csv": "078320494677e624d349d4880386c1ccd1677006872a275bcc164fa271cc2270",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/ham10000-vidir_modern/images.npy": "b4e07ffd2f5ec7b92cbd10a675696881c0bae3703e867cf82c0324e2d922c4f8",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/ham10000-vidir_modern/metadata.csv": "ca0e354cf8eef07059faa80f788fc887bd3f98b27a2e9fc9cc635c889450b409",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-rosendahl/record.json": "ca066208c949f24a71a34725887b2e55c460285068789763eef1a07ae6ac98af",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-rosendahl/units.json": "a175fdff71c3d5843b383dcbc3fddad80492ee674cc651a4f835a6747fbfbb41",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-rosendahl/given/images.npy": "c34751c64f426988e1a8ae9ba320d0832362a283a93eca5dfdca7abdde8f3728",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-rosendahl/given/metadata.csv": "76aac3b77569828d58da5d2551f498f42ee4f1bc5dd4001caf2fdcb01c973323",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-rosendahl/sealed/new_groups/images.npy": "1c5494401e23bf2219e3cc54672bb23f0466452e44d643ad4b85088b0e9c1523",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-rosendahl/sealed/new_groups/metadata.csv": "e9d28b3e015c6c74acc4652f559b73b9a7951bd070f4ecaefaf9329321ecb5fd",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-rosendahl/sealed/new_site/images.npy": "13ccb39c6032cda248635e8a92f4506b22f90f6a7c444c2351300300d64dc4be",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-rosendahl/sealed/new_site/metadata.csv": "1e49886d75f28fc5f0ffcabdbadd54140a517beffc3f3a2192418ef26f44faae",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vidir_molemax/record.json": "dc56f50c5000bdfccdd89d0e9880534670793c3a86952cea3f9f249bdf82049f",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vidir_molemax/units.json": "470da9d812baff010100370845a7b79c143249c716981936a44aa848566bec37",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vidir_molemax/given/images.npy": "e7de2e80015d549077bf9a2333708bb81dc32bd922c6cce36ca6b86711a31be4",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vidir_molemax/given/metadata.csv": "f862e99fac707b2e7729a2c97b839c57fc792fc175c2d066a61cd0838a4ef74e",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vidir_molemax/sealed/new_groups/images.npy": "69a05633b9a5e75d21ea5685d13cda36c18084fad3391677a5cd78b81f7a9e8c",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vidir_molemax/sealed/new_groups/metadata.csv": "91603d4ec768336c8f7a6daad1f7545a823f2c051b0bca739411524835a14971",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vidir_molemax/sealed/new_site/images.npy": "b7d8fee54caa471a1add146faeaa26d73148dd8e6ec30476ad7cf8e4284edbae",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vidir_molemax/sealed/new_site/metadata.csv": "cc05b1e412a02a38523f5b0874f1e4e45dfe6a8253347b2ce58cf465366b83a6",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vienna_dias/record.json": "7548f17b82bc551d82408797a97e00644276e22c2a09b754024f92f47784931a",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vienna_dias/units.json": "57918f6c074c0c7eff4ea783ae386e4dbaf5548001d23b264f65dad33ecc7bbb",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vienna_dias/given/images.npy": "4e29695753787c00aa3648946f8142ae60577e6a402c27cfe14276feb04508b8",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vienna_dias/given/metadata.csv": "2b3b2dc21841e78aa42c6af4795b24ecbbb4700cefc726a803caf1191d22091c",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vienna_dias/sealed/new_groups/images.npy": "2ac616e7ef247d5612baacf2615091fd9c140419ff4799856f96db5424c86784",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vienna_dias/sealed/new_groups/metadata.csv": "dbf8e1d39248bd8af2b22c8aa14db4e01e54802a5564b84100c7c4e7e9e873ee",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vienna_dias/sealed/new_site/images.npy": "b9b056ab2eeb7c5d1429f4c98a188ce58cf142751b03f635f5069d095a5f084e",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_modern/fold-vienna_dias/sealed/new_site/metadata.csv": "8ea77c7ba1c5a32274a0726f6b3c7734df2514fd428c60d69ba4e3a7aefd32a5",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_molemax/record.json": "02b033c6a231fa9106a2a131865559f01854ad14d8b8fedcb247c5209aa25085",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_molemax/units.json": "7d382991543f2741f48fe894aa8200cf1568a72f62888f456d4223c5dfc2fbe1",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_molemax/given/images.npy": "f2d9bedb569e45c583f294e7387042029dad44940889b2638acd689a2a744c4e",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_molemax/given/metadata.csv": "91d78a10c63744801271c6d06b8ad831003ed84b0d3940a94e184e59d4e23226",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_molemax/sealed/new_groups/images.npy": "9927021d2048e812fc062386700e2c5aaf7275b346d984ac8e2ece972f47fa6c",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_molemax/sealed/new_groups/metadata.csv": "906b519851e4f559093a5c1e76643524e99dc200fb88b182e164171063b30a16",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_molemax/sealed/new_site/images.npy": "f5b164a130974becba1ea72817fde8bf154816728f6b37ce89a05ace0f096833",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vidir_molemax/sealed/new_site/metadata.csv": "1123fa79f57e4022c145169fa7e74cf73882a1245842466f1dbe28498a8478b7",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/ham10000-vidir_molemax/images.npy": "a2ff5236575d9014f39fbde242113054fc48980031b1c698bbf741eab005e4c5",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/ham10000-vidir_molemax/metadata.csv": "42255adb825f4a783f970870d3576d2ed0f45e84c6f361b1101e619f59b32dd3",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-rosendahl/record.json": "758a47df8aa866e06747f6848273b0c490e73036e1e9ff61f69b44f9539d69fb",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-rosendahl/units.json": "d69c10be575a9d8ddc1cd427539da21374689c46020f358feca02a1ce6bf8639",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-rosendahl/given/images.npy": "8a3b919cf320c341205de1312fe1d563e186d970471c63478716c6f9824efa85",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-rosendahl/given/metadata.csv": "12c4ce3b876eb9e007bbf0af66fa27c7f4f8b24982a303fc0ec16e04374a160c",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-rosendahl/sealed/new_groups/images.npy": "46f3892b1cfbabac0eee82f87eb78a0d08ec2dbaafc11d974478dc6a9db4775b",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-rosendahl/sealed/new_groups/metadata.csv": "ac2867eaede72b93c827d5404d1b914d24a657537e0209ed5621f8b9f7dabd83",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-rosendahl/sealed/new_site/images.npy": "13ccb39c6032cda248635e8a92f4506b22f90f6a7c444c2351300300d64dc4be",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-rosendahl/sealed/new_site/metadata.csv": "1e49886d75f28fc5f0ffcabdbadd54140a517beffc3f3a2192418ef26f44faae",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vidir_modern/record.json": "1271bf1ca62ba92c5f5899fca715239c23781fc70c2d6e7030b7b4db10cd7572",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vidir_modern/units.json": "997865a991484cbcee12f38401c4bd2f2c1f65da5a5e5da4c80ff23c620d035b",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vidir_modern/given/images.npy": "e7de2e80015d549077bf9a2333708bb81dc32bd922c6cce36ca6b86711a31be4",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vidir_modern/given/metadata.csv": "f862e99fac707b2e7729a2c97b839c57fc792fc175c2d066a61cd0838a4ef74e",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vidir_modern/sealed/new_groups/images.npy": "69a05633b9a5e75d21ea5685d13cda36c18084fad3391677a5cd78b81f7a9e8c",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vidir_modern/sealed/new_groups/metadata.csv": "91603d4ec768336c8f7a6daad1f7545a823f2c051b0bca739411524835a14971",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vidir_modern/sealed/new_site/images.npy": "1b9f388d112c9caa9bd811fafa78774156622db58c48435a7f303b80268468ba",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vidir_modern/sealed/new_site/metadata.csv": "2b381b9ea59269bee0aa85282b5fbdbebd5401c526e57e54a0676e5583d37786",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vienna_dias/record.json": "99bb8f8780580b04a3052784c69c7b6c73ad4c0d473df4be2e541d4fd05e6c35",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vienna_dias/units.json": "3b8eadf0f73b3ef0b5a63c7966d9578891ba9404385eb79f6422001dad2a522a",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vienna_dias/given/images.npy": "426516b7f96137fc539ae9ccccbf7ae16ad0429e79505c3d7ecbdd7d7a7c84a6",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vienna_dias/given/metadata.csv": "50ff62c15217de620cac778bd24975ab94f71f823ce3517bae97b1deaa16d38d",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vienna_dias/sealed/new_groups/images.npy": "2907e8b355c2f5b64c25985195670ef2415a0163d815985d01719485d800a660",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vienna_dias/sealed/new_groups/metadata.csv": "926ae5a93500661b2e84a9dcbcf45c2304a8d658cbeca958e298391a784bfe5a",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vienna_dias/sealed/new_site/images.npy": "b9b056ab2eeb7c5d1429f4c98a188ce58cf142751b03f635f5069d095a5f084e",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vidir_molemax/fold-vienna_dias/sealed/new_site/metadata.csv": "8ea77c7ba1c5a32274a0726f6b3c7734df2514fd428c60d69ba4e3a7aefd32a5",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vienna_dias/record.json": "4b1b6b777c3ea857fa9aad10d7fe09990eeefb7a8fbbeea52cd6a2c13e4e0e45",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vienna_dias/units.json": "4519a0e0c4fca1e4609ccd69b861fa1bdd4f259cd870ddef4df1a3bad99ba165",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vienna_dias/given/images.npy": "e7dc4c6260766e6c129b734d64b76ece2228d384894204f40a585c15f216af48",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vienna_dias/given/metadata.csv": "4e92ce527dbf11739d00d7a4e68ecec370e2fd783acd8b5a3d9c6340e4f203fb",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vienna_dias/sealed/new_groups/images.npy": "0cd649e9d7023f06c086c09b60b9a2a7774bdbcbe9aadaa2d0e397f2a7ca1e1a",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vienna_dias/sealed/new_groups/metadata.csv": "918f83f6e97fd1a4891c3c10933984a4df19edb5d881dc41d3f8b189c34e7c7e",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vienna_dias/sealed/new_site/images.npy": "d60bffe13a778c6e94f99ef9e8ad80067bbeecad68363fb537faaf0667c4f897",
+    "C:/Users/ADMIN/rs-data/claims/ham10000-vienna_dias/sealed/new_site/metadata.csv": "980712d72056db31ccae48e1c75d207bf7665322e59fe187abbc4f9ed33383bb",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/ham10000-vienna_dias/images.npy": "afaddec5695adc887e8e698edd0b0553b7f9596ac42afb58f58d75ef971d2b34",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/ham10000-vienna_dias/metadata.csv": "a09605339ef1a7777e0718ac9ae584a78f82e228fa01f1c5e519b79c7295514e",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-rosendahl/record.json": "d1247dbe6aaf0fd3f4fea41e594f3269ddccc0e88ddff9b52ab239cb51226eae",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-rosendahl/units.json": "9e41e4daf6b8faf3d4b6547b4eda7905125ffc249e636a637267be9929e6af91",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-rosendahl/given/images.npy": "17560eef20c84f526038b2b92641cb1d4dff469ec07da46400d58de42f5702da",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-rosendahl/given/metadata.csv": "d798c4d69633021f94406d27cbbf0f9c2047fcca4774a127c4673bebd5fdc51a",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-rosendahl/sealed/new_groups/images.npy": "783692348460e6184dfa2828dad8d68fa02f0e94fd985a93154b604d85928f02",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-rosendahl/sealed/new_groups/metadata.csv": "fec83d9ce369cc2476bdf5cc7001cd8d144b2b1f70e41f1dce553d9c1b861dd6",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-rosendahl/sealed/new_site/images.npy": "13ccb39c6032cda248635e8a92f4506b22f90f6a7c444c2351300300d64dc4be",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-rosendahl/sealed/new_site/metadata.csv": "1e49886d75f28fc5f0ffcabdbadd54140a517beffc3f3a2192418ef26f44faae",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_modern/record.json": "cb2aea55397569865e7206858e719bbe4e9f3d1aa888299bf0781114051e8f79",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_modern/units.json": "4e4c18d144349dbe8c7d7ef02da5202ab5008cdea5279c54a764c9b38c29a84d",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_modern/given/images.npy": "4e29695753787c00aa3648946f8142ae60577e6a402c27cfe14276feb04508b8",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_modern/given/metadata.csv": "2b3b2dc21841e78aa42c6af4795b24ecbbb4700cefc726a803caf1191d22091c",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_modern/sealed/new_groups/images.npy": "2ac616e7ef247d5612baacf2615091fd9c140419ff4799856f96db5424c86784",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_modern/sealed/new_groups/metadata.csv": "dbf8e1d39248bd8af2b22c8aa14db4e01e54802a5564b84100c7c4e7e9e873ee",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_modern/sealed/new_site/images.npy": "8722b9668baa0de9a38f69a1e3d2fb0ecfee94c853f2e41d178d9edba5fb07ba",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_modern/sealed/new_site/metadata.csv": "7b47ebe0bb72f13bdfe38d26957035ea5f897b0d0c2a21ff43fccf89f683c262",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_molemax/record.json": "26da2fa374a143d434eb1c2db5ecc9cab3df1e1620073d48e08d25672002bbfd",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_molemax/units.json": "09aa77d44a046338f096f9e4efe74fb91a5d348a494323d2bc231748e3cf0796",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_molemax/given/images.npy": "426516b7f96137fc539ae9ccccbf7ae16ad0429e79505c3d7ecbdd7d7a7c84a6",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_molemax/given/metadata.csv": "50ff62c15217de620cac778bd24975ab94f71f823ce3517bae97b1deaa16d38d",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_molemax/sealed/new_groups/images.npy": "2907e8b355c2f5b64c25985195670ef2415a0163d815985d01719485d800a660",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_molemax/sealed/new_groups/metadata.csv": "926ae5a93500661b2e84a9dcbcf45c2304a8d658cbeca958e298391a784bfe5a",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_molemax/sealed/new_site/images.npy": "d5f04ccf0d2bc740b3424aa91d9b2e3716ae725c123d2acbeefc3bbda14c8133",
+    "C:/Users/ADMIN/rs-data/claims-folds/ham10000-vienna_dias/fold-vidir_molemax/sealed/new_site/metadata.csv": "15524417d6808dd4040df74eefc325fca8cdd31789b91bb69ebc37d100042a3a",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-0/record.json": "365e262c85fe443cd43279983c58c1770161d5c2ab7ffb0c10c81ad16004e722",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-0/units.json": "fffbdf5d82b3b81df95a49122aed2a1fcb8dde037b3f83efa20b0932546d110b",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-0/given/images.npy": "0ec6d9d9cc10ac5272eef01cc5ab0ae70718e7859e64b0cdcb0a8d1adb577c68",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-0/given/metadata.csv": "b6d8f85b1b070a337799f58ad6d3ca6ef736883824d900c011d8dd0d021ac6e0",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-0/sealed/new_groups/images.npy": "e01e51c57fdc3195e4e5f00f15f08ff0fb676f1e947e386239c20dc70f92e810",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-0/sealed/new_groups/metadata.csv": "30da038845ad11376da516f86ce5020dae5fa3063dabd16364b60a55c4d1ade2",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-0/sealed/new_site/images.npy": "47ef557cc394d811123e394edb79fc382e446d4917a15ac88296eba1d2c69fd0",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-0/sealed/new_site/metadata.csv": "33c77d0d6187e280cd04c917aeb1b7b5522c2d191c8e1d55720040632be6f26d",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/camelyon-0/images.npy": "787ce345ee8b853c02f6ae951dd1fb7589d2882b231f15a0592db733a238161b",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/camelyon-0/metadata.csv": "25ddaec7a0e512a19c4f0b1e6a738b8d3ed5140b2b45dcab7a265fd4f9ab7d00",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-1/record.json": "afb1dd7b7f6481fbda3c121afa2b0cb18295ac206f679145a51f40ee4c0984ef",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-1/units.json": "0433d9fef35057c293ace3f99600bf5fd5f3b24131ba7762e66f9ac2bffdec94",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-1/given/images.npy": "d0b2d085cbfe11a66c64aa232cdc07c1ec25e335a1783645842f1777204c0929",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-1/given/metadata.csv": "f55bcf6a5f42073c2cee646b292e57c4bf3b51cf7e338cc56c20e1885ab15c94",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-1/sealed/new_groups/images.npy": "68e40900d8d6ba23fc72f3ad44b09fa1dbdb22faa0a3289eadc775876da4ea1e",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-1/sealed/new_groups/metadata.csv": "aca10502981b4f306d06a656d40c347e278d620e258bd1832436f41c0733bdd2",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-1/sealed/new_site/images.npy": "787a2ec002cd81a1a2142fa86564817ea2638752d83994628de436d964ef83f8",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-1/sealed/new_site/metadata.csv": "70c7f1890b8f04e0a880a5be762fc1243ce6d995a502e7890c240c26b40c91eb",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-2/record.json": "dc64261294682c588398af1c2f6737d5f23faddfa7683fac548d71159aebfc9b",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-2/units.json": "da26cc2ae0a48a3dac85ff53e43afd68be61463b04354842d25156b0cb037b95",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-2/given/images.npy": "977128bfb79bc7b4fd45e8fc5776a9066fc0f3d0b1afb501baab99c6bc87669f",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-2/given/metadata.csv": "3468a594cde1d7fa4ebed48f08fdfd565ece810d0d5cefca9e042cb8e21326c1",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-2/sealed/new_groups/images.npy": "72573f2a0a54390c8490743d714840b365ad2461ccace486c69965787069bf42",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-2/sealed/new_groups/metadata.csv": "5657465378e7619d09b70ea52532d7e90191070eaa68c5d2cefc9a31e19fabac",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-2/sealed/new_site/images.npy": "6745c4eb0d0b6b2a0ac27d1d39db3916c0c62df855ecbe027a05807a59aaddea",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-2/sealed/new_site/metadata.csv": "e8693541e0c4384ae11b1b76d644049ec1065dfb5dc0f58b3d98b694d8934839",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-3/record.json": "324cf9be8b24713869beef08d97257ffd09644aa0fea43ed54ea75241891f2c2",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-3/units.json": "c34908e9053183fb320513b70f0d5ae55d5293bd5f9f5201f6c4c05c97f63e9c",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-3/given/images.npy": "00ec5548964848395ce940a0cb53897705b793f8a8d8bd39ed55106c1068391c",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-3/given/metadata.csv": "4a6c28e749e57afb2a8878f01b5a0e03dd90f97759a9cc136fdc611c58de261a",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-3/sealed/new_groups/images.npy": "ce4df4e17435d1d69e0c572d874e7cd0b8ebafb9d4d7bb0be5e18aa6c133f4c6",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-3/sealed/new_groups/metadata.csv": "543b2313e99d334814dc784bbb5e5996b94fd917a61d6a5addda4a6be0c90b5a",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-3/sealed/new_site/images.npy": "1c337b2aad446399d9091de8818dc1a7bde389a74df5d3191ca4a972dedf22bf",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-3/sealed/new_site/metadata.csv": "473aefd882a51f9e8612f5a004b28055b9448c1851880d70cece4d1140655577",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-4/record.json": "cce72a885363e543f2f5d0efbcb06db22036278e4918ffd3b149fbc8d596f0ad",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-4/units.json": "de0323dac81b14b01923dd0cac4dab5feb5b18541772a3c538d7465adcf184df",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-4/given/images.npy": "182c20dd2c5ad3ff30c952deec83c1fd5c4209bee64a3900733e8becdef1f9a4",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-4/given/metadata.csv": "b0fe0879006642d8c32c002e82a9db12cf2dbcb5924da1406a7535f301358371",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-4/sealed/new_groups/images.npy": "2afe28fc48d3b5b2d830fd1f602502fbf8d463898638b0f21f5a86b2be711585",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-4/sealed/new_groups/metadata.csv": "9183615084212466d3e3b507411a8c923ee17e9dc450c030ec1e38bac9f99d00",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-4/sealed/new_site/images.npy": "63faa3c96efc827fe26643977962c5c550d6887125c7b0c79c229c133cc312b5",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-0/fold-4/sealed/new_site/metadata.csv": "23cc7c64ae84c8c4587f95cc13a9fde66249ec3b494d5c50bf464e42091832a0",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-1/record.json": "b16ee80c4824f6bdfa2ad934bb502be99acc32afdfb5f4f8ba9379b900b4fe5c",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-1/units.json": "95979c3718751aee4e9120fac6fc74d96fe86551ff33df24a5ffc5314c33033c",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-1/given/images.npy": "f6845d33afe15e3d60c0356908d5fe05c078eaed98ef555d890539bad9439905",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-1/given/metadata.csv": "67d335c68287bce690702af09cba81dd9024646c5d039432f14a9ec8a14f0478",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-1/sealed/new_groups/images.npy": "8d7e7bde659eefef3892572d4b7cda9e70f8f810c8bbc68e36bf06671fa88e48",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-1/sealed/new_groups/metadata.csv": "9f17e2788372db51f33826b2f021ef6485719af5926798d077c47ecd03e4c582",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-1/sealed/new_site/images.npy": "150eabff8502496695067dbe3a124acdef60ed50571fa8dd4511fcbeb6f27041",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-1/sealed/new_site/metadata.csv": "e56af448dab0b7071a59aa9b2523427debae6cecff0b6d3dfeefd565312234f7",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/camelyon-1/images.npy": "38049e88fb77941035677b9d2e3e91b47b22c6dd132822842ec38ae1f19d025f",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/camelyon-1/metadata.csv": "6b92dfe3513eabd5c5605b93736e7e43cec5ed5ca67f9f8426e0af42fb714682",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-0/record.json": "5b932dc9031a2553337fabd2c7d8d5cb95d0abb383203a229813530a45155439",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-0/units.json": "8137291c57a749d92c0c9ee21fc3cd9fe80e803914803c1fa0faf558e46f149f",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-0/given/images.npy": "d0b2d085cbfe11a66c64aa232cdc07c1ec25e335a1783645842f1777204c0929",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-0/given/metadata.csv": "f55bcf6a5f42073c2cee646b292e57c4bf3b51cf7e338cc56c20e1885ab15c94",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-0/sealed/new_groups/images.npy": "68e40900d8d6ba23fc72f3ad44b09fa1dbdb22faa0a3289eadc775876da4ea1e",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-0/sealed/new_groups/metadata.csv": "aca10502981b4f306d06a656d40c347e278d620e258bd1832436f41c0733bdd2",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-0/sealed/new_site/images.npy": "09c3d7429e9b3cedc047d4a248e35f30df401e972ba15d6cb6cd0505e3feed24",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-0/sealed/new_site/metadata.csv": "0a0812e5d817b699388ee7b610ed844eae973ecdcc0887693e6e1159d3d428f6",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-2/record.json": "278a2303a47b38cf85d918ef92020340a7fc322e8a2e6d4927324e761c6bb100",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-2/units.json": "0cfd8f4df01db1caf59b75bb27a541faf9f51a0b675e1da68bbdc1de55077ec3",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-2/given/images.npy": "1db5450d65b8037a2926787f3c7c06d7f3b10c71157c68cce899a9c7f6fd3f23",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-2/given/metadata.csv": "31af21431cb0f020951d35ddb0b4722cb943fbe7428aba6fa5921d1244b7b240",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-2/sealed/new_groups/images.npy": "20717101c924edb378fe3d4cf3a41a745b41fa6aeff840daca30d82829c66104",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-2/sealed/new_groups/metadata.csv": "d1766108b391b5e87b6014982c976206cbe04d167a2ecb9d437f93a4d92fd933",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-2/sealed/new_site/images.npy": "6745c4eb0d0b6b2a0ac27d1d39db3916c0c62df855ecbe027a05807a59aaddea",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-2/sealed/new_site/metadata.csv": "e8693541e0c4384ae11b1b76d644049ec1065dfb5dc0f58b3d98b694d8934839",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-3/record.json": "8c56e33cd129570f68af17c61ceaef8cc49a19160531874ae06da632f7465711",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-3/units.json": "3394cc4c53d765e06472227ca60084b09738da32d3c8bc1a8e0248af9eb04e4a",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-3/given/images.npy": "dc17ad9fbf8da9085fce7fa0e5563a135c57950f9f1f4020febb58077c6e1ce2",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-3/given/metadata.csv": "657685f73fc751dd4a2cb6248ed642136e99862071a69966a251788d01031321",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-3/sealed/new_groups/images.npy": "5db1550c839c02aa7266196e880da16c5944de4675c2d78fa958db8f72649091",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-3/sealed/new_groups/metadata.csv": "8df92f8ab229bc8e5f2340465d10355cf475fff302938dfc1f5003a6cadd9eeb",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-3/sealed/new_site/images.npy": "1c337b2aad446399d9091de8818dc1a7bde389a74df5d3191ca4a972dedf22bf",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-3/sealed/new_site/metadata.csv": "473aefd882a51f9e8612f5a004b28055b9448c1851880d70cece4d1140655577",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-4/record.json": "0fbc92cf78ad8cb5aedf294bf22eed07c747a45fd86fba05e66cb3162e519bb5",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-4/units.json": "1f415566326147e7dd3b385d635994246e3742013f59db4c0293441775dc695b",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-4/given/images.npy": "3f5a9b22f7ca7346e6427d072f1573b0e348e862e51d41ba3bd73c98c82277cd",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-4/given/metadata.csv": "6f9444d7266612dcd9f2c38b8d335fd35ebdede5387795747c1784d264b98bf4",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-4/sealed/new_groups/images.npy": "99eebaf4e59ccef6ff839e10f3fde651cdd5207b67a58bebede9e14d17abb5c9",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-4/sealed/new_groups/metadata.csv": "4c58fa66418ba9dddd180ed68387c87dd2d2caf27e8604193b165f8c52e44aa9",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-4/sealed/new_site/images.npy": "63faa3c96efc827fe26643977962c5c550d6887125c7b0c79c229c133cc312b5",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-1/fold-4/sealed/new_site/metadata.csv": "23cc7c64ae84c8c4587f95cc13a9fde66249ec3b494d5c50bf464e42091832a0",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-2/record.json": "3c892d3678a4f032f55ea88ab3dd30d8a9f77a60dbb654cc46701714b34bd545",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-2/units.json": "4166c2c11bfeea5aede495894d146573b5841e4b728b1d146bf7bb7ce4aec72a",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-2/given/images.npy": "f481c4fc05cf5a340a02f1e220c2718e8720e0ed2c0f962aa232da7c66d6116f",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-2/given/metadata.csv": "f65cf54d088dc271b1cb3d7d7cc353c38ede3ddfbe6ba18136e4e16c7ae11595",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-2/sealed/new_groups/images.npy": "a2a3924bd34b9df9505e891f5f0917aff73cd6ca6feff7cd33328ec09bcd2640",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-2/sealed/new_groups/metadata.csv": "921580714628dc2f60a6edf3346d6f20f1725052d275f1c3e12096a18d8ae8eb",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-2/sealed/new_site/images.npy": "4733f846be2255f1d9efc02f6b897d7ff575444c89416b5ea81bf14e6dbe4d97",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-2/sealed/new_site/metadata.csv": "ae83f3ffc71a1a2b205c66dbeca8b1c2bff8d9c7c91e6b599832b29f7e3d0573",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/camelyon-2/images.npy": "c9c3b35f86ec530df1ecb759397457b8f2bd409583a7adc01bf34a0baa801d66",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/camelyon-2/metadata.csv": "ed949fe01005cbcf17232562d154c62436c979322937981dd44f28c8c20993ba",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-0/record.json": "6beafefe063e4352dc6f155c19fd948a900562d377903b630b42d190a763c4a2",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-0/units.json": "395813bff6263526bdb5733aa706f1a18f0b3158b4bfd906d18b0d53a8098768",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-0/given/images.npy": "977128bfb79bc7b4fd45e8fc5776a9066fc0f3d0b1afb501baab99c6bc87669f",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-0/given/metadata.csv": "3468a594cde1d7fa4ebed48f08fdfd565ece810d0d5cefca9e042cb8e21326c1",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-0/sealed/new_groups/images.npy": "72573f2a0a54390c8490743d714840b365ad2461ccace486c69965787069bf42",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-0/sealed/new_groups/metadata.csv": "5657465378e7619d09b70ea52532d7e90191070eaa68c5d2cefc9a31e19fabac",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-0/sealed/new_site/images.npy": "09c3d7429e9b3cedc047d4a248e35f30df401e972ba15d6cb6cd0505e3feed24",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-0/sealed/new_site/metadata.csv": "0a0812e5d817b699388ee7b610ed844eae973ecdcc0887693e6e1159d3d428f6",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-1/record.json": "6d7c18b1c7e4911404e8dcb177b752dbccad0ab3b9fd279773ae370d186f931f",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-1/units.json": "4f09f04f11d3cd41e5765149c38d6d80772750c90334b3b271c14a518382a4cd",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-1/given/images.npy": "1db5450d65b8037a2926787f3c7c06d7f3b10c71157c68cce899a9c7f6fd3f23",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-1/given/metadata.csv": "31af21431cb0f020951d35ddb0b4722cb943fbe7428aba6fa5921d1244b7b240",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-1/sealed/new_groups/images.npy": "20717101c924edb378fe3d4cf3a41a745b41fa6aeff840daca30d82829c66104",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-1/sealed/new_groups/metadata.csv": "d1766108b391b5e87b6014982c976206cbe04d167a2ecb9d437f93a4d92fd933",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-1/sealed/new_site/images.npy": "787a2ec002cd81a1a2142fa86564817ea2638752d83994628de436d964ef83f8",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-1/sealed/new_site/metadata.csv": "70c7f1890b8f04e0a880a5be762fc1243ce6d995a502e7890c240c26b40c91eb",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-3/record.json": "5478bf383f8271920e4e9a1228dc4c48ead48239a761b5346d7b5bb5ec8b13c0",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-3/units.json": "76d109435eae5926ec38d41753caeff958e534ed45630424cd5c63e25b1c50e4",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-3/given/images.npy": "4aaa28433ba2aa537c51740fb87805d349bae627fa411d18a26ef093ef52f5bf",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-3/given/metadata.csv": "6a9d628b3193bbf9e80dfb8b5de75adbbf5445d515e6dc557e124fa44de3a05e",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-3/sealed/new_groups/images.npy": "1b7f179575a974796b0665eeadaef7a458762ab2122eca7d0d0e8a9473102256",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-3/sealed/new_groups/metadata.csv": "c93638b5eb1592f1d9a191ce70cc13dfcbf94be972d04c7d350b371b514feca7",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-3/sealed/new_site/images.npy": "1c337b2aad446399d9091de8818dc1a7bde389a74df5d3191ca4a972dedf22bf",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-3/sealed/new_site/metadata.csv": "473aefd882a51f9e8612f5a004b28055b9448c1851880d70cece4d1140655577",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-4/record.json": "69dfc46aebb5328b022a8781e3637b528058f1e9928dec4595d79be38be66bd6",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-4/units.json": "4f1b59b93b52965ae95a2928ff4e83506d1af220a6c77329f8dfa18bbdc73484",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-4/given/images.npy": "96be4941d5cd5df2964c9739fbc61e4ea4bd8b2b6435d77a00db39707b0aa890",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-4/given/metadata.csv": "89007c0dd143e6f986745007f1025dcf8b5bc8465c42e504be6dba052f1aa5d0",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-4/sealed/new_groups/images.npy": "b38a5708e303f63c63664eb5694485d71a5c6f9ffbcdfa686311d50c6df991ce",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-4/sealed/new_groups/metadata.csv": "54fdb6157cd872515b9bcea6bd9e52bf5fe941a5e1ac7fe833d3bbb7ec592acc",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-4/sealed/new_site/images.npy": "63faa3c96efc827fe26643977962c5c550d6887125c7b0c79c229c133cc312b5",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-2/fold-4/sealed/new_site/metadata.csv": "23cc7c64ae84c8c4587f95cc13a9fde66249ec3b494d5c50bf464e42091832a0",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-3/record.json": "5d30f7075579c7195ce7175a569a3dd937b7bec19c6832f118e8098551f3ddae",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-3/units.json": "417b282976b05a0493618895badba7908a66e1ea9951102fd03b951ceab0831d",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-3/given/images.npy": "238a840eb2df51c4992560b06277f42576696f25c6c0b35cfab016785f839b32",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-3/given/metadata.csv": "4879babcc6069961e754b8a33b021229bc01cde745f0df241dffe869f84529f9",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-3/sealed/new_groups/images.npy": "119c1bbce356bfce8ef70d7418291564d63b022435542e283922f744008b994a",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-3/sealed/new_groups/metadata.csv": "dac57248c68f2336c30bf2c20072b2b701cc7921a0a1a6c9b48d1ba2ed51865e",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-3/sealed/new_site/images.npy": "90a478083df7dfcbc9c8bbab4ff7c0cfc713d0385e4c2780b053b64c6fe1525c",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-3/sealed/new_site/metadata.csv": "1c3ff901edffe56c3767b9a318e5b42be5132ddec134b6e4a47f94920199509f",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/camelyon-3/images.npy": "13e3a6691b8060ba7d1f8342e555d8bba4cb72177c5499d114b7e3bc2cf4a4d4",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/camelyon-3/metadata.csv": "445993261917a64c48725b2952dc891258dac47061497f489e8bf54a299df29b",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-0/record.json": "fe27694dda2add1bbf70c7aebb782aada3f8c894501261d484740f43bbf07d75",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-0/units.json": "2942f5ef77048a96d367eb8b2f0084425e55e57241faf46d0defb521d4ea5b1b",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-0/given/images.npy": "00ec5548964848395ce940a0cb53897705b793f8a8d8bd39ed55106c1068391c",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-0/given/metadata.csv": "4a6c28e749e57afb2a8878f01b5a0e03dd90f97759a9cc136fdc611c58de261a",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-0/sealed/new_groups/images.npy": "ce4df4e17435d1d69e0c572d874e7cd0b8ebafb9d4d7bb0be5e18aa6c133f4c6",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-0/sealed/new_groups/metadata.csv": "543b2313e99d334814dc784bbb5e5996b94fd917a61d6a5addda4a6be0c90b5a",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-0/sealed/new_site/images.npy": "09c3d7429e9b3cedc047d4a248e35f30df401e972ba15d6cb6cd0505e3feed24",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-0/sealed/new_site/metadata.csv": "0a0812e5d817b699388ee7b610ed844eae973ecdcc0887693e6e1159d3d428f6",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-1/record.json": "602c2638adf64f4a5e7e9ef0ee0eb6143d4fc1fa377d8b15819463d04e6f8c37",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-1/units.json": "71a05c4b30ae953d399d9aef727d1ac1858d539b85373372e8d0bbad77eae00c",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-1/given/images.npy": "dc17ad9fbf8da9085fce7fa0e5563a135c57950f9f1f4020febb58077c6e1ce2",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-1/given/metadata.csv": "657685f73fc751dd4a2cb6248ed642136e99862071a69966a251788d01031321",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-1/sealed/new_groups/images.npy": "5db1550c839c02aa7266196e880da16c5944de4675c2d78fa958db8f72649091",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-1/sealed/new_groups/metadata.csv": "8df92f8ab229bc8e5f2340465d10355cf475fff302938dfc1f5003a6cadd9eeb",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-1/sealed/new_site/images.npy": "787a2ec002cd81a1a2142fa86564817ea2638752d83994628de436d964ef83f8",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-1/sealed/new_site/metadata.csv": "70c7f1890b8f04e0a880a5be762fc1243ce6d995a502e7890c240c26b40c91eb",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-2/record.json": "e3d34e2e5fc43a76d9a1f9ba7fb808e26a185f26a59194ebf80bcb24159fce88",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-2/units.json": "e586d8b19835760d3644e803e1f232d9535f43ad3fc5ece7eb744af184443763",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-2/given/images.npy": "4aaa28433ba2aa537c51740fb87805d349bae627fa411d18a26ef093ef52f5bf",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-2/given/metadata.csv": "6a9d628b3193bbf9e80dfb8b5de75adbbf5445d515e6dc557e124fa44de3a05e",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-2/sealed/new_groups/images.npy": "1b7f179575a974796b0665eeadaef7a458762ab2122eca7d0d0e8a9473102256",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-2/sealed/new_groups/metadata.csv": "c93638b5eb1592f1d9a191ce70cc13dfcbf94be972d04c7d350b371b514feca7",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-2/sealed/new_site/images.npy": "6745c4eb0d0b6b2a0ac27d1d39db3916c0c62df855ecbe027a05807a59aaddea",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-2/sealed/new_site/metadata.csv": "e8693541e0c4384ae11b1b76d644049ec1065dfb5dc0f58b3d98b694d8934839",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-4/record.json": "1731e92d43ba52f234f2e86054d98ac1dcba270495dc5d8c583cae193f5b907c",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-4/units.json": "290c38b5e5b6a4f28e1beb084d43ac68c819480b65026c6cf3627da9cd6d4823",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-4/given/images.npy": "1a4936b9d3baf24e9bb6f4aeba4dd38e6f04c83aa600cacd2c0ab00f0989387a",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-4/given/metadata.csv": "7395ca2761c3dfa18a69d024030f1a6f85494bfe32041547f66eeb994c3559db",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-4/sealed/new_groups/images.npy": "2fb8a926fc83e2f35f533cc2b5180a115082b52e786ecfdcc67eb94492a9af75",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-4/sealed/new_groups/metadata.csv": "2f52d09129b7a7f61d3cdec536a3523c317cf05e46e6c2109f167b2503c2773f",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-4/sealed/new_site/images.npy": "63faa3c96efc827fe26643977962c5c550d6887125c7b0c79c229c133cc312b5",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-3/fold-4/sealed/new_site/metadata.csv": "23cc7c64ae84c8c4587f95cc13a9fde66249ec3b494d5c50bf464e42091832a0",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-4/record.json": "8b44a7b49fcf61f7668fcfd5f4adf162b2c55abc4d0d300fb9b5a8ef1098df4e",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-4/units.json": "acba55c84e29aa49e590f3c27e2a70f447ae97eee4e9dc8d74abc25a58e3359e",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-4/given/images.npy": "44b048a7a4ff7288e42fc7bc69ec957d5f8ce0c42247c4f8e9cdc94341080227",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-4/given/metadata.csv": "eaa442ba69c96d217be687809ad74d1325ef86ca01f3dd36bde952d393f5a727",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-4/sealed/new_groups/images.npy": "10cdc105d1eeffefb2ac91ba2eb081aa0e543ef0dbf64019d6c2219a2ea7fbdd",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-4/sealed/new_groups/metadata.csv": "cd7fcdac13d3314fd4d6c5e0756974b3a31c9249a91a1cfbaf9fc6cb13388db1",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-4/sealed/new_site/images.npy": "239efc67398fd5459d8aaa134c199e423dae6fcc4ba4cd820649d86848322e73",
+    "C:/Users/ADMIN/rs-data/claims/camelyon-4/sealed/new_site/metadata.csv": "593a4acea85ab2b041bf0af7ce36c2442fd13b878c84f8a1ba7ab37057251acd",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/camelyon-4/images.npy": "2f1bbe3b4fe48732d1cb2cb12bfced397a18cfa94b689466f256044315e25682",
+    "C:/Users/ADMIN/rs-data/claims-v2-work/data-small/camelyon-4/metadata.csv": "91331d4aacb8890321c8476c8dafbecc2bbd2303380eb28b835b6e6241055516",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-0/record.json": "c5f4be877ee805af2cc383ded0d0b549e31cbce6902d7a334de79b40073129be",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-0/units.json": "7435e54cb5146fe1c6748d284869e88ad2f34a69047313c7383011cc9826bf01",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-0/given/images.npy": "182c20dd2c5ad3ff30c952deec83c1fd5c4209bee64a3900733e8becdef1f9a4",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-0/given/metadata.csv": "b0fe0879006642d8c32c002e82a9db12cf2dbcb5924da1406a7535f301358371",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-0/sealed/new_groups/images.npy": "2afe28fc48d3b5b2d830fd1f602502fbf8d463898638b0f21f5a86b2be711585",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-0/sealed/new_groups/metadata.csv": "9183615084212466d3e3b507411a8c923ee17e9dc450c030ec1e38bac9f99d00",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-0/sealed/new_site/images.npy": "09c3d7429e9b3cedc047d4a248e35f30df401e972ba15d6cb6cd0505e3feed24",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-0/sealed/new_site/metadata.csv": "0a0812e5d817b699388ee7b610ed844eae973ecdcc0887693e6e1159d3d428f6",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-1/record.json": "61b4aab9c73a5c7b53e490a5e605783f4c96e16ad0e24248dd526c96bddb5c16",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-1/units.json": "8fdd15d8e3d9d8cb35361c3c0ba983d03fceb8a4a730584e13986ca81c1f1787",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-1/given/images.npy": "3f5a9b22f7ca7346e6427d072f1573b0e348e862e51d41ba3bd73c98c82277cd",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-1/given/metadata.csv": "6f9444d7266612dcd9f2c38b8d335fd35ebdede5387795747c1784d264b98bf4",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-1/sealed/new_groups/images.npy": "99eebaf4e59ccef6ff839e10f3fde651cdd5207b67a58bebede9e14d17abb5c9",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-1/sealed/new_groups/metadata.csv": "4c58fa66418ba9dddd180ed68387c87dd2d2caf27e8604193b165f8c52e44aa9",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-1/sealed/new_site/images.npy": "787a2ec002cd81a1a2142fa86564817ea2638752d83994628de436d964ef83f8",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-1/sealed/new_site/metadata.csv": "70c7f1890b8f04e0a880a5be762fc1243ce6d995a502e7890c240c26b40c91eb",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-2/record.json": "c86e991b6e2928703017c367d1c91e512a38c663117398bfc54806911bc479fb",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-2/units.json": "11310278912ff99198cdc3fb3d52c6161f679e06a95ac4276658ff7883c74e70",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-2/given/images.npy": "96be4941d5cd5df2964c9739fbc61e4ea4bd8b2b6435d77a00db39707b0aa890",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-2/given/metadata.csv": "89007c0dd143e6f986745007f1025dcf8b5bc8465c42e504be6dba052f1aa5d0",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-2/sealed/new_groups/images.npy": "b38a5708e303f63c63664eb5694485d71a5c6f9ffbcdfa686311d50c6df991ce",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-2/sealed/new_groups/metadata.csv": "54fdb6157cd872515b9bcea6bd9e52bf5fe941a5e1ac7fe833d3bbb7ec592acc",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-2/sealed/new_site/images.npy": "6745c4eb0d0b6b2a0ac27d1d39db3916c0c62df855ecbe027a05807a59aaddea",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-2/sealed/new_site/metadata.csv": "e8693541e0c4384ae11b1b76d644049ec1065dfb5dc0f58b3d98b694d8934839",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-3/record.json": "327e266c3e5865fac00994aa48ddd0e8aa762d70d05ef74b30e4f97acfa30383",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-3/units.json": "345b1093577e85a15ab318477bad7f5866e6eac4ffdc449844d5ab049f8758de",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-3/given/images.npy": "1a4936b9d3baf24e9bb6f4aeba4dd38e6f04c83aa600cacd2c0ab00f0989387a",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-3/given/metadata.csv": "7395ca2761c3dfa18a69d024030f1a6f85494bfe32041547f66eeb994c3559db",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-3/sealed/new_groups/images.npy": "2fb8a926fc83e2f35f533cc2b5180a115082b52e786ecfdcc67eb94492a9af75",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-3/sealed/new_groups/metadata.csv": "2f52d09129b7a7f61d3cdec536a3523c317cf05e46e6c2109f167b2503c2773f",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-3/sealed/new_site/images.npy": "1c337b2aad446399d9091de8818dc1a7bde389a74df5d3191ca4a972dedf22bf",
+    "C:/Users/ADMIN/rs-data/claims-folds/camelyon-4/fold-3/sealed/new_site/metadata.csv": "473aefd882a51f9e8612f5a004b28055b9448c1851880d70cece4d1140655577"
+  },
+  "agent_inputs": {
+    "tools": "0f210433b8057742df4a3992721616eacc56c046d192ad7baa3347019c59cf4e",
+    "ham10000-rosendahl": {
+      "system_prompt": "2d5e8ab476062e6b0f7c83393fc517c4f569fea0286813e988757ee9e8aa7589",
+      "neutral": "850aac8b150fe0dd17f983bd31dd513f9e100aae0c3e1596cda030eec8f3a2a4",
+      "required": "973aafb3db60c92f482329ce466b2fc2fd1ba23b8373cabc37eaa47e18d555e0"
+    },
+    "ham10000-vidir_modern": {
+      "system_prompt": "62c086c81effdc7cb47135a9570dc7c621cafa99249985ee824dd0c00c1ce83c",
+      "neutral": "850aac8b150fe0dd17f983bd31dd513f9e100aae0c3e1596cda030eec8f3a2a4",
+      "required": "973aafb3db60c92f482329ce466b2fc2fd1ba23b8373cabc37eaa47e18d555e0"
+    },
+    "ham10000-vidir_molemax": {
+      "system_prompt": "3f7311d2d9d25e8bd24379b52f9fc91a6ab728ad54dd4975f02b9a3083466d6c",
+      "neutral": "850aac8b150fe0dd17f983bd31dd513f9e100aae0c3e1596cda030eec8f3a2a4",
+      "required": "973aafb3db60c92f482329ce466b2fc2fd1ba23b8373cabc37eaa47e18d555e0"
+    },
+    "ham10000-vienna_dias": {
+      "system_prompt": "baa864c96911deb90721ed5392160a5dc1085624f0a6715b461cce80eec65c8a",
+      "neutral": "850aac8b150fe0dd17f983bd31dd513f9e100aae0c3e1596cda030eec8f3a2a4",
+      "required": "973aafb3db60c92f482329ce466b2fc2fd1ba23b8373cabc37eaa47e18d555e0"
+    },
+    "camelyon-0": {
+      "system_prompt": "2d145849238f17e80cfc55942739b0e6cb8f7da630d25aa57318f54c051bb1e5",
+      "neutral": "d9617af37d84e59822b6f73f264e5d266b0c00dc48aa10aefc258b41d9319c07",
+      "required": "c894feb7519d27c65a69a3469d1b692af47b089287b53daa1c5eeae7b1b2809a"
+    },
+    "camelyon-1": {
+      "system_prompt": "83c8d71fe7b8e33bf008377c68cb85256ae7d564b7dfe64d73f4b02430f069ee",
+      "neutral": "d9617af37d84e59822b6f73f264e5d266b0c00dc48aa10aefc258b41d9319c07",
+      "required": "c894feb7519d27c65a69a3469d1b692af47b089287b53daa1c5eeae7b1b2809a"
+    },
+    "camelyon-2": {
+      "system_prompt": "f1bd2085f2b86edbdc9841216f4156a91cd1e92c9332a0eea52521ae4cf62f81",
+      "neutral": "d9617af37d84e59822b6f73f264e5d266b0c00dc48aa10aefc258b41d9319c07",
+      "required": "c894feb7519d27c65a69a3469d1b692af47b089287b53daa1c5eeae7b1b2809a"
+    },
+    "camelyon-3": {
+      "system_prompt": "3de6b5d4e7da454b0626fabfdc4a23f843473165733d56a9c18fa757d2f8ec5c",
+      "neutral": "d9617af37d84e59822b6f73f264e5d266b0c00dc48aa10aefc258b41d9319c07",
+      "required": "c894feb7519d27c65a69a3469d1b692af47b089287b53daa1c5eeae7b1b2809a"
+    },
+    "camelyon-4": {
+      "system_prompt": "87ae3531ed0c03fba96f6c103ce066f415fa2b484e40ef0d8b9fd94389d1ffc9",
+      "neutral": "d9617af37d84e59822b6f73f264e5d266b0c00dc48aa10aefc258b41d9319c07",
+      "required": "c894feb7519d27c65a69a3469d1b692af47b089287b53daa1c5eeae7b1b2809a"
+    }
+  },
+  "schedule": [
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-3.5-flash-lite",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gpt-6.1-sol",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "deepseek-v4.1-flash-1017",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "muse-spark-1.3",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "qwen3.8-27b",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    }
+  ],
+  "rules": {
+    "development": "Development used only the worlds ham10000-vienna_dias and camelyon-1, whose sealed results of the pilots were seen. Every program on them, the episodes of the version-2 pilots included, is kept in the development output and analysed apart as development. The seven other worlds are configurations not yet evaluated, not unseen sites: the development probes held out parts of their sites as folds. The main analysis covers those seven.",
+    "arms": "Two arms: neutral, where a use the data cannot support may be declared not estimable, and required, where every use needs an estimate whose interval may be wide and whose assumptions are stated. The writers are the five agents of the repair study. Every writer makes two attempts of every world in each arm. schedule draws the order once from the plan's seed: per writer the worlds in a random order, and within a world its four attempts in a random order of arms, so the arms run interleaved. An auditor reads the statement the program's agent was given.",
+    "order": "Writers first, in the order schedule prints (claims_agent), and claims_reference writes the reference of every world. Then the official runs (claims_run), then the probes (claims_probe), with the plan's paths and device. Then the auditors' step of the freeze, then the readers label every program (claims_labels), then the auditors audit every program at every level (claims_audit), then the analysis (claims_analysis). The official runs print states only; no one opens a submission.json or lists results before the analysis; the readers' and auditors' packets are built from the work directories, the probes and the given data.",
+    "endpoints": "As claims_analysis states them, on the new-site use: P1 the distribution of the five response states per arm over every planned program; P2 the share of numeric claims without warrant that the primary auditor, named in the auditors' step, calls supported at the code level, with the bounds for its missing answers; P3, the one test, its forecast error with the replication table minus that with the held-out-site table over every measured predictor, abstainers included, by a paired sign-flip randomization test. The same endpoints on the new lesions or patients are secondary. Intervals from a bootstrap of programs within writer and arm.",
+    "stop": "No arm, condition, prompt or world is added to produce more claims of any kind. A writer whose official runs fail on more than half its programs is reported, not replaced. An auditor's reply that cannot be used is asked once more; what remains missing is reported and handled as claims_analysis states.",
+    "changes": "After a freeze a fix is allowed only as a recorded deviation; a change to a statement, a prompt, the data, the folds, the analysis or these rules makes the earlier results development data."
+  },
+  "deviations": []
+}

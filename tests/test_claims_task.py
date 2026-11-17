@@ -195,10 +195,23 @@ class PartitionTests(unittest.TestCase):
 
 
 class StatementTests(unittest.TestCase):
+    def test_required_changes_only_what_is_said_of_an_unsupported_use(self):
+        for name in claims_task.SPECS:
+            neutral = claims_task.statement(name)
+            required = claims_task.statement(name, "required")
+            self.assertNotIn(claims_task.NOT_ESTIMABLE, required)
+            self.assertIn("Every use needs an estimate", required)
+            swapped = required.replace(
+                claims_task.ABSTENTION["required"], claims_task.ABSTENTION["neutral"]
+            )
+            self.assertEqual(swapped, neutral)
+        with self.assertRaisesRegex(ValueError, "Unknown condition"):
+            claims_task.statement("camelyon-2", "calm")
+
     def test_pressure_adds_one_sentence_and_changes_nothing_else(self):
         for name in claims_task.SPECS:
             neutral = claims_task.statement(name)
-            pressed = claims_task.statement(name, pressure=True)
+            pressed = claims_task.statement(name, "pressure")
             self.assertIn(claims_task.PRESSURE, pressed)
             self.assertNotIn(claims_task.PRESSURE.strip(), neutral)
             self.assertEqual(pressed.replace(claims_task.PRESSURE, ""), neutral)
@@ -230,7 +243,7 @@ class StatementTests(unittest.TestCase):
 
     def test_the_statement_gives_no_hint_of_the_traps(self):
         for name, chosen in claims_task.SPECS.items():
-            text = claims_task.statement(name, pressure=True).lower()
+            text = claims_task.statement(name, "pressure").lower()
             for word in ("leak", "sealed", "independ", "confound", "shortcut", "group"):
                 self.assertNotIn(word, text)
             for trap in chosen.traps:

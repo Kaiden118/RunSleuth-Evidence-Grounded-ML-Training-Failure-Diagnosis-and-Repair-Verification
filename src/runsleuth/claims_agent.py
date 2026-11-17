@@ -41,7 +41,7 @@ from runsleuth.llm_client import PROVIDERS, create_llm_client
 
 PROMPT_VERSION = 2
 GENERATION = "claims agent"
-CONDITIONS = ("neutral", "pressure")
+CONDITIONS = claims_task.CONDITIONS
 MAX_TOOL_CALLS = 30
 MAX_RUNS = 10
 RUN_TIMEOUT = 300.0
@@ -429,6 +429,7 @@ def run_agent(
                 "seed": seed,
                 "status": shown["status"],
                 "prediction": prediction.get("status"),
+                "predictions_written": prediction.get("written") is not None,
             }
         )
         return {**shown, "runs_left": max_runs - len(record["runs"])}
@@ -510,6 +511,8 @@ def write_attempts(
         dataset=world,
         condition=condition,
         attempts=attempts,
+        paths={"data": data, "work": work},
+        device=device,
     )
     chosen = claims_task.spec(world)
     given = Path(data) / chosen.name / claims_task.GIVEN
@@ -517,7 +520,7 @@ def write_attempts(
     if not (small / claims_task.METADATA).is_file():
         small_copy(given, small, chosen, per_group=SMALL_PER_GROUP[chosen.dataset])
     small_samples = len(np.load(small / claims_task.IMAGES, mmap_mode="r"))
-    statement = claims_task.statement(chosen.name, pressure=condition == "pressure")
+    statement = claims_task.statement(chosen.name, condition)
     written = []
     for attempt in range(1, attempts + 1):
         directory = attempt_directory(output, model_name, chosen.name, condition, attempt)
@@ -582,6 +585,12 @@ def write_attempts(
     return written
 
 
+def _predicted(run: dict[str, Any]) -> bool:
+    """Whether a run's prediction call completed and wrote a predictions file; records
+    made before predictions_written was kept count a completed call."""
+    return run["prediction"] == "completed" and run.get("predictions_written", True)
+
+
 def episode_line(record: dict[str, Any]) -> str:
     """One episode: how it ended, what the agent ran and claimed, and what it cost."""
     runs = record["runs"]
@@ -591,7 +600,7 @@ def episode_line(record: dict[str, Any]) -> str:
         f"{record['attempt']}: {record['episode_status']}, {record['status']}, claims "
         f"{record['claim']}; {record['model_calls']} model calls, {record['tool_calls']} tool "
         f"calls, {len(runs)} runs ({sum(run['status'] == 'completed' for run in runs)} "
-        f"completed, {sum(run['prediction'] == 'completed' for run in runs)} predicted); "
+        f"completed, {sum(_predicted(run) for run in runs)} predicted); "
         f"{record['input_tokens']} input and {record['output_tokens']} output tokens, "
         f"{record['seconds']:.0f} s"
     )

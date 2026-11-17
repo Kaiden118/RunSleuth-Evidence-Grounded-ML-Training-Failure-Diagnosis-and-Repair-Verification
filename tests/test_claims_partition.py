@@ -44,9 +44,9 @@ class ReadTests(unittest.TestCase):
         return claims_partition.read(self.path, USES, len(TABLE))
 
     def test_a_record_as_the_statement_asks_gives_its_fits(self):
-        fits, problems = self.read(
-            {"fits": [fit("delivered", range(8), [8], new_lesions=[9, 10]), fit("fold", [0])]}
-        )
+        # An empty list of a use says the fit did not measure it, as if left out.
+        delivered = fit("delivered", range(8), [8], new_lesions=[9, 10], new_source=[])
+        fits, problems = self.read({"fits": [delivered, fit("fold", [0])]})
         self.assertEqual(problems, [])
         self.assertEqual([found.name for found in fits], ["delivered", "fold"])
         self.assertEqual(fits[0].select, {8})
@@ -61,7 +61,7 @@ class ReadTests(unittest.TestCase):
             {
                 "fits": [
                     {"train": [0]},
-                    fit("delivered", [0, 12], select=[True], new_lesions=[]),
+                    fit("delivered", [0, 12], select=[True], new_lesions=[99]),
                     fit("x", [0], other=[1]),
                     fit("x", [0]),
                 ]

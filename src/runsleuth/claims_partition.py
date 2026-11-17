@@ -80,9 +80,12 @@ def _fit(found: Any, number: int, uses: Sequence[str], count: int) -> tuple[Fit 
             if use not in uses:
                 problems.append(f"fit {name}: {use!r} is not a use")
                 continue
-            measured[use] = _rows(rows, count)
-            if not measured[use]:
+            found_rows = _rows(rows, count)
+            if found_rows is None:
                 problems.append(f"fit {name}: the rows of {use} are not a list of rows")
+            elif found_rows:
+                # An empty list says the fit measured nothing for the use, as if left out.
+                measured[use] = found_rows
     if problems:
         return None, problems
     return Fit(name, roles["train"], roles["select"], measured), []

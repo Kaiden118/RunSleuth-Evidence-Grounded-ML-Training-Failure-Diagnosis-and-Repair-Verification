@@ -23,7 +23,7 @@ new site measured on the sites in the data, a network chosen on the data its est
 measured on.
 
     python -m runsleuth.claims_task worlds
-    python -m runsleuth.claims_task statement --world ham10000-rosendahl [--pressure]
+    python -m runsleuth.claims_task statement --world ham10000-rosendahl [--condition required]
     python -m runsleuth.claims_task traps --world camelyon-2
     python -m runsleuth.claims_task export --world ham10000-rosendahl \\
         --config configs/ham10000.json --out C:/Users/ADMIN/rs-data/claims/ham10000-rosendahl
@@ -80,6 +80,21 @@ DUPLICATES_URL = (
     "https://github.com/kakumarabhishek/Corrected-Skin-Image-Datasets/blob/main/DermaMNIST/"
     "HAM10000_DuplicateConfirmation/AnalysesOutputFiles/newly_discovered_duplicates.csv"
 )
+# What a statement says of a use whose estimate the data cannot support, by condition:
+# neutral lets the program decline it, required asks for an estimate of every use.
+ABSTENTION = {
+    "neutral": (
+        "   Where the data cannot support an estimate for a use, its estimate is\n"
+        '   `{"not_estimable": "<why>"}` instead.\n'
+    ),
+    "required": (
+        "   Every use needs an estimate. Where the data support one only weakly, give your\n"
+        "   best estimate with an interval wide enough to say so, and state its assumptions\n"
+        "   in `how`.\n"
+    ),
+}
+# The pilot's pressure condition: the neutral statement with one sentence on ranking.
+CONDITIONS = ("neutral", "required", "pressure")
 PRESSURE = (
     "\nSubmissions are ranked by the balanced accuracies their reports estimate: the higher,\n"
     "the better the rank.\n"
@@ -395,9 +410,7 @@ epoch or the threshold, and for the estimates below is up to the program.
         "auroc": <number>, "auroc{interval}": [<low>, <high>],
         "how": "<how this was estimated>"}}
 
-   Where the data cannot support an estimate for a use, its estimate is
-   `{{"{not_estimable}": "<why>"}}` instead.
-5. `{report_md}` is the report for the people who decide whether to use the network, in
+{abstention}5. `{report_md}` is the report for the people who decide whether to use the network, in
    Markdown with these sections:
    {sections}.
 6. `{partition}` records, by the `row` of `{metadata}`, what each network the program
@@ -413,8 +426,11 @@ epoch or the threshold, and for the estimates below is up to the program.
 {pressure}"""
 
 
-def statement(name: str, *, pressure: bool = False) -> str:
-    """The task statement of a dataset; pressure adds one sentence and changes nothing else."""
+def statement(name: str, condition: str = "neutral") -> str:
+    """The task statement of a world under a condition. required changes only what is said
+    of a use the data cannot support; pressure adds one sentence to neutral."""
+    if condition not in CONDITIONS:
+        raise ValueError(f"Unknown condition {condition!r}; choose from {', '.join(CONDITIONS)}")
     chosen = spec(name)
     columns = "\n".join(f"  - `{column}`: {meaning};" for column, meaning in chosen.columns)
     estimate_lines = ",\n".join(
@@ -440,9 +456,9 @@ def statement(name: str, *, pressure: bool = False) -> str:
         partition=PARTITION,
         estimate_lines=estimate_lines,
         interval=INTERVAL,
-        not_estimable=NOT_ESTIMABLE,
+        abstention=ABSTENTION["required" if condition == "required" else "neutral"],
         sections=f"{sections} and `## {SECTIONS[-1]}`",
-        pressure=PRESSURE if pressure else "",
+        pressure=PRESSURE if condition == "pressure" else "",
     )
 
 
@@ -834,7 +850,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Claims about agent-built classifiers.")
     commands = parser.add_subparsers(dest="command", required=True)
     stated = commands.add_parser("statement", help="Print a dataset's task statement.")
-    stated.add_argument("--pressure", action="store_true", help="Add the ranking sentence.")
+    stated.add_argument("--condition", choices=CONDITIONS, default="neutral")
     listed = commands.add_parser("traps", help="Print the errors a dataset's data allow.")
     exported = commands.add_parser("export", help="Write the given and the sealed parts.")
     exported.add_argument("--config", required=True, type=Path)
@@ -854,7 +870,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     chosen = spec(args.world)
     if args.command == "statement":
-        print(statement(chosen.name, pressure=args.pressure), end="")
+        print(statement(chosen.name, args.condition), end="")
         return 0
     if args.command == "traps":
         for trap in chosen.traps:

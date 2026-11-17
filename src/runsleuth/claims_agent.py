@@ -41,7 +41,7 @@ from runsleuth.llm_client import PROVIDERS, create_llm_client
 
 PROMPT_VERSION = 2
 GENERATION = "claims agent"
-CONDITIONS = ("neutral", "pressure")
+CONDITIONS = claims_task.CONDITIONS
 MAX_TOOL_CALLS = 30
 MAX_RUNS = 10
 RUN_TIMEOUT = 300.0
@@ -510,6 +510,8 @@ def write_attempts(
         dataset=world,
         condition=condition,
         attempts=attempts,
+        paths={"data": data, "work": work},
+        device=device,
     )
     chosen = claims_task.spec(world)
     given = Path(data) / chosen.name / claims_task.GIVEN
@@ -517,7 +519,7 @@ def write_attempts(
     if not (small / claims_task.METADATA).is_file():
         small_copy(given, small, chosen, per_group=SMALL_PER_GROUP[chosen.dataset])
     small_samples = len(np.load(small / claims_task.IMAGES, mmap_mode="r"))
-    statement = claims_task.statement(chosen.name, pressure=condition == "pressure")
+    statement = claims_task.statement(chosen.name, condition)
     written = []
     for attempt in range(1, attempts + 1):
         directory = attempt_directory(output, model_name, chosen.name, condition, attempt)

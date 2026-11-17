@@ -119,20 +119,34 @@ class GuardTests(unittest.TestCase):
         holds = claims_freeze.check
         claims_freeze.check = lambda freeze_file=None: []
         self.addCleanup(setattr, claims_freeze, "check", holds)
+        plan = claims_freeze.PLAN
         claims_freeze.guard(
             study,
-            writer=claims_freeze.PLAN["writers"][1],
+            writer=plan["writers"][1],
             dataset="camelyon-2",
-            condition="neutral",
-            attempts=4,
-            auditor=claims_freeze.PLAN["auditors"][0],
+            condition="required",
+            attempts=2,
+            auditor=plan["auditors"][0],
+            paths={"data": Path(plan["data"]), "work": plan["work"], "probes": plan["probes"]},
+            device="cuda",
         )
         with self.assertRaisesRegex(RuntimeError, "not in the plan"):
             claims_freeze.guard(study, writer={"model_name": "other"}, condition="pressure")
         with self.assertRaisesRegex(RuntimeError, "auditor"):
             claims_freeze.guard(study, auditor={"auditor_name": "other"})
-        with self.assertRaisesRegex(RuntimeError, "makes 4 attempts"):
-            claims_freeze.guard(study, attempts=5)
+        with self.assertRaisesRegex(RuntimeError, "makes 2 attempts"):
+            claims_freeze.guard(study, attempts=3)
+        with self.assertRaisesRegex(RuntimeError, "development world; its programs go to"):
+            claims_freeze.guard(study, dataset="camelyon-1")
+        with self.assertRaisesRegex(RuntimeError, "runs is elsewhere, not the plan's"):
+            claims_freeze.guard(study, paths={"runs": "elsewhere"})
+        with self.assertRaisesRegex(RuntimeError, "probes is None"):
+            claims_freeze.guard(study, paths={"probes": None})
+        with self.assertRaisesRegex(RuntimeError, "the device is cpu"):
+            claims_freeze.guard(study, device="cpu")
+        # Outside the study's output nothing is checked.
+        claims_freeze.guard(Path(plan["development"]["output"]), dataset="camelyon-1", device="cpu")
+        self.assertEqual(set(plan["development"]["worlds"]), {"ham10000-vienna_dias", "camelyon-1"})
         self.assertEqual(sorted(claims_freeze.PLAN["worlds"]), sorted(claims_task.SPECS))
         self.assertEqual(
             {writer["model_name"] for writer in claims_freeze.PLAN["writers"]},
@@ -142,6 +156,35 @@ class GuardTests(unittest.TestCase):
             claims_analysis.PRIMARY_AUDITOR,
             {auditor["auditor_name"] for auditor in claims_freeze.PLAN["auditors"]},
         )
+
+
+class ScheduleTests(unittest.TestCase):
+    def test_every_planned_attempt_comes_once_with_the_arms_interleaved(self):
+        plan = claims_freeze.PLAN
+        found = claims_freeze.schedule()
+        self.assertEqual(found, claims_freeze.schedule())
+        slots = [(i["writer"], i["world"], i["condition"], i["attempt"]) for i in found]
+        self.assertEqual(len(slots), len(set(slots)))
+        self.assertEqual(
+            len(slots),
+            len(plan["writers"]) * len(plan["worlds"]) * len(plan["conditions"]) * 2,
+        )
+        for start in range(0, len(found), 4):
+            block = found[start : start + 4]
+            self.assertEqual(len({(i["writer"], i["world"]) for i in block}), 1)
+            for condition in plan["conditions"]:
+                numbers = [i["attempt"] for i in block if i["condition"] == condition]
+                self.assertEqual(numbers, [1, 2])
+            development = block[0]["world"] in plan["development"]["worlds"]
+            self.assertEqual(
+                block[0]["output"],
+                plan["development"]["output"] if development else plan["output"],
+            )
+        orders = {tuple(i["condition"] for i in found[s : s + 4]) for s in range(0, 108, 4)}
+        self.assertGreater(len(orders), 1)
+        commands = claims_freeze.schedule_commands("gpt-6.1-sol")
+        self.assertEqual(len(commands), 36)
+        self.assertTrue(all("--provider compatible --model gpt-6.1-sol" in c for c in commands))
 
 
 if __name__ == "__main__":

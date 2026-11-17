@@ -496,10 +496,14 @@ class RunTests(unittest.TestCase):
                 [p.name for p in (work / f"predict-{part}").iterdir()], [claims_run.PREDICTIONS]
             )
         self.assertIn("decided", lines[0])
+        # What the run prints holds no sealed number.
+        self.assertIn("new_source estimated, measured", lines[0])
+        self.assertNotIn("1.000", lines[0])
+        self.assertNotIn("understated", claims_run.list_text(output))
         self.assertEqual(
             claims_run.run_attempts(output, self.root / "data", self.root / "work"), []
         )
-        self.assertIn("understated", claims_run.list_text(output))
+        self.assertIn("understated", claims_run.list_text(output, results=True))
 
 
 if __name__ == "__main__":

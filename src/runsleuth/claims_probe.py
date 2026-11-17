@@ -6,15 +6,22 @@ the estimates each run reports. Regime matching applies the world's own sealing 
 the given data: each development site in turn is sealed whole, with some lesions or
 patients of every other site, as a fold. The program trains on a fold's given part through
 its own interface, and its delivered predictor predicts the fold's sealed parts; each fold
-keeps the run's own estimates and what its predictor measures there.
+keeps the run's own estimates and threshold, the size of what it trained on, and what its
+predictor measures there. A fold's network is another network than the delivered one,
+trained on fewer sites and groups.
+
+A world with K development sites gets K folds and K replication seeds (2 to K + 1), so
+that both tables cost the same number of training calls; their time differs, since fold
+runs train on less data.
 
 From the folds comes a forecast for each use of the world: the mean of what the folds
 measured, with the interval mean ± t(K−1) · s · sqrt(1 + 1/K) over K folds, clipped to
 [0, 1], and the mean amount by which the folds' own estimates exceeded what they measured.
-The rule was fixed before any probe was run.
+The rule is a heuristic fixed before the study; it promises no 95% coverage for a new
+site.
 
 Both kinds of run use the guard, the given copy and the prediction call of the official
-run (claims_run), so a probe costs as many training calls as it has seeds and folds.
+run (claims_run).
 
     python -m runsleuth.claims_probe folds --world ham10000-vienna_dias \\
         --data C:/Users/ADMIN/rs-data/claims --out C:/Users/ADMIN/rs-data/claims-folds
@@ -39,7 +46,8 @@ import numpy as np
 
 from runsleuth import claims_freeze, claims_run, claims_task
 
-REPLICATION_SEEDS = (2, 3, 4)
+# The first replication seed; a world with K development sites gets seeds 2 to K + 1.
+FIRST_REPLICATION_SEED = 2
 PROBE_FILE = "probe.json"
 FOLD_RECORD = "fold.json"
 # Two-sided 95% quantiles of Student's t by degrees of freedom.
@@ -198,9 +206,20 @@ def regime_run(
     call, report = _train(
         program, fold / claims_task.GIVEN, out, seed, chosen, device=device, timeout=train_timeout
     )
-    found: dict[str, Any] = {"site": site, "training": call}
+    record = json.loads((fold / claims_task.RECORD).read_text(encoding="utf-8"))
+    trained_on = record["parts"]["given"]
+    found: dict[str, Any] = {
+        "site": site,
+        "training": call,
+        "trained_on": {
+            "samples": trained_on["samples"],
+            "groups": trained_on["groups"],
+            "sites": len(trained_on["sites"]),
+        },
+    }
     found["estimates"] = estimates_of(report, chosen)
     threshold = report.get("threshold") if isinstance(report, dict) else None
+    found["threshold"] = threshold if isinstance(threshold, int | float) else None
     problems = [] if call["status"] == "completed" else [f"training {call['status']}"]
     if not problems:
         if not (isinstance(threshold, int | float) and 0 <= threshold <= 1):
@@ -235,6 +254,11 @@ def regime_run(
     found["problems"] = problems
     found["measured"] = measured
     return found
+
+
+def replication_seeds(folds: int) -> tuple[int, ...]:
+    """As many replication seeds as a world has folds."""
+    return tuple(range(FIRST_REPLICATION_SEED, FIRST_REPLICATION_SEED + folds))
 
 
 def forecast(values: list[float]) -> dict[str, Any]:
@@ -284,13 +308,14 @@ def probe(
     work: Path,
     *,
     device: str = "cuda",
-    seeds: tuple[int, ...] = REPLICATION_SEEDS,
+    seeds: tuple[int, ...] | None = None,
     regime_seed: int = claims_run.SEED,
     train_timeout: float = claims_run.TRAIN_TIMEOUT,
     predict_timeout: float = claims_run.PREDICT_TIMEOUT,
     progress: Callable[[str], None] = print,
 ) -> dict[str, Any]:
-    """Replication and regime matching of a program on a world, kept under work."""
+    """Replication and regime matching of a program on a world, kept under work. seeds
+    default to as many as the world has development sites."""
     work = Path(work)
     if work.exists():
         raise FileExistsError(f"{work} exists; remove it to probe the program again")
@@ -304,6 +329,9 @@ def probe(
     program = work / "program" / claims_task.PROGRAM
     program.write_text(source, encoding="utf-8", newline="\n")
     given = claims_run.given_copy(export, work.parent, chosen.name)
+    folds = build_folds(export, chosen, folds_root)
+    if seeds is None:
+        seeds = replication_seeds(len(folds))
     result["replication"] = []
     for seed in seeds:
         result["replication"].append(
@@ -311,7 +339,7 @@ def probe(
         )
         progress(f"  replication seed {seed}: {result['replication'][-1]['training']['status']}")
     result["regime"] = []
-    for site, fold in build_folds(export, chosen, folds_root):
+    for site, fold in folds:
         found = regime_run(
             program,
             fold,
@@ -342,8 +370,11 @@ def run_attempts(
     **options,
 ) -> list[dict[str, Any]]:
     """Probe every attempt with a program and no probe yet, one at a time, and keep the
-    result beside the program."""
-    claims_freeze.guard(output)
+    result beside the program. In the study's output the freeze must hold, with the
+    plan's paths and device."""
+    claims_freeze.guard(
+        output, paths={"data": data, "folds": folds_root, "probes": work}, device=device
+    )
     done = []
     for directory in claims_run.attempt_directories(output):
         attempt = json.loads((directory / "attempt.json").read_text(encoding="utf-8"))

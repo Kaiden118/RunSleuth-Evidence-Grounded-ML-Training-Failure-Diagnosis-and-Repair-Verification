@@ -186,6 +186,14 @@ class PacketTests(Fixture):
         drawn = sum(claims_audit.placebo_drawn(f"attempt-{n}") for n in range(3000))
         self.assertTrue(900 < drawn < 1100, drawn)
 
+    def test_the_order_of_the_levels_is_drawn_per_attempt(self):
+        levels = list(claims_audit.EVERY_PROGRAM)
+        orders = [claims_audit.call_order(f"attempt-{n}", levels) for n in range(200)]
+        self.assertTrue(all(sorted(order) == sorted(levels) for order in orders))
+        self.assertEqual(orders[0], claims_audit.call_order("attempt-0", levels))
+        first = [order.index("replication") < order.index("regime") for order in orders]
+        self.assertTrue(60 < sum(first) < 140, sum(first))
+
 
 class AnswerTests(unittest.TestCase):
     def test_an_answer_is_read_by_use(self):

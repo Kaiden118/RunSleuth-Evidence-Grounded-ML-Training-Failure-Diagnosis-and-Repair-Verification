@@ -270,7 +270,7 @@ class RunnerTests(unittest.TestCase):
                 (record["status"], record["claim"], record["condition"]),
                 ("written", "does_not_meet", "pressure"),
             )
-            pressed = claims_task.statement("ham10000", pressure=True)
+            pressed = claims_task.statement("ham10000", "pressure")
             self.assertEqual(record["statement_sha256"], claims_agent._sha256(pressed))
             self.assertFalse((root / "work" / "runs" / record["id"]).exists())
             self.assertTrue(

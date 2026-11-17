@@ -166,6 +166,10 @@ class LabelTests(unittest.TestCase):
             '"abstention_reason": "target_not_identified | too_few_independent_units', text
         )
         self.assertIn('"warrant": "supported | not_supported | unclear"', text)
+        # Every code comes with its meaning.
+        self.assertIn("full_range (the whole range from 0 to 1)", text)
+        self.assertIn("too_few_independent_units (the reason says", text)
+        self.assertIn("group_leakage (a measuring network trained on", text)
         self.assertNotIn(str(SEALED_VALUE), text)
         self.assertNotIn("gpt-6.1-sol", text)
 

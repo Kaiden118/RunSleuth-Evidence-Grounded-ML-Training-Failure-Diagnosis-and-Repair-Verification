@@ -47,7 +47,7 @@ from typing import Any
 
 from runsleuth import claims_audit, claims_freeze, claims_partition, claims_run, claims_task
 
-FORM_VERSION = 2
+FORM_VERSION = 3
 READERS = ("claude", "gpt-6-astra")
 HUMAN = "human"
 HUMAN_PROGRAMS = 30
@@ -73,19 +73,21 @@ PROBLEMS = {
     "other": "another reason, stated in notes",
 }
 ESTIMATE_OF = ("delivered_network", "other_networks", "both", "unclear")
-INTERVAL_BASES = (
-    "groups_resampled",
-    "sites_resampled",
-    "samples_resampled",
-    "spread_across_sites",
-    "fixed_width",
-    "other",
-    "none",
-)
+INTERVAL_BASES = {
+    "groups_resampled": "lesions, patients or slides resampled",
+    "sites_resampled": "sources or hospitals resampled",
+    "samples_resampled": "images or patches resampled",
+    "spread_across_sites": "the spread of results over held-out sites",
+    "fixed_width": "a margin around the estimate set by hand",
+    "full_range": "the whole range from 0 to 1",
+    "other": "another basis, stated in notes",
+    "none": "no interval",
+}
 ABSTENTION_REASONS = {
-    "target_not_identified": "the given data cannot identify the target, such as no site "
-    "apart from those the network trains on",
-    "too_few_independent_units": "too few lesions, patients or sites to estimate it",
+    "target_not_identified": "the reason says the given data hold nothing that matches the "
+    "use, such as no site apart from those the network trains on",
+    "too_few_independent_units": "the reason says the given data hold some, but too few, "
+    "lesions, patients or sites to estimate the use",
     "own_estimation_failed": "the program's own estimation procedure failed or refused",
     "program_or_budget_limits": "limits of the program, its time or its compute",
     "contradicted_by_data": "a reason the given data contradict",
@@ -109,20 +111,21 @@ new site, a site it neither trained nor chose on. A choice is anything fitted or
 on data: the epoch, the threshold, the model, a hyperparameter, a calibration. A choice \
 carried over from another network counts where it was made. Otherwise the estimate is \
 not_supported; answer unclear only when the code cannot decide, and say why.
-- problems: the codes that apply, from: {problems}.
+- problems: the codes that apply: {problems}.
 - balanced_accuracy_as_defined: whether the code computes balanced accuracy as the mean \
-of the true-positive and the true-negative rate at the report's threshold; \
-auroc_as_defined: whether it computes the area under the ROC curve with ties counted \
-half. Answer no if the code computes something else.
+of the true-positive and the true-negative rate at the threshold of the network it \
+measures (the report's threshold for the delivered network); auroc_as_defined: whether \
+it computes the area under the ROC curve with ties counted half. Answer no if the code \
+computes something else.
 - estimate_of: whether the estimate is measured on the delivered network, on other \
 networks (such as folds of a cross-validation), or on both.
-- interval_basis: what the program resamples or varies for the estimate's interval: \
-groups_resampled (lesions, patients or slides), sites_resampled (sources or hospitals), \
-samples_resampled (images or patches), spread_across_sites (the spread of per-site \
-results), fixed_width (a margin set by hand), other, or none.
-- For a use declared not estimable: abstention_reason, the code of its stated reason, \
-from: {reasons}; and abstention_supported, whether the given data and the program bear \
-that reason out.
+- interval_basis: what gives the estimate's interval, as the code computes the one it \
+reports: {bases}.
+- For a use declared not estimable: abstention_reason, the code of its stated reason: \
+{reasons}; and abstention_supported, whether the reason holds of the given data \
+themselves: yes if no design the task allows could estimate the use from them; no if \
+one could, as when a site could have been held out, or when the shortage the reason \
+names comes from the program's own split or strata; unclear if the code cannot decide.
 """
 
 
@@ -212,6 +215,10 @@ def fits_table(facts: dict[str, Any], chosen: claims_task.Spec) -> str:
     )
 
 
+def _meanings(codes: dict[str, str]) -> str:
+    return "; ".join(f"{code} ({meaning})" for code, meaning in codes.items())
+
+
 def _numbered(source: str) -> str:
     return "\n".join(f"{n:4d}  {line}" for n, line in enumerate(source.splitlines(), 1))
 
@@ -242,7 +249,7 @@ def form(chosen: claims_task.Spec, found: dict[str, str]) -> str:
                 f'"balanced_accuracy_as_defined": {listed(ANSWERS)}, '
                 f'"auroc_as_defined": {listed(ANSWERS)}, '
                 f'"estimate_of": {listed(ESTIMATE_OF)}, '
-                f'"interval_basis": {listed(INTERVAL_BASES)}, "notes": "..."}}'
+                f'"interval_basis": {listed(tuple(INTERVAL_BASES))}, "notes": "..."}}'
             )
         elif kind == "abstained":
             entries.append(
@@ -276,7 +283,11 @@ def packet(attempt: dict[str, Any], attempt_directory: Path, runs: Path, data: P
         + _response(estimates.get(claim.name) or {}, found[claim.name])
         for claim in chosen.claims
     )
-    protocol = PROTOCOL.format(problems=", ".join(PROBLEMS), reasons=", ".join(ABSTENTION_REASONS))
+    protocol = PROTOCOL.format(
+        problems=_meanings(PROBLEMS),
+        bases=_meanings(INTERVAL_BASES),
+        reasons=_meanings(ABSTENTION_REASONS),
+    )
     sections = [
         f"# Reading program {attempt['id']}\n\n" + protocol,
         "## The task the agent was given\n\n" + statement,
@@ -335,7 +346,12 @@ def parse_label(
                 field = f"{metric}_as_defined"
                 _choice(entry.get(field), ANSWERS, f"{use}: {field}", issues)
             _choice(entry.get("estimate_of"), ESTIMATE_OF, f"{use}: estimate_of", issues)
-            _choice(entry.get("interval_basis"), INTERVAL_BASES, f"{use}: interval_basis", issues)
+            _choice(
+                entry.get("interval_basis"),
+                tuple(INTERVAL_BASES),
+                f"{use}: interval_basis",
+                issues,
+            )
         elif kind == "abstained":
             _choice(
                 entry.get("abstention_reason"),

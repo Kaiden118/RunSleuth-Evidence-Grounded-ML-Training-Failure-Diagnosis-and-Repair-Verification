@@ -207,6 +207,80 @@ class StepTests(unittest.TestCase):
                 claims_freeze.deviation(root / "b.py", "x", (second, root / "none.json"))
 
 
+class AmendmentTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.output = self.root / "study"
+        self.freeze_file = self.root / "freeze.json"
+        self.old = json.loads(json.dumps(claims_freeze.PLAN))
+        self.old["writers"][1] = {"model_name": "old", "provider": "p", "model": "old-id"}
+        self.new = json.loads(json.dumps(self.old))
+        self.new["writers"][1] = {"model_name": "new", "provider": "p", "model": "new-id"}
+        self.rules = {"arms": "new text", "stop": "same"}
+        frozen = {
+            **self.state(self.old, {"arms": "old text", "stop": "same"}),
+            "frozen_at": "then",
+            "commit": "abc",
+            "deviations": [],
+        }
+        self.freeze_file.write_text(json.dumps(frozen), encoding="utf-8")
+        for name, value in (
+            ("record", lambda stage="writers", plan=None: self.state(self.new, self.rules)),
+            ("_git", lambda *args: "def\n"),
+        ):
+            self.addCleanup(setattr, claims_freeze, name, getattr(claims_freeze, name))
+            setattr(claims_freeze, name, value)
+
+    @staticmethod
+    def state(plan, rules):
+        return {
+            "stage": "writers",
+            "plan": plan,
+            "schedule": claims_freeze.schedule(plan),
+            "rules": rules,
+            "files": {"a.py": "1"},
+            "duplicates": {},
+            "data": {},
+            "agent_inputs": {"tools": "1"},
+        }
+
+    def amend(self):
+        return claims_freeze.amend("newer model", freeze_file=self.freeze_file, output=self.output)
+
+    def test_a_replaced_writer_is_recorded_and_the_others_keep_their_order(self):
+        entry = self.amend()
+        frozen = json.loads(self.freeze_file.read_text(encoding="utf-8"))
+        self.assertEqual(entry["replaced"][0]["from"]["model_name"], "old")
+        self.assertEqual(entry["rules_before"], {"arms": "old text"})
+        self.assertEqual((entry["commit"], entry["study_programs_then"]), ("def", 0))
+        self.assertEqual(frozen["amendments"], [entry])
+        self.assertEqual(claims_freeze.differences(frozen, self.state(self.new, self.rules)), [])
+        before = [i for i in claims_freeze.schedule(self.old) if i["writer"] != "old"]
+        self.assertEqual(before, [i for i in frozen["schedule"] if i["writer"] != "new"])
+
+    def test_no_amendment_once_the_study_holds_a_program_of_either_model(self):
+        for name in ("old", "new"):
+            attempt = self.output / name / "w" / "neutral" / "attempt-1"
+            attempt.mkdir(parents=True)
+            (attempt / "attempt.json").write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, f"holds programs of {name}"):
+                self.amend()
+            (attempt / "attempt.json").unlink()
+
+    def test_only_a_writers_replacement_can_be_amended(self):
+        with self.assertRaisesRegex(ValueError, "states its reason"):
+            claims_freeze.amend(" ", freeze_file=self.freeze_file, output=self.output)
+        self.new["attempts"] = 3
+        with self.assertRaisesRegex(ValueError, "replaces writers only; changed: attempts"):
+            self.amend()
+        self.new["attempts"] = self.old["attempts"]
+        self.new["writers"][1] = self.old["writers"][1]
+        with self.assertRaisesRegex(ValueError, "no writer is replaced"):
+            self.amend()
+
+
 class ScheduleTests(unittest.TestCase):
     def test_every_planned_attempt_comes_once_with_the_arms_interleaved(self):
         plan = claims_freeze.PLAN
@@ -231,9 +305,9 @@ class ScheduleTests(unittest.TestCase):
             )
         orders = {tuple(i["condition"] for i in found[s : s + 4]) for s in range(0, len(found), 4)}
         self.assertGreater(len(orders), 1)
-        commands = claims_freeze.schedule_commands("gpt-6.1-sol")
+        commands = claims_freeze.schedule_commands("gpt-6.2-sol")
         self.assertEqual(len(commands), 36)
-        self.assertTrue(all("--provider compatible --model gpt-6.1-sol" in c for c in commands))
+        self.assertTrue(all("--provider compatible --model gpt-6.2-sol" in c for c in commands))
         self.assertFalse(any("--echo-reasoning" in c for c in commands))
         deepseek = claims_freeze.schedule_commands("deepseek-v4.1-flash-1017")
         self.assertTrue(all(c.endswith("--echo-reasoning") for c in deepseek))

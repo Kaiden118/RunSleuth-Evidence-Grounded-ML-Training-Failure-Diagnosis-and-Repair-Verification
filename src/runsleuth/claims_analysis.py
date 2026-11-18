@@ -96,6 +96,7 @@ MEASURED_NUMERIC = ("numeric_material", "numeric_not_material")
 VENDORS = {
     "gemini-3.5-flash-lite": "google",
     "gpt-6.1-sol": "openai",
+    "gpt-6.2-sol": "openai",
     "deepseek-v4.1-flash-1017": "deepseek",
     "muse-spark-1.3": "meta",
     "qwen3.8-27b": "alibaba",

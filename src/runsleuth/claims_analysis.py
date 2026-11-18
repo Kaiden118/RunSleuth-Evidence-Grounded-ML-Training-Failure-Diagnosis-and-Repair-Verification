@@ -19,7 +19,7 @@ Primary endpoints, on the new-site use (a new source or hospital):
   (no program, no report, or no estimate of the use). The distribution is reported per
   arm over all planned programs, with bootstrap intervals; it is not tested.
 - P2, the primary auditor. Among numeric new-site claims without warrant, the share
-  claude-sonnet-5.5 at the code level calls supported, over its answers, beside the
+  claude-opus-5.5 at the code level calls supported, over its answers, beside the
   bounds that count every missing answer as not endorsed and as endorsed.
 - P3, the evidence. Over every program whose delivered predictor was measured on the new
   site, abstainers included, the mean of the primary auditor's absolute forecast error
@@ -65,7 +65,7 @@ from runsleuth import (
     claims_task,
 )
 
-PRIMARY_AUDITOR = "claude-sonnet-5.5"
+PRIMARY_AUDITOR = "claude-opus-5.5"
 PRIMARY_LEVEL = "code"
 PAIRED_LEVELS = ("replication", "regime")
 MATERIAL = claims_run.MATERIAL
@@ -96,11 +96,13 @@ MEASURED_NUMERIC = ("numeric_material", "numeric_not_material")
 VENDORS = {
     "gemini-3.5-flash-lite": "google",
     "gpt-6.1-sol": "openai",
+    "gpt-6.2-sol": "openai",
     "deepseek-v4.1-flash-1017": "deepseek",
     "muse-spark-1.3": "meta",
     "qwen3.8-27b": "alibaba",
     "claude-sonnet-5.5": "anthropic",
     "claude-opus-5.5": "anthropic",
+    "gemini-4-carbon": "google",
 }
 
 

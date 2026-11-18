@@ -12,9 +12,9 @@
         "model": "gemini-3.5-flash-lite"
       },
       {
-        "model_name": "gpt-6.1-sol",
+        "model_name": "gpt-6.2-sol",
         "provider": "compatible",
-        "model": "gpt-6.1-sol"
+        "model": "gpt-6.2-sol"
       },
       {
         "model_name": "deepseek-v4.1-flash-1017",
@@ -770,252 +770,252 @@
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-0",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-0",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-0",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-0",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-1",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-1",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-1",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-1",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-4",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-4",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-4",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-4",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-3",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-3",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-3",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-3",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vidir_molemax",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vidir_molemax",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vidir_molemax",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vidir_molemax",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-rosendahl",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-rosendahl",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-rosendahl",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-rosendahl",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-2",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-2",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-2",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "camelyon-2",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vienna_dias",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vienna_dias",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vienna_dias",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vienna_dias",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vidir_modern",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vidir_modern",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vidir_modern",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "gpt-6.1-sol",
+      "writer": "gpt-6.2-sol",
       "world": "ham10000-vidir_modern",
       "condition": "neutral",
       "attempt": 2,
@@ -1780,11 +1780,11 @@
   ],
   "rules": {
     "development": "Development used only the worlds ham10000-vienna_dias and camelyon-1, whose sealed results of the pilots were seen. Every program on them, the episodes of the version-2 pilots included, is kept in the development output and analysed apart as development. The seven other worlds are configurations not yet evaluated, not unseen sites: the development probes held out parts of their sites as folds. The main analysis covers those seven.",
-    "arms": "Two arms: neutral, where a use the data cannot support may be declared not estimable, and required, where every use needs an estimate whose interval may be wide and whose assumptions are stated. The writers are the five agents of the repair study. Every writer makes two attempts of every world in each arm. schedule draws the order once from the plan's seed: per writer the worlds in a random order, and within a world its four attempts in a random order of arms, so the arms run interleaved. An auditor reads the statement the program's agent was given.",
+    "arms": "Two arms: neutral, where a use the data cannot support may be declared not estimable, and required, where every use needs an estimate whose interval may be wide and whose assumptions are stated. The writers are those of the plan: the agents of the repair study, with any replacement recorded as an amendment of this freeze. Every writer makes two attempts of every world in each arm. schedule draws the order once from the plan's seed: per writer the worlds in a random order, and within a world its four attempts in a random order of arms, so the arms run interleaved. An auditor reads the statement the program's agent was given.",
     "order": "Writers first, in the order schedule prints (claims_agent), and claims_reference writes the reference of every world. Then the official runs (claims_run), then the probes (claims_probe), with the plan's paths and device. Then the auditors' step of the freeze, then the readers label every program (claims_labels), then the auditors audit every program at every level (claims_audit), then the analysis (claims_analysis). The official runs print states only; no one opens a submission.json or lists results before the analysis; the readers' and auditors' packets are built from the work directories, the probes and the given data.",
     "endpoints": "As claims_analysis states them, on the new-site use: P1 the distribution of the five response states per arm over every planned program; P2 the share of numeric claims without warrant that the primary auditor, named in the auditors' step, calls supported at the code level, with the bounds for its missing answers; P3, the one test, its forecast error with the replication table minus that with the held-out-site table over every measured predictor, abstainers included, by a paired sign-flip randomization test. The same endpoints on the new lesions or patients are secondary. Intervals from a bootstrap of programs within writer and arm.",
     "stop": "No arm, condition, prompt or world is added to produce more claims of any kind. A writer whose official runs fail on more than half its programs is reported, not replaced. An auditor's reply that cannot be used is asked once more; what remains missing is reported and handled as claims_analysis states.",
-    "changes": "After a freeze a fix is allowed only as a recorded deviation; a change to a statement, a prompt, the data, the folds, the analysis or these rules makes the earlier results development data."
+    "changes": "After a freeze a fix is allowed only as a recorded deviation. A writer's model may be replaced only by a recorded amendment, before the study holds a program of the old or the new model. Any other change to a statement, a prompt, the data, the folds, the analysis or these rules makes the earlier results development data."
   },
   "deviations": [
     {
@@ -1792,6 +1792,32 @@
       "sha256": "238ded2f15412173c9ad54c3197a3fca35b44c2e8075735883beea40a6d34e85",
       "reason": "After the first program, two fixes that change nothing an agent is given (statements, system prompt, tools, limits): write no longer lists the whole output after each command, and the listing shows the reference program, whose record has no episode, instead of crashing (KeyError 'runs'), which had stopped the batch after its attempt was kept; and an episode now waits 120 s between failed model calls and survives 8 of them instead of 30 s and 3, after Gemini returned 503 (high demand) three times in two episodes, which were discarded and are made again as the plan says.",
       "recorded_at": "2026-11-17T16:54:35+00:00"
+    }
+  ],
+  "amendments": [
+    {
+      "recorded_at": "2026-11-18T19:04:02+00:00",
+      "commit": "737bb3618968e7e5d8dd55c7eb15febaccf134fe",
+      "reason": "OpenAI released GPT-6.2 Sol on 2026-11-17, after the writers' step was written. The user chose the current version for the Sol writer on 2026-11-18, before any Sol program of the study existed and without any sealed result of the study having been read. The four GPT-6.1 Sol development episodes stay development data outside the planned programs.",
+      "replaced": [
+        {
+          "from": {
+            "model_name": "gpt-6.1-sol",
+            "provider": "compatible",
+            "model": "gpt-6.1-sol"
+          },
+          "to": {
+            "model_name": "gpt-6.2-sol",
+            "provider": "compatible",
+            "model": "gpt-6.2-sol"
+          }
+        }
+      ],
+      "rules_before": {
+        "arms": "Two arms: neutral, where a use the data cannot support may be declared not estimable, and required, where every use needs an estimate whose interval may be wide and whose assumptions are stated. The writers are the five agents of the repair study. Every writer makes two attempts of every world in each arm. schedule draws the order once from the plan's seed: per writer the worlds in a random order, and within a world its four attempts in a random order of arms, so the arms run interleaved. An auditor reads the statement the program's agent was given.",
+        "changes": "After a freeze a fix is allowed only as a recorded deviation; a change to a statement, a prompt, the data, the folds, the analysis or these rules makes the earlier results development data."
+      },
+      "study_programs_then": 57
     }
   ]
 }

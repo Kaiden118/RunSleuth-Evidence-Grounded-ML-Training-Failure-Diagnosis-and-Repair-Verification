@@ -31,13 +31,16 @@ on any difference in the steps its work needs, on a writer, world, condition, at
 auditor the plans do not make, and on paths or a device other than the plan's. The two
 development worlds write into the development output, which the guard leaves open. A
 change after a freeze, such as the fix of a crash, is allowed only once it is recorded as
-a deviation with its reason.
+a deviation with its reason. A writer's model may be replaced in the plan only by an
+amendment, recorded with its reason before the study's output holds a program of the old
+or the new model; the other writers and their drawn order stay as they were.
 
     python -m runsleuth.claims_freeze write --stage writers
     python -m runsleuth.claims_freeze write --stage auditors
     python -m runsleuth.claims_freeze check
-    python -m runsleuth.claims_freeze schedule --writer gpt-6.1-sol
+    python -m runsleuth.claims_freeze schedule --writer gpt-6.2-sol
     python -m runsleuth.claims_freeze deviation --file src/runsleuth/claims_run.py --reason "..."
+    python -m runsleuth.claims_freeze amend --reason "..."
 """
 
 from __future__ import annotations
@@ -78,7 +81,7 @@ PLAN = {
             "provider": "gemini",
             "model": "gemini-3.5-flash-lite",
         },
-        {"model_name": "gpt-6.1-sol", "provider": "compatible", "model": "gpt-6.1-sol"},
+        {"model_name": "gpt-6.2-sol", "provider": "compatible", "model": "gpt-6.2-sol"},
         {
             "model_name": "deepseek-v4.1-flash-1017",
             "provider": "compatible",
@@ -129,8 +132,8 @@ PLAN = {
 }
 # Named in the auditors' step; the first is the primary auditor.
 AUDITORS = [
-    {"auditor_name": "claude-sonnet-5.5", "provider": "anthropic", "model": "claude-sonnet-5-5"},
-    {"auditor_name": "gpt-6.1-sol", "provider": "compatible", "model": "gpt-6.1-sol"},
+    {"auditor_name": "claude-opus-5.5", "provider": "anthropic", "model": "claude-opus-5-5"},
+    {"auditor_name": "gemini-4-carbon", "provider": "gemini", "model": "gemini-4-carbon"},
 ]
 WRITER_RULES = {
     "development": (
@@ -144,8 +147,9 @@ WRITER_RULES = {
     "arms": (
         "Two arms: neutral, where a use the data cannot support may be declared not "
         "estimable, and required, where every use needs an estimate whose interval may be "
-        "wide and whose assumptions are stated. The writers are the five agents of the "
-        "repair study. Every writer makes two attempts of every world in each arm. schedule "
+        "wide and whose assumptions are stated. The writers are those of the plan: the "
+        "agents of the repair study, with any replacement recorded as an amendment of this "
+        "freeze. Every writer makes two attempts of every world in each arm. schedule "
         "draws the order once from the plan's seed: per writer the worlds in a random "
         "order, and within a world its four attempts in a random order of arms, so the "
         "arms run interleaved. An auditor reads the statement the program's agent was given."
@@ -178,9 +182,10 @@ WRITER_RULES = {
         "missing is reported and handled as claims_analysis states."
     ),
     "changes": (
-        "After a freeze a fix is allowed only as a recorded deviation; a change to a "
-        "statement, a prompt, the data, the folds, the analysis or these rules makes the "
-        "earlier results development data."
+        "After a freeze a fix is allowed only as a recorded deviation. A writer's model "
+        "may be replaced only by a recorded amendment, before the study holds a program of "
+        "the old or the new model. Any other change to a statement, a prompt, the data, the "
+        "folds, the analysis or these rules makes the earlier results development data."
     ),
 }
 AUDITOR_RULES = {
@@ -495,7 +500,7 @@ def record(stage: str = "writers", plan: dict[str, Any] = PLAN) -> dict[str, Any
 
 FILE_KEYS = ("files", "duplicates", "data")
 # What a written freeze holds besides its record.
-WRITTEN_KEYS = ("frozen_at", "commit", "deviations")
+WRITTEN_KEYS = ("frozen_at", "commit", "deviations", "amendments")
 
 
 def differences(frozen: dict[str, Any], now: dict[str, Any]) -> list[str]:
@@ -650,6 +655,66 @@ def deviation(
     return recorded
 
 
+def amend(
+    reason: str, *, freeze_file: Path = FREEZE_FILE, output: Path | None = None
+) -> dict[str, Any]:
+    """Bring the writers' step to the plan, order and rules as they stand now, for a stated
+    reason. Only writers replaced in their places may differ, the other writers' drawn
+    order must stay, nothing else the step holds may have changed, and the study's output
+    (output, by default the plan's) must hold no program of the old or the new model."""
+    if not reason.strip():
+        raise ValueError("an amendment states its reason")
+    frozen = json.loads(Path(freeze_file).read_text(encoding="utf-8"))
+    if frozen.get("stage") != "writers":
+        raise ValueError("only the writers' step is amended")
+    now = record("writers")
+    amended = ("plan", "schedule", "rules")
+    problems = differences(frozen, {**now, **{key: frozen[key] for key in amended}})
+    if problems:
+        raise RuntimeError("the writers' step does not hold: " + "; ".join(problems))
+    old, new = frozen["plan"], now["plan"]
+    changed = sorted(
+        key
+        for key in set(old) | set(new)
+        if key not in ("writers", "echo_reasoning") and old.get(key) != new.get(key)
+    )
+    if changed or len(old["writers"]) != len(new["writers"]):
+        raise ValueError("an amendment replaces writers only; changed: " + ", ".join(changed))
+    pairs = [(a, b) for a, b in zip(old["writers"], new["writers"], strict=True) if a != b]
+    if not pairs:
+        raise ValueError("no writer is replaced")
+    names = {a["model_name"]: b["model_name"] for a, b in pairs}
+    if any(before == after for before, after in names.items()):
+        raise ValueError("a replacing model needs a name of its own")
+    echoed = {names.get(name, name) for name in old.get("echo_reasoning", [])}
+    kept = set(new.get("echo_reasoning", [])) - set(names.values())
+    if kept != echoed - set(names.values()):
+        raise ValueError("the reasoning setting of a writer not replaced changed")
+    renamed = [
+        {**item, "writer": names.get(item["writer"], item["writer"])} for item in frozen["schedule"]
+    ]
+    if renamed != now["schedule"]:
+        raise ValueError("the drawn order would change")
+    root = Path(PLAN["output"] if output is None else output)
+    for name in (*names, *names.values()):
+        if list(root.glob(f"{name}/*/*/attempt-*/attempt.json")):
+            raise RuntimeError(f"the study's output holds programs of {name}")
+    entry = {
+        "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "commit": _git("rev-parse", "HEAD").strip(),
+        "reason": reason,
+        "replaced": [{"from": a, "to": b} for a, b in pairs],
+        "rules_before": {
+            key: text for key, text in frozen["rules"].items() if now["rules"].get(key) != text
+        },
+        "study_programs_then": len(list(root.glob("*/*/*/attempt-*/attempt.json"))),
+    }
+    frozen.setdefault("amendments", []).append(entry)
+    frozen.update({key: now[key] for key in amended})
+    Path(freeze_file).write_text(json.dumps(frozen, indent=2) + "\n", encoding="utf-8")
+    return entry
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="The freeze of the claims study.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -663,6 +728,8 @@ def main(argv: list[str] | None = None) -> int:
     deviated = commands.add_parser("deviation", help="Allow a frozen file's change.")
     deviated.add_argument("--file", type=Path, required=True)
     deviated.add_argument("--reason", required=True)
+    amended = commands.add_parser("amend", help="Record a writer replaced in the plan.")
+    amended.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     if args.command == "write":
         frozen = write(args.stage)
@@ -675,6 +742,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "deviation":
         for entry in deviation(args.file, args.reason):
             print(entry)
+        return 0
+    if args.command == "amend":
+        print(amend(args.reason))
         return 0
     if args.command == "schedule":
         print("\n".join(schedule_commands(args.writer)))

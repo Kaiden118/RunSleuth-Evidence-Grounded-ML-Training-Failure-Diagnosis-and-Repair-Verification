@@ -29,7 +29,7 @@ submission.json, which holds the sealed results.
 
     python -m runsleuth.claims_audit packet --attempt <attempt dir> --runs <runs> --level regime
     python -m runsleuth.claims_audit run --out <attempts> --runs <runs> --audits <audits> \\
-        --auditor-name claude-sonnet-5.5 --provider anthropic --model claude-sonnet-5-5
+        --auditor-name claude-opus-5.5 --provider anthropic --model claude-opus-5-5
 """
 
 from __future__ import annotations

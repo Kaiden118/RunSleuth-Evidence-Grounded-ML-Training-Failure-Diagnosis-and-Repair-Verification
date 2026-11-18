@@ -170,6 +170,9 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(len(writers), 5)
         self.assertEqual(claims_analysis.PRIMARY_AUDITOR, claims_freeze.AUDITORS[0]["auditor_name"])
         # The primary auditor never reads a program of its own vendor.
+        auditors = {auditor["auditor_name"] for auditor in claims_freeze.AUDITORS}
+        self.assertEqual(auditors, {"claude-opus-5.5", "gemini-4-carbon"})
+        self.assertLessEqual(auditors, set(claims_analysis.VENDORS))
         primary = claims_analysis.VENDORS[claims_analysis.PRIMARY_AUDITOR]
         self.assertNotIn(primary, {claims_analysis.VENDORS[name] for name in writers})
 

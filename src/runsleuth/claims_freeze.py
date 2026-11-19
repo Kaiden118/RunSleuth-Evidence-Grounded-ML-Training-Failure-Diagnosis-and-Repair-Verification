@@ -31,9 +31,10 @@ on any difference in the steps its work needs, on a writer, world, condition, at
 auditor the plans do not make, and on paths or a device other than the plan's. The two
 development worlds write into the development output, which the guard leaves open. A
 change after a freeze, such as the fix of a crash, is allowed only once it is recorded as
-a deviation with its reason. A writer's model may be replaced in the plan only by an
-amendment, recorded with its reason before the study's output holds a program of the old
-or the new model; the other writers and their drawn order stay as they were.
+a deviation with its reason. A writer's model may be replaced in the plan, or a writer
+added at its end, only by an amendment, recorded with its reason before the study's
+output holds a program of the old or the new model; the other writers and their drawn
+order stay as they were.
 
     python -m runsleuth.claims_freeze write --stage writers
     python -m runsleuth.claims_freeze write --stage auditors
@@ -92,7 +93,13 @@ PLAN = {
             "provider": "compatible",
             "model": "muse-spark-1.3-contributor",
         },
-        {"model_name": "qwen3.8-27b", "provider": "compatible", "model": "qwen3.8-27b"},
+        {
+            "model_name": "qwen3.8-2.4t-a95b",
+            "provider": "compatible",
+            "model": "qwen3.8-2.4t-a95b",
+        },
+        {"model_name": "claude-opus-5.5", "provider": "anthropic", "model": "claude-opus-5-5"},
+        {"model_name": "gemini-4-carbon", "provider": "compatible", "model": "gemini-4-carbon"},
     ],
     # Writers whose replies' reasoning goes back to the provider (DeepSeek's thinking mode).
     "echo_reasoning": ["deepseek-v4.1-flash-1017"],
@@ -132,8 +139,8 @@ PLAN = {
 }
 # Named in the auditors' step; the first is the primary auditor.
 AUDITORS = [
-    {"auditor_name": "claude-opus-5.5", "provider": "anthropic", "model": "claude-opus-5-5"},
-    {"auditor_name": "gemini-4-carbon", "provider": "gemini", "model": "gemini-4-carbon"},
+    {"auditor_name": "gemini-4-argon", "provider": "compatible", "model": "gemini-4-argon"},
+    {"auditor_name": "claude-sonnet-5.5", "provider": "anthropic", "model": "claude-sonnet-5-5"},
 ]
 WRITER_RULES = {
     "development": (
@@ -147,8 +154,8 @@ WRITER_RULES = {
     "arms": (
         "Two arms: neutral, where a use the data cannot support may be declared not "
         "estimable, and required, where every use needs an estimate whose interval may be "
-        "wide and whose assumptions are stated. The writers are those of the plan: the "
-        "agents of the repair study, with any replacement recorded as an amendment of this "
+        "wide and whose assumptions are stated. The writers are those of the plan, every "
+        "replacement or addition after the first freeze recorded as an amendment of this "
         "freeze. Every writer makes two attempts of every world in each arm. schedule "
         "draws the order once from the plan's seed: per writer the worlds in a random "
         "order, and within a world its four attempts in a random order of arms, so the "
@@ -171,7 +178,9 @@ WRITER_RULES = {
         "calls supported at the code level, with the bounds for its missing answers; P3, "
         "the one test, its forecast error with the replication table minus that with the "
         "held-out-site table over every measured predictor, abstainers included, by a "
-        "paired sign-flip randomization test. The same endpoints on the new lesions or "
+        "paired sign-flip randomization test. P2 and P3 count every program, those written "
+        "by a model of the primary auditor's vendor included. The same endpoints on the new "
+        "lesions or "
         "patients are secondary. Intervals from a bootstrap of programs within writer and "
         "arm."
     ),
@@ -183,8 +192,9 @@ WRITER_RULES = {
     ),
     "changes": (
         "After a freeze a fix is allowed only as a recorded deviation. A writer's model "
-        "may be replaced only by a recorded amendment, before the study holds a program of "
-        "the old or the new model. Any other change to a statement, a prompt, the data, the "
+        "may be replaced, or a writer added, only by a recorded amendment, before the study "
+        "holds a program of the old or the new model. Any other change to a statement, a "
+        "prompt, the data, the "
         "folds, the analysis or these rules makes the earlier results development data."
     ),
 }
@@ -207,9 +217,9 @@ AUDITOR_RULES = {
         "over-abstention."
     ),
     "auditors": (
-        "The auditors are named in this step. The first is the primary auditor and is of "
-        "no writer's vendor; another auditor of a writer's vendor is reported with its "
-        "same-vendor pairs. Every auditor audits every program with a report at every "
+        "The auditors are named in this step; the first is the primary auditor. Programs "
+        "written by a model of an auditor's vendor are audited and counted like the others. "
+        "Every auditor audits every program with a report at every "
         "level, the placebo for the third of programs it draws."
     ),
 }
@@ -659,7 +669,8 @@ def amend(
     reason: str, *, freeze_file: Path = FREEZE_FILE, output: Path | None = None
 ) -> dict[str, Any]:
     """Bring the writers' step to the plan, order and rules as they stand now, for a stated
-    reason. Only writers replaced in their places may differ, the other writers' drawn
+    reason. Only writers replaced in their places or added at the end may differ, the
+    other writers' drawn
     order must stay, nothing else the step holds may have changed, and the study's output
     (output, by default the plan's) must hold no program of the old or the new model."""
     if not reason.strip():
@@ -678,25 +689,37 @@ def amend(
         for key in set(old) | set(new)
         if key not in ("writers", "echo_reasoning") and old.get(key) != new.get(key)
     )
-    if changed or len(old["writers"]) != len(new["writers"]):
-        raise ValueError("an amendment replaces writers only; changed: " + ", ".join(changed))
-    pairs = [(a, b) for a, b in zip(old["writers"], new["writers"], strict=True) if a != b]
-    if not pairs:
-        raise ValueError("no writer is replaced")
+    before, after = old["writers"], new["writers"]
+    if changed or len(after) < len(before):
+        raise ValueError(
+            "an amendment replaces or adds writers only; changed: " + ", ".join(changed)
+        )
+    pairs = [(a, b) for a, b in zip(before, after[: len(before)], strict=True) if a != b]
+    added = after[len(before) :]
+    if not pairs and not added:
+        raise ValueError("no writer is replaced or added")
     names = {a["model_name"]: b["model_name"] for a, b in pairs}
-    if any(before == after for before, after in names.items()):
+    if any(was == now_name for was, now_name in names.items()):
         raise ValueError("a replacing model needs a name of its own")
+    known = {writer["model_name"] for writer in before} | set(names.values())
+    if any(writer["model_name"] in known for writer in added):
+        raise ValueError("an added writer needs a name of its own")
+    fresh = {*names.values(), *(writer["model_name"] for writer in added)}
     echoed = {names.get(name, name) for name in old.get("echo_reasoning", [])}
-    kept = set(new.get("echo_reasoning", [])) - set(names.values())
-    if kept != echoed - set(names.values()):
+    kept = set(new.get("echo_reasoning", [])) - fresh
+    if kept != echoed - fresh:
         raise ValueError("the reasoning setting of a writer not replaced changed")
     renamed = [
         {**item, "writer": names.get(item["writer"], item["writer"])} for item in frozen["schedule"]
     ]
-    if renamed != now["schedule"]:
+    appended = {writer["model_name"] for writer in added}
+    tail = now["schedule"][len(renamed) :]
+    if renamed != now["schedule"][: len(renamed)] or any(
+        item["writer"] not in appended for item in tail
+    ):
         raise ValueError("the drawn order would change")
     root = Path(PLAN["output"] if output is None else output)
-    for name in (*names, *names.values()):
+    for name in (*names, *fresh):
         if list(root.glob(f"{name}/*/*/attempt-*/attempt.json")):
             raise RuntimeError(f"the study's output holds programs of {name}")
     entry = {
@@ -704,6 +727,7 @@ def amend(
         "commit": _git("rev-parse", "HEAD").strip(),
         "reason": reason,
         "replaced": [{"from": a, "to": b} for a, b in pairs],
+        "added": added,
         "rules_before": {
             key: text for key, text in frozen["rules"].items() if now["rules"].get(key) != text
         },

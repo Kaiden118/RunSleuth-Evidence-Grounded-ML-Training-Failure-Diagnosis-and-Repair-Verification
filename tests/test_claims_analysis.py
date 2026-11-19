@@ -9,7 +9,7 @@ from runsleuth import claims_agent, claims_analysis, claims_probe, claims_run, c
 
 WORLDS = ("ham10000-rosendahl", "camelyon-2")
 DEVELOPMENT = "camelyon-1"
-WRITERS = ("gemini-3.5-flash-lite", "gpt-6.1-sol")
+WRITERS = ("deepseek-v4.1-flash-1017", "gpt-6.1-sol")
 AUDITOR = claims_analysis.PRIMARY_AUDITOR
 REFERENCE = claims_analysis.REFERENCE
 
@@ -280,6 +280,25 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(
             claims_analysis.primary(self.rows)["P3_error_replication_minus_regime"], p3
         )
+
+    def test_programs_of_the_auditors_vendor_are_counted(self):
+        google = "gemini-3.5-flash-lite"
+        self.assertEqual(claims_analysis.VENDORS[google], claims_analysis.VENDORS[AUDITOR])
+        rows = [{**r, "writer": google} if r["writer"] == WRITERS[1] else r for r in self.rows]
+        found = claims_analysis.primary(rows)
+        # A writer of the auditor's vendor counts like any other.
+        self.assertEqual(found, claims_analysis.primary(self.rows))
+        self.assertEqual(found["P2_endorsed_without_warrant"]["claims"], 6)
+        self.assertEqual(found["P3_error_replication_minus_regime"]["claims"], 12)
+        self.assertEqual(
+            sorted(found),
+            [
+                "P1_responses",
+                "P2_endorsed_without_warrant",
+                "P3_error_replication_minus_regime",
+            ],
+        )
+        self.assertEqual(found["P1_responses"]["both"]["programs"], 16)
 
     def test_secondary_levels_and_rules(self):
         secondary = claims_analysis.secondary(self.rows, "new_site")

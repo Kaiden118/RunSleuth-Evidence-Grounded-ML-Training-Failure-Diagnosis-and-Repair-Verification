@@ -27,9 +27,9 @@
         "model": "muse-spark-1.3-contributor"
       },
       {
-        "model_name": "qwen3.8-27b",
+        "model_name": "qwen3.8-2.4t-a95b",
         "provider": "compatible",
-        "model": "qwen3.8-27b"
+        "model": "qwen3.8-2.4t-a95b"
       },
       {
         "model_name": "claude-opus-5.5",
@@ -1536,252 +1536,252 @@
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vidir_molemax",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vidir_molemax",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vidir_molemax",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vidir_molemax",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vienna_dias",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vienna_dias",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vienna_dias",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vienna_dias",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-0",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-0",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-0",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-0",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-4",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-4",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-4",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-4",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vidir_modern",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vidir_modern",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vidir_modern",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-vidir_modern",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-1",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-1",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-1",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-1",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/dev-v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-2",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-2",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-2",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-2",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-rosendahl",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-rosendahl",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-rosendahl",
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "ham10000-rosendahl",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-3",
       "condition": "neutral",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-3",
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-3",
       "condition": "required",
       "attempt": 1,
       "output": "artifacts/claims/v2"
     },
     {
-      "writer": "qwen3.8-27b",
+      "writer": "qwen3.8-2.4t-a95b",
       "world": "camelyon-3",
       "condition": "required",
       "attempt": 2,
@@ -2366,6 +2366,28 @@
       ],
       "rules_before": {},
       "study_programs_then": 103
+    },
+    {
+      "recorded_at": "2026-11-19T19:42:46+00:00",
+      "commit": "b9fa55f0f3ad8247f59c0dcde1a2af051ea0f92c",
+      "reason": "On 2026-11-19 the user chose Qwen3.8-2.4T-A95B, Qwen's largest open-weight model, served by the Qwen AI platform, in place of Qwen3.8-27B for the Qwen writer, before any Qwen program of the study existed. No sealed result of the study had been read.",
+      "replaced": [
+        {
+          "from": {
+            "model_name": "qwen3.8-27b",
+            "provider": "compatible",
+            "model": "qwen3.8-27b"
+          },
+          "to": {
+            "model_name": "qwen3.8-2.4t-a95b",
+            "provider": "compatible",
+            "model": "qwen3.8-2.4t-a95b"
+          }
+        }
+      ],
+      "added": [],
+      "rules_before": {},
+      "study_programs_then": 107
     }
   ]
 }

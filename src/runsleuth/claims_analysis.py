@@ -102,6 +102,7 @@ VENDORS = {
     "deepseek-v4.1-flash-1017": "deepseek",
     "muse-spark-1.3": "meta",
     "qwen3.8-27b": "alibaba",
+    "qwen3.8-2.4t-a95b": "alibaba",
     "claude-sonnet-5.5": "anthropic",
     "claude-opus-5.5": "anthropic",
     "gemini-4-carbon": "google",

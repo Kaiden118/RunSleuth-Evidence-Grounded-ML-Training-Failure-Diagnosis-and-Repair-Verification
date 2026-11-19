@@ -30,6 +30,11 @@
         "model_name": "qwen3.8-27b",
         "provider": "compatible",
         "model": "qwen3.8-27b"
+      },
+      {
+        "model_name": "claude-opus-5.5",
+        "provider": "anthropic",
+        "model": "claude-opus-5-5"
       }
     ],
     "echo_reasoning": [
@@ -1776,15 +1781,267 @@
       "condition": "required",
       "attempt": 2,
       "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "claude-opus-5.5",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
     }
   ],
   "rules": {
     "development": "Development used only the worlds ham10000-vienna_dias and camelyon-1, whose sealed results of the pilots were seen. Every program on them, the episodes of the version-2 pilots included, is kept in the development output and analysed apart as development. The seven other worlds are configurations not yet evaluated, not unseen sites: the development probes held out parts of their sites as folds. The main analysis covers those seven.",
-    "arms": "Two arms: neutral, where a use the data cannot support may be declared not estimable, and required, where every use needs an estimate whose interval may be wide and whose assumptions are stated. The writers are those of the plan: the agents of the repair study, with any replacement recorded as an amendment of this freeze. Every writer makes two attempts of every world in each arm. schedule draws the order once from the plan's seed: per writer the worlds in a random order, and within a world its four attempts in a random order of arms, so the arms run interleaved. An auditor reads the statement the program's agent was given.",
+    "arms": "Two arms: neutral, where a use the data cannot support may be declared not estimable, and required, where every use needs an estimate whose interval may be wide and whose assumptions are stated. The writers are those of the plan, every replacement or addition after the first freeze recorded as an amendment of this freeze. Every writer makes two attempts of every world in each arm. schedule draws the order once from the plan's seed: per writer the worlds in a random order, and within a world its four attempts in a random order of arms, so the arms run interleaved. An auditor reads the statement the program's agent was given.",
     "order": "Writers first, in the order schedule prints (claims_agent), and claims_reference writes the reference of every world. Then the official runs (claims_run), then the probes (claims_probe), with the plan's paths and device. Then the auditors' step of the freeze, then the readers label every program (claims_labels), then the auditors audit every program at every level (claims_audit), then the analysis (claims_analysis). The official runs print states only; no one opens a submission.json or lists results before the analysis; the readers' and auditors' packets are built from the work directories, the probes and the given data.",
-    "endpoints": "As claims_analysis states them, on the new-site use: P1 the distribution of the five response states per arm over every planned program; P2 the share of numeric claims without warrant that the primary auditor, named in the auditors' step, calls supported at the code level, with the bounds for its missing answers; P3, the one test, its forecast error with the replication table minus that with the held-out-site table over every measured predictor, abstainers included, by a paired sign-flip randomization test. The same endpoints on the new lesions or patients are secondary. Intervals from a bootstrap of programs within writer and arm.",
+    "endpoints": "As claims_analysis states them, on the new-site use: P1 the distribution of the five response states per arm over every planned program; P2 the share of numeric claims without warrant that the primary auditor, named in the auditors' step, calls supported at the code level, with the bounds for its missing answers; P3, the one test, its forecast error with the replication table minus that with the held-out-site table over every measured predictor, abstainers included, by a paired sign-flip randomization test. P2 and P3 count every program, those written by a model of the primary auditor's vendor included. The same endpoints on the new lesions or patients are secondary. Intervals from a bootstrap of programs within writer and arm.",
     "stop": "No arm, condition, prompt or world is added to produce more claims of any kind. A writer whose official runs fail on more than half its programs is reported, not replaced. An auditor's reply that cannot be used is asked once more; what remains missing is reported and handled as claims_analysis states.",
-    "changes": "After a freeze a fix is allowed only as a recorded deviation. A writer's model may be replaced only by a recorded amendment, before the study holds a program of the old or the new model. Any other change to a statement, a prompt, the data, the folds, the analysis or these rules makes the earlier results development data."
+    "changes": "After a freeze a fix is allowed only as a recorded deviation. A writer's model may be replaced, or a writer added, only by a recorded amendment, before the study holds a program of the old or the new model. Any other change to a statement, a prompt, the data, the folds, the analysis or these rules makes the earlier results development data."
   },
   "deviations": [
     {
@@ -1818,6 +2075,25 @@
         "changes": "After a freeze a fix is allowed only as a recorded deviation; a change to a statement, a prompt, the data, the folds, the analysis or these rules makes the earlier results development data."
       },
       "study_programs_then": 57
+    },
+    {
+      "recorded_at": "2026-11-19T19:23:47+00:00",
+      "commit": "326f9e2a88aec4a3cceacb66b0bed4ef3a3398cc",
+      "reason": "On 2026-11-19 the user moved Claude Opus 5.5 from the auditors to the writers, added at the end of the plan before any of its programs existed, and named Gemini 4 Argon the only auditor. The endpoints rule now says that P2 and P3 count every program, those of the primary auditor's vendor included. No sealed result of the study had been read.",
+      "replaced": [],
+      "added": [
+        {
+          "model_name": "claude-opus-5.5",
+          "provider": "anthropic",
+          "model": "claude-opus-5-5"
+        }
+      ],
+      "rules_before": {
+        "arms": "Two arms: neutral, where a use the data cannot support may be declared not estimable, and required, where every use needs an estimate whose interval may be wide and whose assumptions are stated. The writers are those of the plan: the agents of the repair study, with any replacement recorded as an amendment of this freeze. Every writer makes two attempts of every world in each arm. schedule draws the order once from the plan's seed: per writer the worlds in a random order, and within a world its four attempts in a random order of arms, so the arms run interleaved. An auditor reads the statement the program's agent was given.",
+        "endpoints": "As claims_analysis states them, on the new-site use: P1 the distribution of the five response states per arm over every planned program; P2 the share of numeric claims without warrant that the primary auditor, named in the auditors' step, calls supported at the code level, with the bounds for its missing answers; P3, the one test, its forecast error with the replication table minus that with the held-out-site table over every measured predictor, abstainers included, by a paired sign-flip randomization test. The same endpoints on the new lesions or patients are secondary. Intervals from a bootstrap of programs within writer and arm.",
+        "changes": "After a freeze a fix is allowed only as a recorded deviation. A writer's model may be replaced only by a recorded amendment, before the study holds a program of the old or the new model. Any other change to a statement, a prompt, the data, the folds, the analysis or these rules makes the earlier results development data."
+      },
+      "study_programs_then": 102
     }
   ]
 }

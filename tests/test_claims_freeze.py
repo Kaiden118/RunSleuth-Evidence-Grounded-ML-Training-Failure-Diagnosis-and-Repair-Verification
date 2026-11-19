@@ -167,16 +167,16 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(sorted(claims_freeze.PLAN["worlds"]), sorted(claims_task.SPECS))
         writers = {writer["model_name"] for writer in claims_freeze.PLAN["writers"]}
         self.assertLessEqual(writers, set(claims_analysis.VENDORS))
-        self.assertEqual(len(writers), 6)
+        self.assertEqual(len(writers), 7)
         self.assertEqual(claims_analysis.PRIMARY_AUDITOR, claims_freeze.AUDITORS[0]["auditor_name"])
         # The primary auditor never reads a program of its own vendor.
         auditors = {auditor["auditor_name"] for auditor in claims_freeze.AUDITORS}
         self.assertEqual(auditors, {"gemini-4-argon"})
         self.assertLessEqual(auditors, set(claims_analysis.VENDORS))
-        # Only Flash-Lite shares the primary auditor's vendor; P2 and P3 leave it out.
+        # Flash-Lite and Carbon share the primary auditor's vendor and count like the rest.
         primary = claims_analysis.VENDORS[claims_analysis.PRIMARY_AUDITOR]
         same = {name for name in writers if claims_analysis.VENDORS[name] == primary}
-        self.assertEqual(same, {"gemini-3.5-flash-lite"})
+        self.assertEqual(same, {"gemini-3.5-flash-lite", "gemini-4-carbon"})
 
 
 class StepTests(unittest.TestCase):

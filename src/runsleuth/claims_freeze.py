@@ -95,6 +95,7 @@ PLAN = {
         },
         {"model_name": "qwen3.8-27b", "provider": "compatible", "model": "qwen3.8-27b"},
         {"model_name": "claude-opus-5.5", "provider": "anthropic", "model": "claude-opus-5-5"},
+        {"model_name": "gemini-4-carbon", "provider": "compatible", "model": "gemini-4-carbon"},
     ],
     # Writers whose replies' reasoning goes back to the provider (DeepSeek's thinking mode).
     "echo_reasoning": ["deepseek-v4.1-flash-1017"],

@@ -171,7 +171,7 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(claims_analysis.PRIMARY_AUDITOR, claims_freeze.AUDITORS[0]["auditor_name"])
         # The primary auditor never reads a program of its own vendor.
         auditors = {auditor["auditor_name"] for auditor in claims_freeze.AUDITORS}
-        self.assertEqual(auditors, {"gemini-4-argon"})
+        self.assertEqual(auditors, {"gemini-4-argon", "claude-sonnet-5.5"})
         self.assertLessEqual(auditors, set(claims_analysis.VENDORS))
         # Flash-Lite and Carbon share the primary auditor's vendor and count like the rest.
         primary = claims_analysis.VENDORS[claims_analysis.PRIMARY_AUDITOR]

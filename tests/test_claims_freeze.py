@@ -167,14 +167,16 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(sorted(claims_freeze.PLAN["worlds"]), sorted(claims_task.SPECS))
         writers = {writer["model_name"] for writer in claims_freeze.PLAN["writers"]}
         self.assertLessEqual(writers, set(claims_analysis.VENDORS))
-        self.assertEqual(len(writers), 5)
+        self.assertEqual(len(writers), 6)
         self.assertEqual(claims_analysis.PRIMARY_AUDITOR, claims_freeze.AUDITORS[0]["auditor_name"])
         # The primary auditor never reads a program of its own vendor.
         auditors = {auditor["auditor_name"] for auditor in claims_freeze.AUDITORS}
-        self.assertEqual(auditors, {"claude-opus-5.5", "gemini-4-carbon"})
+        self.assertEqual(auditors, {"gemini-4-argon"})
         self.assertLessEqual(auditors, set(claims_analysis.VENDORS))
+        # Only Flash-Lite shares the primary auditor's vendor; P2 and P3 leave it out.
         primary = claims_analysis.VENDORS[claims_analysis.PRIMARY_AUDITOR]
-        self.assertNotIn(primary, {claims_analysis.VENDORS[name] for name in writers})
+        same = {name for name in writers if claims_analysis.VENDORS[name] == primary}
+        self.assertEqual(same, {"gemini-3.5-flash-lite"})
 
 
 class StepTests(unittest.TestCase):
@@ -263,6 +265,20 @@ class AmendmentTests(unittest.TestCase):
         before = [i for i in claims_freeze.schedule(self.old) if i["writer"] != "old"]
         self.assertEqual(before, [i for i in frozen["schedule"] if i["writer"] != "new"])
 
+    def test_a_writer_can_be_added_at_the_end_of_the_plan(self):
+        self.new = json.loads(json.dumps(self.old))
+        self.new["writers"].append({"model_name": "added", "provider": "p", "model": "a"})
+        entry = self.amend()
+        self.assertEqual(entry["replaced"], [])
+        self.assertEqual([writer["model_name"] for writer in entry["added"]], ["added"])
+        frozen = json.loads(self.freeze_file.read_text(encoding="utf-8"))
+        before = claims_freeze.schedule(self.old)
+        self.assertEqual(frozen["schedule"][: len(before)], before)
+        self.assertEqual({i["writer"] for i in frozen["schedule"][len(before) :]}, {"added"})
+        self.new["writers"].append({"model_name": "old", "provider": "p", "model": "b"})
+        with self.assertRaisesRegex(ValueError, "added writer needs a name of its own"):
+            self.amend()
+
     def test_no_amendment_once_the_study_holds_a_program_of_either_model(self):
         for name in ("old", "new"):
             attempt = self.output / name / "w" / "neutral" / "attempt-1"
@@ -276,11 +292,11 @@ class AmendmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "states its reason"):
             claims_freeze.amend(" ", freeze_file=self.freeze_file, output=self.output)
         self.new["attempts"] = 3
-        with self.assertRaisesRegex(ValueError, "replaces writers only; changed: attempts"):
+        with self.assertRaisesRegex(ValueError, "replaces or adds writers only; changed: attempts"):
             self.amend()
         self.new["attempts"] = self.old["attempts"]
         self.new["writers"][1] = self.old["writers"][1]
-        with self.assertRaisesRegex(ValueError, "no writer is replaced"):
+        with self.assertRaisesRegex(ValueError, "no writer is replaced or added"):
             self.amend()
 
 

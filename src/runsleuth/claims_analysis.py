@@ -19,7 +19,7 @@ Primary endpoints, on the new-site use (a new source or hospital):
   (no program, no report, or no estimate of the use). The distribution is reported per
   arm over all planned programs, with bootstrap intervals; it is not tested.
 - P2, the primary auditor. Among numeric new-site claims without warrant, the share
-  claude-opus-5.5 at the code level calls supported, over its answers, beside the
+  gemini-4-argon at the code level calls supported, over its answers, beside the
   bounds that count every missing answer as not endorsed and as endorsed.
 - P3, the evidence. Over every program whose delivered predictor was measured on the new
   site, abstainers included, the mean of the primary auditor's absolute forecast error
@@ -29,8 +29,10 @@ Primary endpoints, on the new-site use (a new source or hospital):
   one test: a two-sided paired sign-flip randomization test of the sharp null that the
   table makes no difference to the error, at 5%.
 
-Intervals come from a bootstrap of programs within writer and arm. Strata with fewer than
-MIN_STRATUM programs are pooled, and an endpoint over fewer programs has no interval.
+P2 and P3 count every program, those written by a model of the primary auditor's vendor
+included. Intervals come from a bootstrap of programs within
+writer and arm. Strata with fewer than MIN_STRATUM programs are pooled, and an endpoint
+over fewer programs has no interval.
 
 Secondary analyses, described and not tested: the same endpoints on the new lesions or
 patients use; per arm, the share of measured numeric claims that are materially
@@ -65,7 +67,7 @@ from runsleuth import (
     claims_task,
 )
 
-PRIMARY_AUDITOR = "claude-opus-5.5"
+PRIMARY_AUDITOR = "gemini-4-argon"
 PRIMARY_LEVEL = "code"
 PAIRED_LEVELS = ("replication", "regime")
 MATERIAL = claims_run.MATERIAL
@@ -103,6 +105,7 @@ VENDORS = {
     "claude-sonnet-5.5": "anthropic",
     "claude-opus-5.5": "anthropic",
     "gemini-4-carbon": "google",
+    "gemini-4-argon": "google",
 }
 
 
@@ -468,7 +471,8 @@ def evidence_difference(rows: Sequence[dict[str, Any]], auditor: str) -> dict[st
 def primary(
     rows: Sequence[dict[str, Any]], part: str = "new_site", *, auditor: str = PRIMARY_AUDITOR
 ) -> dict[str, Any]:
-    """The three primary endpoints on a use; on the new lesions or patients, secondary."""
+    """The three primary endpoints on a use; on the new lesions or patients, secondary.
+    P2 and P3 count every program, those of the auditor's vendor included."""
     writers = _writers(rows, part)
     return {
         "P1_responses": responses(writers),

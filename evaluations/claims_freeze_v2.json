@@ -35,6 +35,11 @@
         "model_name": "claude-opus-5.5",
         "provider": "anthropic",
         "model": "claude-opus-5-5"
+      },
+      {
+        "model_name": "gemini-4-carbon",
+        "provider": "compatible",
+        "model": "gemini-4-carbon"
       }
     ],
     "echo_reasoning": [
@@ -2033,6 +2038,258 @@
       "condition": "neutral",
       "attempt": 2,
       "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-0",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-0",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-4",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-4",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-1",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-1",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vidir_molemax",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vidir_molemax",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vienna_dias",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vienna_dias",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/dev-v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vidir_modern",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-vidir_modern",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-2",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-2",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-rosendahl",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "ham10000-rosendahl",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 1,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-3",
+      "condition": "required",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
+    },
+    {
+      "writer": "gemini-4-carbon",
+      "world": "camelyon-3",
+      "condition": "neutral",
+      "attempt": 2,
+      "output": "artifacts/claims/v2"
     }
   ],
   "rules": {
@@ -2094,6 +2351,21 @@
         "changes": "After a freeze a fix is allowed only as a recorded deviation. A writer's model may be replaced only by a recorded amendment, before the study holds a program of the old or the new model. Any other change to a statement, a prompt, the data, the folds, the analysis or these rules makes the earlier results development data."
       },
       "study_programs_then": 102
+    },
+    {
+      "recorded_at": "2026-11-19T19:27:44+00:00",
+      "commit": "891683259bd00892bcafdcc7c15738ddf68b7c31",
+      "reason": "On 2026-11-19 the user added Gemini 4 Carbon as a seventh writer, through the same relay as the auditor Gemini 4 Argon, at the end of the plan and before any of its programs existed. No sealed result of the study had been read.",
+      "replaced": [],
+      "added": [
+        {
+          "model_name": "gemini-4-carbon",
+          "provider": "compatible",
+          "model": "gemini-4-carbon"
+        }
+      ],
+      "rules_before": {},
+      "study_programs_then": 103
     }
   ]
 }

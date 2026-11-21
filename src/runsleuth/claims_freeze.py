@@ -93,11 +93,7 @@ PLAN = {
             "provider": "compatible",
             "model": "muse-spark-1.3-contributor",
         },
-        {
-            "model_name": "qwen3.8-2.4t-a95b",
-            "provider": "compatible",
-            "model": "qwen3.8-2.4t-a95b",
-        },
+        {"model_name": "qwen3.8-27b", "provider": "compatible", "model": "qwen3.8-27b"},
         {"model_name": "claude-opus-5.5", "provider": "anthropic", "model": "claude-opus-5-5"},
         {"model_name": "gemini-4-carbon", "provider": "compatible", "model": "gemini-4-carbon"},
     ],

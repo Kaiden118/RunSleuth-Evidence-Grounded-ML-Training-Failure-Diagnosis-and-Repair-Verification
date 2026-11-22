@@ -135,7 +135,7 @@ PLAN = {
 }
 # Named in the auditors' step; the first is the primary auditor.
 AUDITORS = [
-    {"auditor_name": "gemini-4-argon", "provider": "compatible", "model": "gemini-4-argon"},
+    {"auditor_name": "gemini-4-neon", "provider": "compatible", "model": "gemini-4-neon"},
     {"auditor_name": "claude-sonnet-5.5", "provider": "anthropic", "model": "claude-sonnet-5-5"},
 ]
 WRITER_RULES = {
